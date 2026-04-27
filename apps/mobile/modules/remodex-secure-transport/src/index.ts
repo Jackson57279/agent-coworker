@@ -14,7 +14,6 @@ import {
   parseRelayControlMessage,
 } from "../../../../../src/shared/mobileRelaySecurity";
 import type {
-  MockFeedItem,
   MockThreadRecord,
   NativeSecureTransportModule,
   PendingServerRequestRecord,

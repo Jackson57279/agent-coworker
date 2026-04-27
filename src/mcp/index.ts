@@ -6,6 +6,7 @@ import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { buildCodexAppsMcpServer } from "../server/connectors/openaiNativeConnectors";
 import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
@@ -110,6 +111,11 @@ type RuntimeMcpServerConfig = MCPServerConfig & {
 
 function normalizeToolArguments(input: unknown): Record<string, unknown> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return {};
+  return input as Record<string, unknown>;
+}
+
+function normalizeToolMeta(input: unknown): Record<string, unknown> | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined;
   return input as Record<string, unknown>;
 }
 
@@ -223,12 +229,15 @@ async function createRuntimeMcpClient(opts: {
           ...(entry._meta ? { _meta: entry._meta } : {}),
           ...(entry.connector_id ? { connectorId: entry.connector_id } : {}),
           ...(entry.connector_name ? { connectorName: entry.connector_name } : {}),
-          execute: async (input: unknown) =>
-            await client.callTool({
+          execute: async (input: unknown) => {
+            const meta = normalizeToolMeta(entry._meta);
+            const params: CallToolRequest["params"] = {
               name,
               arguments: normalizeToolArguments(input),
-              ...(entry._meta ? { _meta: entry._meta } : {}),
-            } as any),
+              ...(meta ? { _meta: meta } : {}),
+            };
+            return await client.callTool(params);
+          },
         };
       }
       return discovered;
