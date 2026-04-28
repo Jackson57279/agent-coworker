@@ -20,6 +20,7 @@ import type {
   DesktopMenuCommand,
   DesktopNotificationInput,
   ListDirectoryInput,
+  MobileRelayStartInput,
   OpenExternalUrlInput,
   OpenPathInput,
   PreferredFileAppInput,
@@ -499,29 +500,34 @@ export const systemAppearanceSchema: z.ZodType<SystemAppearance> = z.object({
   inForcedColorsMode: z.boolean(),
 });
 
-const mobileRelayPairingPayloadSchema = z.object({
-  v: z.number().int().nonnegative(),
-  relay: nonEmptyStringSchema,
-  sessionId: nonEmptyStringSchema,
-  macDeviceId: nonEmptyStringSchema,
-  macIdentityPublicKey: nonEmptyStringSchema,
-  pairingSecret: nonEmptyStringSchema,
+const h3MobileRelayPairingPayloadSchema = z.object({
+  v: z.literal(1),
+  scheme: z.literal("h3"),
+  hosts: z.array(nonEmptyStringSchema).min(1),
+  port: z.number().int().min(1).max(65535),
+  certSha256: nonEmptyStringSchema,
+  spkiSha256: nonEmptyStringSchema,
+  identityPub: nonEmptyStringSchema,
+  nonce: nonEmptyStringSchema,
   expiresAt: z.number().int().nonnegative(),
 });
 
-export const mobileRelayStartInputSchema = z.object({
+const mobileRelayPairingPayloadSchema = h3MobileRelayPairingPayloadSchema;
+
+export const mobileRelayStartInputSchema: z.ZodType<MobileRelayStartInput> = z.object({
   workspaceId: safeIdSchema,
   workspacePath: nonEmptyStringSchema,
   yolo: z.boolean(),
+  featureFlags: desktopFeatureFlagOverridesSchema.optional(),
 });
 
 export const mobileRelayBridgeStateSchema = z.object({
   status: z.enum(["idle", "starting", "pairing", "connected", "reconnecting", "error"]),
   workspaceId: z.string().nullable(),
   workspacePath: z.string().nullable(),
-  relaySource: z.enum(["remodex", "managed", "override", "unavailable"]),
+  relaySource: z.enum(["direct", "remodex", "managed", "override", "unavailable"]),
   relaySourceMessage: z.string().nullable(),
-  relayServiceStatus: z.enum(["unknown", "running", "not-running", "disconnected", "unavailable"]),
+  relayServiceStatus: z.enum(["unknown", "running", "not-running", "unavailable"]),
   relayServiceMessage: z.string().nullable(),
   relayServiceUpdatedAt: z.string().nullable(),
   relayUrl: z.string().nullable(),
@@ -529,5 +535,10 @@ export const mobileRelayBridgeStateSchema = z.object({
   pairingPayload: mobileRelayPairingPayloadSchema.nullable(),
   trustedPhoneDeviceId: z.string().nullable(),
   trustedPhoneFingerprint: z.string().nullable(),
+  directUrl: z.string().nullable(),
+  ticketUrl: z.string().nullable(),
+  certSha256: z.string().nullable(),
+  spkiSha256: z.string().nullable(),
+  hostHints: z.array(z.string()),
   lastError: z.string().nullable(),
 });

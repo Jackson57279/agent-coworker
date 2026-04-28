@@ -27,12 +27,18 @@ function parseArgs(argv: string[]): {
   port: number;
   yolo: boolean;
   json: boolean;
+  mobileH3: boolean;
+  mobileH3Host: string;
+  mobileH3Port: number;
 } {
   let dir: string | undefined;
   let host = "127.0.0.1";
   let port = 7337;
   let yolo = false;
   let json = false;
+  let mobileH3 = false;
+  let mobileH3Host = "0.0.0.0";
+  let mobileH3Port = 0;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -72,28 +78,59 @@ function parseArgs(argv: string[]): {
       json = true;
       continue;
     }
+    if (a === "--mobile-h3") {
+      mobileH3 = true;
+      continue;
+    }
+    if (a === "--mobile-h3-host") {
+      const v = argv[i + 1];
+      if (!v) throw new Error(`Missing value for ${a}`);
+      mobileH3Host = v;
+      i++;
+      continue;
+    }
+    if (a === "--mobile-h3-port") {
+      const v = argv[i + 1];
+      if (!v) throw new Error(`Missing value for ${a}`);
+      mobileH3Port = Number(v);
+      if (!Number.isFinite(mobileH3Port) || mobileH3Port < 0 || mobileH3Port > 65535) {
+        throw new Error(`Invalid mobile H3 port: ${v}`);
+      }
+      i++;
+      continue;
+    }
     throw new Error(`Unknown argument: ${a}`);
   }
 
-  return { dir, host, port, yolo, json };
+  return { dir, host, port, yolo, json, mobileH3, mobileH3Host, mobileH3Port };
 }
 
-function resolveListeningHints(host: string): string[] {
-  if (host !== "0.0.0.0") return [host];
+export function resolveListeningHintsFromInterfaces(
+  host: string,
+  interfaces: ReturnType<typeof os.networkInterfaces>,
+): string[] {
+  if (host !== "0.0.0.0" && host !== "::") return [host];
 
   const hints = new Set<string>();
-  for (const addresses of Object.values(os.networkInterfaces())) {
+  for (const addresses of Object.values(interfaces)) {
     for (const address of addresses ?? []) {
-      if (address.internal || address.family !== "IPv4") continue;
+      if (address.internal) continue;
+      if (address.family !== "IPv4" && address.family !== "IPv6") continue;
       hints.add(address.address);
     }
   }
 
-  return hints.size > 0 ? [...hints] : ["127.0.0.1"];
+  return hints.size > 0 ? [...hints] : [host === "::" ? "::1" : "127.0.0.1"];
+}
+
+export function resolveListeningHints(host: string): string[] {
+  return resolveListeningHintsFromInterfaces(host, os.networkInterfaces());
 }
 
 async function main() {
-  const { dir, host, port, yolo, json } = parseArgs(process.argv.slice(2));
+  const { dir, host, port, yolo, json, mobileH3, mobileH3Host, mobileH3Port } = parseArgs(
+    process.argv.slice(2),
+  );
 
   const cwd = dir ? await resolveAndValidateDir(dir) : process.cwd();
   if (dir) process.chdir(cwd);
@@ -103,7 +140,7 @@ async function main() {
     import("./startServer"),
   ]);
 
-  const { server, config, url } = await startAgentServer({
+  const { server, mobileServer, config, url } = await startAgentServer({
     cwd,
     hostname: host,
     port,
@@ -111,6 +148,15 @@ async function main() {
     providerOptions: DEFAULT_PROVIDER_OPTIONS,
     yolo,
     preloadSystemPrompt: false,
+    ...(mobileH3
+      ? {
+          mobileH3: {
+            hostname: mobileH3Host,
+            port: mobileH3Port,
+            hostHints: resolveListeningHints(mobileH3Host),
+          },
+        }
+      : {}),
   });
 
   // Graceful shutdown on signals so child processes are cleaned up.
@@ -147,6 +193,21 @@ async function main() {
         hostHints,
         port: server.port,
         cwd: config.workingDirectory,
+        mobileH3: mobileServer
+          ? {
+              url: mobileServer.url,
+              port: mobileServer.port,
+              hostHints: mobileServer.hostHints,
+              ticket: mobileServer.ticketUrl,
+              adminToken: mobileServer.adminToken,
+              certSha256: mobileServer.certSha256,
+              spkiSha256: mobileServer.spkiSha256,
+              identityPub: mobileServer.identityPub,
+              nonce: mobileServer.nonce,
+              expiresAt: mobileServer.expiresAt,
+              trustedDevice: mobileServer.trustedDevice,
+            }
+          : null,
       }),
     );
     return;

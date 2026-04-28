@@ -30,7 +30,72 @@ describe("workspace IPC", () => {
     setElectronMockOverrides(electronMockOverrides);
   });
 
-  test("updates approved roots before invalidating workspace cache", async () => {
+  test("startWorkspaceServer returns only renderer-safe connection details", async () => {
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
+
+    registerWorkspaceIpc({
+      deps: {
+        mobileRelayBridge: {},
+        persistence: {},
+        serverManager: {
+          async startWorkspaceServer() {
+            return {
+              url: "ws://127.0.0.1:7337/ws",
+              mobileH3: {
+                adminToken: "secret-admin-token",
+                certSha256: "cert",
+                spkiSha256: "spki",
+                hostHints: ["127.0.0.1"],
+                port: 7338,
+              },
+            };
+          },
+          async stopWorkspaceServer() {},
+        },
+        updater: {} as never,
+      } as never,
+      workspaceRoots: {
+        async ensureApprovedWorkspaceRoots() {},
+        async refreshApprovedWorkspaceRootsFromState() {},
+        async assertApprovedWorkspacePath(workspacePath: string) {
+          return workspacePath;
+        },
+        async addApprovedWorkspacePath(workspacePath: string) {
+          return workspacePath;
+        },
+        setApprovedWorkspaceRoots() {},
+        getApprovedWorkspaceRoots() {
+          return [];
+        },
+      },
+      handleDesktopInvoke(channel, handler) {
+        handlers.set(channel, handler as never);
+      },
+      parseWithSchema(_schema, value) {
+        return value as never;
+      },
+    });
+
+    const startServerHandler = handlers.get(DESKTOP_IPC_CHANNELS.startWorkspaceServer);
+    expect(startServerHandler).toBeDefined();
+
+    const result = await startServerHandler?.(
+      {},
+      {
+        workspaceId: "ws-1",
+        workspacePath: "/tmp/ws-1",
+        yolo: false,
+        mobileH3: true,
+      },
+    );
+
+    expect(result).toEqual({ url: "ws://127.0.0.1:7337/ws" });
+  });
+
+  test("updates approved roots after saving workspace state", async () => {
     const handlers = new Map<
       string,
       (event: unknown, args?: unknown) => Promise<unknown> | unknown
@@ -40,11 +105,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {
-            callOrder.push("invalidateWorkspaceListCache");
-          },
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState() {
             callOrder.push("saveState");
@@ -119,11 +180,7 @@ describe("workspace IPC", () => {
       },
     );
 
-    expect(callOrder).toEqual([
-      "saveState",
-      "setApprovedWorkspaceRoots",
-      "invalidateWorkspaceListCache",
-    ]);
+    expect(callOrder).toEqual(["saveState", "setApprovedWorkspaceRoots"]);
     expect(approvedRoots).toEqual(["/tmp/ws-1"]);
   });
 
@@ -136,9 +193,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             savedState = state;
@@ -342,9 +397,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             persistedState = state;
@@ -473,9 +526,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             persistedState = state;
@@ -575,9 +626,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             persistedState = state;
@@ -719,9 +768,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             savedState = state;
@@ -839,9 +886,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             savedState = state;
@@ -991,9 +1036,7 @@ describe("workspace IPC", () => {
 
     registerWorkspaceIpc({
       deps: {
-        mobileRelayBridge: {
-          invalidateWorkspaceListCache() {},
-        },
+        mobileRelayBridge: {},
         persistence: {
           async saveState(state: unknown) {
             savedState = state;

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { RELAY_PAIRING_QR_VERSION } from "../../../src/shared/mobileRelaySecurity";
 import {
   desktopMenuCommandSchema,
   mobileRelayBridgeStateSchema,
@@ -156,11 +155,15 @@ describe("desktop persisted-state schema defaults", () => {
       workspaceId: "ws_1",
       workspacePath: "/tmp/workspace",
       yolo: false,
+      featureFlags: {
+        openAiNativeConnectors: true,
+      },
     });
 
     expect(parsed.workspaceId).toBe("ws_1");
     expect(parsed.workspacePath).toBe("/tmp/workspace");
     expect(parsed.yolo).toBe(false);
+    expect(parsed.featureFlags?.openAiNativeConnectors).toBe(true);
   });
 
   test("accepts mobile relay bridge state payloads", () => {
@@ -169,28 +172,148 @@ describe("desktop persisted-state schema defaults", () => {
       workspaceId: "ws_1",
       workspacePath: "/tmp/workspace",
       relaySource: "managed",
-      relaySourceMessage: "Using Cowork-managed relay state at /tmp/.cowork/mobile-relay.",
+      relaySourceMessage: "Direct mobile pairing state is stored under ~/.cowork/mobile-pairing.",
       relayServiceStatus: "running",
-      relayServiceMessage: "Cowork Desktop manages the relay session directly.",
+      relayServiceMessage: "Cowork Desktop serves the direct mobile endpoint locally.",
       relayServiceUpdatedAt: null,
-      relayUrl: "wss://api.phodex.app/relay",
-      sessionId: "relay-session",
+      relayUrl: "https://127.0.0.1:34443",
+      sessionId: null,
       pairingPayload: {
-        v: RELAY_PAIRING_QR_VERSION,
-        relay: "wss://api.phodex.app/relay",
-        sessionId: "relay-session",
-        macDeviceId: "mac-1",
-        macIdentityPublicKey: "ZmFrZQ==",
-        pairingSecret: "pairing-secret-1",
+        v: 1,
+        scheme: "h3",
+        hosts: ["127.0.0.1"],
+        port: 34443,
+        certSha256: "a".repeat(64),
+        spkiSha256: "b".repeat(43),
+        identityPub: "mac-identity",
+        nonce: "pairing-nonce",
         expiresAt: 1_700_000_000_000,
       },
       trustedPhoneDeviceId: null,
       trustedPhoneFingerprint: null,
+      directUrl: "https://127.0.0.1:34443",
+      ticketUrl: "cowork-pair://ticket",
+      certSha256: "a".repeat(64),
+      spkiSha256: "b".repeat(43),
+      hostHints: ["127.0.0.1"],
       lastError: null,
     });
 
     expect(parsed.status).toBe("pairing");
-    expect(parsed.pairingPayload?.macDeviceId).toBe("mac-1");
+    expect(parsed.pairingPayload?.identityPub).toBe("mac-identity");
+  });
+
+  test("rejects legacy mobile relay bridge pairing payloads", () => {
+    expect(() =>
+      mobileRelayBridgeStateSchema.parse({
+        status: "pairing",
+        workspaceId: "ws_1",
+        workspacePath: "/tmp/workspace",
+        relaySource: "managed",
+        relaySourceMessage: "Direct mobile pairing state is stored under ~/.cowork/mobile-pairing.",
+        relayServiceStatus: "running",
+        relayServiceMessage: "Cowork Desktop serves the direct mobile endpoint locally.",
+        relayServiceUpdatedAt: null,
+        relayUrl: "https://127.0.0.1:34443",
+        sessionId: "relay-session",
+        pairingPayload: {
+          v: 1,
+          relay: "https://127.0.0.1:34443",
+          sessionId: "relay-session",
+          macDeviceId: "mac-1",
+          macIdentityPublicKey: "ZmFrZQ==",
+          pairingSecret: "pairing-secret-1",
+          expiresAt: 1_700_000_000_000,
+        },
+        trustedPhoneDeviceId: null,
+        trustedPhoneFingerprint: null,
+        directUrl: "https://127.0.0.1:34443",
+        ticketUrl: "cowork-pair://ticket",
+        certSha256: "a".repeat(64),
+        spkiSha256: "b".repeat(43),
+        hostHints: ["127.0.0.1"],
+        lastError: null,
+      }),
+    ).toThrow();
+  });
+
+  test("strips unused mobile relay bridge transport fields", () => {
+    const parsed = mobileRelayBridgeStateSchema.parse({
+      status: "pairing",
+      workspaceId: "ws_1",
+      workspacePath: "/tmp/workspace",
+      relaySource: "managed",
+      relaySourceMessage: "Direct mobile pairing state is stored under ~/.cowork/mobile-pairing.",
+      relayServiceStatus: "running",
+      relayServiceMessage: "Cowork Desktop serves the direct mobile endpoint locally.",
+      relayServiceUpdatedAt: null,
+      relayUrl: "https://127.0.0.1:34443",
+      sessionId: null,
+      transport: "h3",
+      transportMessage: "Direct",
+      endpointUrl: "https://127.0.0.1:34443",
+      pairingTicket: "ticket",
+      pairingPayload: {
+        v: 1,
+        scheme: "h3",
+        hosts: ["127.0.0.1"],
+        port: 34443,
+        certSha256: "a".repeat(64),
+        spkiSha256: "b".repeat(43),
+        identityPub: "mac-identity",
+        nonce: "pairing-nonce",
+        expiresAt: 1_700_000_000_000,
+      },
+      trustedPhoneDeviceId: null,
+      trustedPhoneFingerprint: null,
+      directUrl: "https://127.0.0.1:34443",
+      ticketUrl: "cowork-pair://ticket",
+      certSha256: "a".repeat(64),
+      spkiSha256: "b".repeat(43),
+      hostHints: ["127.0.0.1"],
+      lastError: null,
+    });
+
+    expect("transport" in parsed).toBe(false);
+    expect("transportMessage" in parsed).toBe(false);
+    expect("endpointUrl" in parsed).toBe(false);
+    expect("pairingTicket" in parsed).toBe(false);
+  });
+
+  test("rejects empty H3 mobile pairing identity fields", () => {
+    const payload = {
+      status: "pairing",
+      workspaceId: "ws_1",
+      workspacePath: "/tmp/workspace",
+      relaySource: "managed",
+      relaySourceMessage: "Direct mobile pairing state is stored under ~/.cowork/mobile-pairing.",
+      relayServiceStatus: "running",
+      relayServiceMessage: "Cowork Desktop serves the direct mobile endpoint locally.",
+      relayServiceUpdatedAt: null,
+      relayUrl: "https://127.0.0.1:34443",
+      sessionId: null,
+      pairingPayload: {
+        v: 1,
+        scheme: "h3",
+        hosts: ["127.0.0.1"],
+        port: 34443,
+        certSha256: "a".repeat(64),
+        spkiSha256: "b".repeat(43),
+        identityPub: "",
+        nonce: "",
+        expiresAt: 1_700_000_000_000,
+      },
+      trustedPhoneDeviceId: null,
+      trustedPhoneFingerprint: null,
+      directUrl: "https://127.0.0.1:34443",
+      ticketUrl: "cowork-pair://ticket",
+      certSha256: "a".repeat(64),
+      spkiSha256: "b".repeat(43),
+      hostHints: ["127.0.0.1"],
+      lastError: null,
+    };
+
+    expect(() => mobileRelayBridgeStateSchema.parse(payload)).toThrow();
   });
 });
 

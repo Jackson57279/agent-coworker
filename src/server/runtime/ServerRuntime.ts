@@ -12,7 +12,12 @@ import type {
 import { ensureDefaultGlobalSkillsReady } from "../../skills/defaultGlobalSkills";
 import type { AgentConfig } from "../../types";
 import { decodeJsonRpcMessage } from "../jsonrpc/decodeJsonRpcMessage";
-import { buildJsonRpcErrorResponse, buildJsonRpcResultResponse } from "../jsonrpc/protocol";
+import {
+  buildJsonRpcErrorResponse,
+  buildJsonRpcResultResponse,
+  type JsonRpcLiteClientResponse,
+  type JsonRpcLiteNotification,
+} from "../jsonrpc/protocol";
 import { createJsonRpcRequestRouter, type JsonRpcRouteContext } from "../jsonrpc/routes";
 import {
   buildControlSessionStateEvents,
@@ -61,6 +66,11 @@ export interface StartAgentServerOptions {
   cwd: string;
   hostname?: string;
   port?: number;
+  mobileH3?: {
+    hostname?: string;
+    port?: number;
+    hostHints?: string[];
+  };
   env?: Record<string, string | undefined>;
   providerOptions?: Record<string, unknown>;
   yolo?: boolean;
@@ -72,6 +82,7 @@ export interface StartAgentServerOptions {
 }
 
 type JsonRpcRequest = { id: string | number; method: string; params?: unknown };
+type JsonRpcDecodedMessage = JsonRpcRequest | JsonRpcLiteNotification | JsonRpcLiteClientResponse;
 
 export type AgentServerRuntime = {
   config: AgentConfig;
@@ -80,7 +91,9 @@ export type AgentServerRuntime = {
   jsonRpcMaxPendingRequests: number;
   sendJsonRpc(ws: StartServerSocket, payload: unknown): void;
   openConnection(ws: StartServerSocket): void;
+  openHttpConnection(connection: StartServerSocket): void;
   handleMessage(ws: StartServerSocket, raw: string | Buffer): void;
+  handleDecodedMessage(ws: StartServerSocket, message: JsonRpcDecodedMessage): void;
   closeConnection(ws: StartServerSocket): void;
   drainConnection(ws: StartServerSocket): void;
   isAddrInUse(err: unknown): boolean;
@@ -343,6 +356,14 @@ export async function createAgentServerRuntime(
     sendJsonRpc: (ws, payload) => sendQueue.send(ws, payload),
     openConnection: (ws) => {
       jsonRpcTransport.openConnection(ws);
+    },
+    openHttpConnection: (connection) => {
+      jsonRpcTransport.openConnection(connection);
+      connection.data.selectedSubprotocol = "cowork.jsonrpc.v1";
+      connection.data.protocolMode = "jsonrpc";
+    },
+    handleDecodedMessage: (ws, message) => {
+      jsonRpcTransport.handleMessage(ws, message, routeJsonRpcRequest);
     },
     handleMessage: (ws, raw) => {
       const decoded = decodeJsonRpcMessage(raw);
