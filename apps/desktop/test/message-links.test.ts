@@ -170,6 +170,17 @@ describe("desktop message local file links", () => {
     expect(html).not.toContain("C:\\Users\\Test\\Desktop\\Cowork Test\\create_models.py");
   });
 
+  test("assistant markdown lists keep explicit bullet spacing", () => {
+    const html = renderToStaticMarkup(
+      createElement(MessageResponse, null, "- First item\n- Second item"),
+    );
+
+    expect(html).toContain("[&amp;_ul]:list-disc");
+    expect(html).toContain("[&amp;_ul]:pl-5");
+    expect(html).toContain("[&amp;_li]:my-1.5");
+    expect(html).toContain("[&amp;_li]:pl-1");
+  });
+
   test("renders local file citations without blocked markers", () => {
     const html = renderToStaticMarkup(
       createElement(
