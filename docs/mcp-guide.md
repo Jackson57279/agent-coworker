@@ -40,6 +40,7 @@ Each MCP server entry in the configuration file must specify how the agent shoul
 - **`command`** & **`args`**: Used exclusively with `stdio` transports to spawn the local server process.
 - **`url`**: Used with `http` transports to specify the endpoint.
 - **`auth`**: Indicates the required authentication mode (e.g., `none`, `apiKey`, `oauth`).
+- **`enabled`**: Optional boolean. Omitted or `true` means the server is available to agent turns; `false` keeps the server configured and visible in management UIs but skips loading its tools.
 
 ## Authentication Flows
 For MCP servers that require secure access, agent-coworker supports standard authentication flows such as API Keys and OAuth.
@@ -56,6 +57,7 @@ All MCP management is built on top of the JSON-RPC WebSocket protocol, ensuring 
 Clients call JSON-RPC methods to manage MCP configurations:
 
 - **`mcp_server_upsert`**: Sent by the client to add a new MCP server or update an existing configuration. The core server handles writing this to the appropriate configuration layer (usually Workspace or User).
+- **`mcp_server_setEnabled`**: Toggles whether a configured server is loaded for future agent turns without deleting its configuration. Workspace and user servers update their owning `mcp-servers.json`; plugin servers update plugin override state; built-in system servers are read-only.
 - **`mcp_server_validate`**: Triggered to test the connection to an MCP server. The server attempts to initialize the transport and perform a handshake, returning a success or failure event to the UI.
 
 This WebSocket-first approach ensures that any UI client can configure and validate MCP servers using the exact same underlying logic.

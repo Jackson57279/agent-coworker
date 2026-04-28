@@ -8,6 +8,7 @@ import { nowIso } from "../utils/typeGuards";
 type PluginScopeOverrides = {
   plugins?: Record<string, boolean>;
   skills?: Record<string, boolean>;
+  mcpServers?: Record<string, boolean>;
 };
 
 type PluginOverrideDocument = {
@@ -15,6 +16,7 @@ type PluginOverrideDocument = {
   updatedAt: string;
   plugins?: PluginScopeOverrides["plugins"];
   skills?: PluginScopeOverrides["skills"];
+  mcpServers?: PluginScopeOverrides["mcpServers"];
 };
 
 export type PluginOverrideSnapshot = {
@@ -22,6 +24,7 @@ export type PluginOverrideSnapshot = {
   user: PluginScopeOverrides;
   plugins: Record<string, { enabled?: boolean }>;
   skills: Record<string, Record<string, { enabled?: boolean }>>;
+  mcpServers: Record<string, Record<string, { enabled?: boolean }>>;
 };
 
 const DEFAULT_DOCUMENT: PluginOverrideDocument = {
@@ -29,6 +32,7 @@ const DEFAULT_DOCUMENT: PluginOverrideDocument = {
   updatedAt: nowIso(),
   plugins: {},
   skills: {},
+  mcpServers: {},
 };
 
 function normalizeBooleanMap(value: unknown): Record<string, boolean> {
@@ -53,6 +57,7 @@ function normalizeDocument(value: unknown): PluginOverrideDocument {
         : nowIso(),
     plugins: normalizeBooleanMap(record.plugins),
     skills: normalizeBooleanMap(record.skills),
+    mcpServers: normalizeBooleanMap(record.mcpServers),
   };
 }
 
@@ -94,10 +99,15 @@ function pluginSkillOverrideKey(pluginId: string, rawSkillName: string): string 
   return `${pluginOverrideKey(pluginId)}:${rawSkillName.trim()}`;
 }
 
+function pluginMcpServerOverrideKey(pluginId: string, serverName: string): string {
+  return `${pluginOverrideKey(pluginId)}:${serverName.trim()}`;
+}
+
 function scopeOverridesFromDocument(doc: PluginOverrideDocument): PluginScopeOverrides {
   return {
     plugins: { ...(doc.plugins ?? {}) },
     skills: { ...(doc.skills ?? {}) },
+    mcpServers: { ...(doc.mcpServers ?? {}) },
   };
 }
 
@@ -109,6 +119,7 @@ export async function readPluginOverrides(config: AgentConfig): Promise<PluginOv
   ]);
   const byPlugin: PluginOverrideSnapshot["plugins"] = {};
   const bySkill: PluginOverrideSnapshot["skills"] = {};
+  const byMcpServer: PluginOverrideSnapshot["mcpServers"] = {};
   for (const [pluginId, enabled] of Object.entries(workspaceDoc.plugins ?? {})) {
     byPlugin[pluginId] = { enabled };
   }
@@ -129,11 +140,26 @@ export async function readPluginOverrides(config: AgentConfig): Promise<PluginOv
     bySkill[pluginId] ??= {};
     bySkill[pluginId][rawSkillName] = { enabled };
   }
+  for (const [compoundKey, enabled] of Object.entries(workspaceDoc.mcpServers ?? {})) {
+    const [pluginId, ...rest] = compoundKey.split(":");
+    const serverName = rest.join(":");
+    if (!pluginId || !serverName) continue;
+    byMcpServer[pluginId] ??= {};
+    byMcpServer[pluginId][serverName] = { enabled };
+  }
+  for (const [compoundKey, enabled] of Object.entries(userDoc.mcpServers ?? {})) {
+    const [pluginId, ...rest] = compoundKey.split(":");
+    const serverName = rest.join(":");
+    if (!pluginId || !serverName) continue;
+    byMcpServer[pluginId] ??= {};
+    byMcpServer[pluginId][serverName] = { enabled };
+  }
   return {
     workspace: scopeOverridesFromDocument(workspaceDoc),
     user: scopeOverridesFromDocument(userDoc),
     plugins: byPlugin,
     skills: bySkill,
+    mcpServers: byMcpServer,
   };
 }
 
@@ -159,6 +185,19 @@ export function isPluginSkillEnabled(
   return override ?? true;
 }
 
+export function isPluginMcpServerEnabled(
+  pluginId: string,
+  pluginScope: PluginScope,
+  serverName: string,
+  overrides: PluginOverrideSnapshot,
+  defaultEnabled = true,
+): boolean {
+  const overrideMap =
+    pluginScope === "workspace" ? overrides.workspace.mcpServers : overrides.user.mcpServers;
+  const override = overrideMap?.[pluginMcpServerOverrideKey(pluginId, serverName)];
+  return override ?? defaultEnabled;
+}
+
 async function mutateScopeDocument(
   config: AgentConfig,
   scope: PluginScope,
@@ -172,6 +211,7 @@ async function mutateScopeDocument(
     updatedAt: nowIso(),
     plugins: { ...(current.plugins ?? {}) },
     skills: { ...(current.skills ?? {}) },
+    mcpServers: { ...(current.mcpServers ?? {}) },
   };
   mutate(next);
   await writeDocument(filePath, next);
@@ -201,5 +241,19 @@ export async function setPluginSkillEnabled(opts: {
   await mutateScopeDocument(opts.config, opts.scope, (doc) => {
     doc.skills ??= {};
     doc.skills[normalizedKey] = opts.enabled;
+  });
+}
+
+export async function setPluginMcpServerEnabled(opts: {
+  config: AgentConfig;
+  pluginId: string;
+  scope: PluginScope;
+  serverName: string;
+  enabled: boolean;
+}): Promise<void> {
+  const normalizedKey = pluginMcpServerOverrideKey(opts.pluginId, opts.serverName);
+  await mutateScopeDocument(opts.config, opts.scope, (doc) => {
+    doc.mcpServers ??= {};
+    doc.mcpServers[normalizedKey] = opts.enabled;
   });
 }

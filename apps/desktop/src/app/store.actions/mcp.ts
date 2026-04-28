@@ -18,6 +18,7 @@ export function createWorkspaceMcpActions(
   | "requestWorkspaceMcpServers"
   | "upsertWorkspaceMcpServer"
   | "deleteWorkspaceMcpServer"
+  | "setWorkspaceMcpServerEnabled"
   | "validateWorkspaceMcpServer"
   | "authorizeWorkspaceMcpServerAuth"
   | "callbackWorkspaceMcpServerAuth"
@@ -99,6 +100,35 @@ export function createWorkspaceMcpActions(
           kind: "error",
           title: "Not connected",
           detail: "Unable to delete MCP server.",
+        }),
+      }));
+    },
+
+    setWorkspaceMcpServerEnabled: async (workspaceId, server) => {
+      await ensureServerRunning(get, set, workspaceId);
+      ensureControlSocket(get, set, workspaceId);
+      const ok = await requestJsonRpcControlEvent(
+        get,
+        set,
+        workspaceId,
+        "cowork/mcp/server/setEnabled",
+        {
+          cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+          name: server.name,
+          source: server.source,
+          enabled: server.enabled,
+          ...(server.pluginId ? { pluginId: server.pluginId } : {}),
+          ...(server.pluginScope ? { pluginScope: server.pluginScope } : {}),
+        },
+      );
+      if (ok) return;
+      set((s) => ({
+        notifications: pushNotification(s.notifications, {
+          id: makeId(),
+          ts: nowIso(),
+          kind: "error",
+          title: "Not connected",
+          detail: "Unable to update MCP server.",
         }),
       }));
     },

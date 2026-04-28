@@ -1,6 +1,10 @@
 import { readMCPServersSnapshot } from "../../../mcp";
-import { deleteWorkspaceMCPServer, upsertWorkspaceMCPServer } from "../../../mcp/configRegistry";
-import type { MCPServerConfig } from "../../../types";
+import {
+  deleteWorkspaceMCPServer,
+  setMCPServerEnabled,
+  upsertWorkspaceMCPServer,
+} from "../../../mcp/configRegistry";
+import type { MCPServerConfig, PluginScope } from "../../../types";
 import type { SessionContext } from "../SessionContext";
 
 type PreparedEnableMcpChange = {
@@ -132,6 +136,43 @@ export class McpRegistryFlow {
         "internal_error",
         "session",
         `Failed to delete MCP server: ${message}`,
+      );
+      return;
+    }
+
+    await this.emitMcpServers();
+  }
+
+  async setEnabled(opts: {
+    name: string;
+    source: "workspace" | "user" | "plugin" | "system";
+    enabled: boolean;
+    pluginId?: string;
+    pluginScope?: PluginScope;
+  }) {
+    if (!this.context.guardBusy()) return;
+    try {
+      await setMCPServerEnabled({
+        config: this.context.state.config,
+        source: opts.source,
+        name: opts.name,
+        enabled: opts.enabled,
+        pluginId: opts.pluginId,
+        pluginScope: opts.pluginScope,
+      });
+    } catch (err) {
+      const message = String(err);
+      if (
+        message.toLowerCase().includes("mcp-servers.json") ||
+        message.toLowerCase().includes("server name")
+      ) {
+        this.context.emitError("validation_failed", "session", message);
+        return;
+      }
+      this.context.emitError(
+        "internal_error",
+        "session",
+        `Failed to update MCP server enabled state: ${message}`,
       );
       return;
     }

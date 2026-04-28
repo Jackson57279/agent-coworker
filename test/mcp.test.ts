@@ -14,6 +14,7 @@ import {
   writeProjectMCPServersDocument,
   writeWorkspaceMCPServersDocument,
 } from "../src/mcp";
+import { setMCPServerEnabled } from "../src/mcp/configRegistry";
 import { writeCodexAuthMaterial } from "../src/providers/codex-auth";
 import { setOpenAiNativeConnectorEnabled } from "../src/server/connectors/openaiNativeConnectors";
 import { CODEX_APPS_MCP_SERVER_NAME } from "../src/shared/openaiNativeConnectors";
@@ -55,13 +56,14 @@ const mockCreateMCPClient = mock(async (_opts: any) => ({
 }));
 
 describe("mcp parsing", () => {
-  test("parseMCPServersDocument supports auth metadata", () => {
+  test("parseMCPServersDocument supports auth metadata and enabled state", () => {
     const parsed = parseMCPServersDocument(
       JSON.stringify({
         servers: [
           {
             name: "secure-http",
             transport: { type: "http", url: "https://mcp.example.com" },
+            enabled: false,
             auth: { type: "api_key", headerName: "x-api-key", keyId: "primary" },
           },
           {
@@ -74,7 +76,9 @@ describe("mcp parsing", () => {
     );
 
     expect(parsed.servers).toHaveLength(2);
+    expect(parsed.servers[0]?.enabled).toBe(false);
     expect(parsed.servers[0]?.auth?.type).toBe("api_key");
+    expect(parsed.servers[1]?.enabled).toBeUndefined();
     expect(parsed.servers[1]?.auth?.type).toBe("oauth");
   });
 
@@ -200,7 +204,11 @@ describe("mcp layered snapshot", () => {
       await writeJson(path.join(tmpWorkspace, ".cowork", "mcp-servers.json"), {
         servers: [
           { name: "shared", transport: { type: "stdio", command: "workspace" } },
-          { name: "workspace", transport: { type: "stdio", command: "workspace-only" } },
+          {
+            name: "workspace",
+            transport: { type: "stdio", command: "workspace-only" },
+            enabled: false,
+          },
         ],
       });
 
@@ -212,12 +220,75 @@ describe("mcp layered snapshot", () => {
 
       const shared = snapshot.servers.find((server) => server.name === "shared");
       expect(shared?.source).toBe("workspace");
+      expect(shared?.enabled).toBe(true);
+      expect(snapshot.servers.find((server) => server.name === "workspace")?.enabled).toBe(false);
 
       expect(snapshot.files.some((file) => file.legacy)).toBe(false);
     } finally {
       await fs.rm(tmpWorkspace, { recursive: true, force: true });
       await fs.rm(tmpHome, { recursive: true, force: true });
       await fs.rm(builtInDir, { recursive: true, force: true });
+    }
+  });
+
+  test("setMCPServerEnabled updates source-owned workspace and user MCP configs", async () => {
+    const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-workspace-"));
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-home-"));
+    const builtInConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-builtin-"));
+    try {
+      const config = makeConfig(tmpWorkspace, tmpHome, builtInConfigDir);
+      await writeJson(path.join(tmpWorkspace, ".cowork", "mcp-servers.json"), {
+        servers: [{ name: "local", transport: { type: "stdio", command: "local" } }],
+      });
+      await writeJson(path.join(tmpHome, ".cowork", "config", "mcp-servers.json"), {
+        servers: [{ name: "global", transport: { type: "stdio", command: "global" } }],
+      });
+
+      await setMCPServerEnabled({
+        config,
+        source: "workspace",
+        name: "local",
+        enabled: false,
+      });
+      await setMCPServerEnabled({
+        config,
+        source: "user",
+        name: "global",
+        enabled: false,
+      });
+
+      const snapshot = await readMCPServersSnapshot(config);
+      expect(snapshot.servers.find((server) => server.name === "local")?.enabled).toBe(false);
+      expect(snapshot.servers.find((server) => server.name === "global")?.enabled).toBe(false);
+
+      const runtimeServers = await loadMCPServers(config);
+      expect(runtimeServers.map((server) => server.name)).not.toContain("local");
+      expect(runtimeServers.map((server) => server.name)).not.toContain("global");
+    } finally {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+      await fs.rm(tmpHome, { recursive: true, force: true });
+      await fs.rm(builtInConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  test("setMCPServerEnabled rejects read-only system MCP configs", async () => {
+    const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-system-workspace-"));
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-system-home-"));
+    const builtInConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-toggle-system-builtin-"));
+    try {
+      const config = makeConfig(tmpWorkspace, tmpHome, builtInConfigDir);
+      await expect(
+        setMCPServerEnabled({
+          config,
+          source: "system",
+          name: "builtin",
+          enabled: false,
+        }),
+      ).rejects.toThrow("read-only");
+    } finally {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+      await fs.rm(tmpHome, { recursive: true, force: true });
+      await fs.rm(builtInConfigDir, { recursive: true, force: true });
     }
   });
 });

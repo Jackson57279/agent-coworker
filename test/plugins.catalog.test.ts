@@ -13,6 +13,7 @@ import {
   __internal as pluginOperationsInternal,
   previewPluginInstall,
 } from "../src/plugins/operations";
+import { setPluginMcpServerEnabled } from "../src/plugins/overrides";
 import { discoverSkillsForConfig } from "../src/skills";
 import type { AgentConfig, PluginCatalogEntry, PluginCatalogSnapshot } from "../src/types";
 
@@ -569,6 +570,50 @@ describe("plugin catalog and install operations", () => {
       if (figmaServer?.transport.type === "http") {
         expect(figmaServer.transport.url).toBe("https://workspace-figma-toolkit.example.com");
       }
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+      await fs.rm(home, { recursive: true, force: true });
+      await fs.rm(builtInConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  test("plugin MCP server overrides disable a server without disabling the plugin", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "plugins-mcp-toggle-workspace-"));
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "plugins-mcp-toggle-home-"));
+    const builtInConfigDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "plugins-mcp-toggle-builtin-"),
+    );
+    const config = makeConfig(workspace, home, builtInConfigDir);
+
+    try {
+      await writePlugin(
+        path.join(workspace, ".agents", "plugins", "figma-toolkit"),
+        "Workspace Figma Toolkit",
+        "Workspace plugin",
+        "figma",
+      );
+
+      await setPluginMcpServerEnabled({
+        config,
+        pluginId: "figma-toolkit",
+        scope: "workspace",
+        serverName: "figma",
+        enabled: false,
+      });
+
+      const catalog = await buildPluginCatalogSnapshot(config);
+      const plugin = catalog.plugins.find(
+        (entry) => entry.id === "figma-toolkit" && entry.scope === "workspace",
+      );
+      expect(plugin?.enabled).toBe(true);
+
+      const mcpRegistry = await loadMCPConfigRegistry(config);
+      const figmaServer = mcpRegistry.servers.find((server) => server.name === "figma");
+      expect(figmaServer).toMatchObject({
+        source: "plugin",
+        pluginId: "figma-toolkit",
+        enabled: false,
+      });
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });
       await fs.rm(home, { recursive: true, force: true });

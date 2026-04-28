@@ -2,6 +2,7 @@ import type { MCPServerConfig } from "../../../lib/wsProtocol";
 
 export type DraftState = {
   name: string;
+  enabled: boolean;
   transportType: "stdio" | "http" | "sse";
   command: string;
   args: string;
@@ -24,6 +25,7 @@ const SIMPLE_ARG_RE = /^[A-Za-z0-9_@%+=:,./-]+$/;
 export function defaultDraftState(): DraftState {
   return {
     name: "",
+    enabled: true,
     transportType: "stdio",
     command: "",
     args: "",
@@ -150,6 +152,7 @@ export function sourceLabel(source: string): string {
 export function draftFromServer(server: MCPServerConfig): DraftState {
   const base: DraftState = {
     name: server.name,
+    enabled: server.enabled !== false,
     transportType: server.transport.type,
     command: "",
     args: "",
@@ -248,6 +251,7 @@ export function buildServerFromDraft(draft: DraftState): MCPServerConfig | null 
 
   return {
     name,
+    ...(draft.enabled ? {} : { enabled: false }),
     transport,
     ...(draft.required ? { required: true } : {}),
     ...(typeof retries === "number" && Number.isFinite(retries) ? { retries } : {}),

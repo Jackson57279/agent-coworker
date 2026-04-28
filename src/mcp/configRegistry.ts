@@ -3,8 +3,10 @@ export { MCP_SERVERS_FILE_NAME, resolveMcpConfigPaths } from "./configPaths";
 export {
   deleteWorkspaceMCPServer,
   readWorkspaceMCPServersDocument,
+  setMCPServerEnabled,
   upsertWorkspaceMCPServer,
   writeWorkspaceMCPServersDocument,
+  type MCPServerConfigSource,
 } from "./configRegistry/editor";
 export { loadMCPConfigRegistry } from "./configRegistry/layers";
 export {

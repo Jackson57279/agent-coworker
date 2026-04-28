@@ -292,6 +292,10 @@ export class SessionMcpService {
     await this.session.deleteMcpServer(name);
   }
 
+  async setEnabled(opts: Parameters<AgentSession["setMcpServerEnabled"]>[0]): Promise<void> {
+    await this.session.setMcpServerEnabled(opts);
+  }
+
   async validate(name: string): Promise<void> {
     await this.session.validateMcpServer(name);
   }

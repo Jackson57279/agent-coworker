@@ -636,6 +636,7 @@ export type MCPServerAuthConfig =
 export interface MCPServerConfig {
   name: string;
   transport: MCPServerTransport;
+  enabled?: boolean;
   required?: boolean;
   retries?: number;
   auth?: MCPServerAuthConfig;

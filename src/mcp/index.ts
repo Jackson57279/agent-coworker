@@ -481,7 +481,9 @@ export async function readMCPServersSnapshot(config: AgentConfig): Promise<MCPSe
 export async function loadMCPServers(config: AgentConfig): Promise<MCPServerConfig[]> {
   const registry = await loadMCPConfigRegistry(config);
   const hydrated = await Promise.all(
-    registry.servers.map(async (server) => await hydrateServerForRuntime(config, server)),
+    registry.servers
+      .filter((server) => server.enabled !== false)
+      .map(async (server) => await hydrateServerForRuntime(config, server)),
   );
   if (!hydrated.some((server) => server.name === CODEX_APPS_MCP_SERVER_NAME)) {
     const codexApps = await buildCodexAppsMcpServer(config);

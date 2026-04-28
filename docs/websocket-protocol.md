@@ -181,6 +181,7 @@ Currently implemented `cowork/*` methods include:
   - `cowork/mcp/servers/read`
   - `cowork/mcp/server/upsert`
   - `cowork/mcp/server/delete`
+  - `cowork/mcp/server/setEnabled`
   - `cowork/mcp/server/validate`
   - `cowork/mcp/server/auth/authorize`
   - `cowork/mcp/server/auth/callback`
@@ -1479,6 +1480,7 @@ Layered MCP server snapshot with auth status, source attribution, and file diagn
     {
       "name": "grep",
       "transport": { "type": "http", "url": "https://mcp.grep.app" },
+      "enabled": true,
       "source": "workspace",
       "inherited": false,
       "authMode": "oauth",
@@ -1504,7 +1506,7 @@ Layered MCP server snapshot with auth status, source attribution, and file diagn
 |-------|------|-------------|
 | `type` | `"mcp_servers"` | — |
 | `sessionId` | `string` | Session identifier |
-| `servers` | `Array<MCPServerConfig & { source, inherited, authMode, authScope, authMessage }>` | Effective servers with layer/auth metadata |
+| `servers` | `Array<MCPServerConfig & { source, inherited, authMode, authScope, authMessage }>` | Effective servers with layer/auth metadata. `enabled: false` servers remain listed but are skipped when agent turns load MCP tools. |
 | `files` | `Array<{ source, path, exists, editable, legacy, parseError?, serverCount }>` | File-level diagnostics per layer |
 | `warnings` | `string[]` | Optional non-fatal parse warnings |
 

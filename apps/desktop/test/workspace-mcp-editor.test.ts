@@ -339,4 +339,58 @@ describe("workspace MCP editor flow", () => {
     expect(runtime?.mcpServers).toHaveLength(1);
     expect(runtime?.mcpServers[0]?.name).toBe("local");
   });
+
+  test("setWorkspaceMcpServerEnabled sends source metadata and applies the returned snapshot", async () => {
+    jsonRpcHandlers.set("cowork/mcp/server/setEnabled", async (params) => ({
+      event: {
+        type: "mcp_servers",
+        sessionId: "jsonrpc-control",
+        servers: [
+          {
+            name: "figma-mcp",
+            transport: { type: "stdio", command: "figma-mcp" },
+            enabled: false,
+            source: "plugin",
+            inherited: false,
+            pluginId: "plugin-1",
+            pluginName: "figma-toolkit",
+            pluginDisplayName: "Figma Toolkit",
+            pluginScope: "workspace",
+            authMode: "none",
+            authScope: "workspace",
+            authMessage: "",
+          },
+        ],
+        files: [],
+        warnings: [],
+        received: params,
+      },
+    }));
+
+    await useAppStore.getState().setWorkspaceMcpServerEnabled(workspaceId, {
+      name: "figma-mcp",
+      source: "plugin",
+      enabled: false,
+      pluginId: "plugin-1",
+      pluginScope: "workspace",
+    });
+
+    const request = jsonRpcRequests.find(
+      (entry) => entry.method === "cowork/mcp/server/setEnabled",
+    );
+    expect(request?.params).toMatchObject({
+      cwd: "/tmp/workspace",
+      name: "figma-mcp",
+      source: "plugin",
+      enabled: false,
+      pluginId: "plugin-1",
+      pluginScope: "workspace",
+    });
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.mcpServers[0]).toMatchObject({
+      name: "figma-mcp",
+      enabled: false,
+    });
+  });
 });

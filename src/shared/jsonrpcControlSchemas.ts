@@ -379,6 +379,7 @@ export const mcpServerConfigSchema = z
   .object({
     name: nonEmptyTrimmedStringSchema,
     transport: mcpServerTransportSchema,
+    enabled: z.boolean().optional(),
     required: z.boolean().optional(),
     retries: z.number().int().nonnegative().optional(),
     auth: mcpServerAuthConfigSchema.optional(),
@@ -1069,6 +1070,17 @@ export const mcpServerDeleteRequestSchema = z
   })
   .strict();
 
+export const mcpServerSetEnabledRequestSchema = z
+  .object({
+    cwd: optionalNonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+    source: mcpSessionEventSourceSchema,
+    enabled: z.boolean(),
+    pluginId: z.string().trim().min(1).optional(),
+    pluginScope: z.enum(["workspace", "user"]).optional(),
+  })
+  .strict();
+
 export const mcpServerValidateRequestSchema = z
   .object({
     cwd: optionalNonEmptyTrimmedStringSchema,
@@ -1319,6 +1331,7 @@ export const jsonRpcControlRequestSchemas = {
   "cowork/mcp/servers/read": mcpServersReadRequestSchema,
   "cowork/mcp/server/upsert": mcpServerUpsertRequestSchema,
   "cowork/mcp/server/delete": mcpServerDeleteRequestSchema,
+  "cowork/mcp/server/setEnabled": mcpServerSetEnabledRequestSchema,
   "cowork/mcp/server/validate": mcpServerValidateRequestSchema,
   "cowork/mcp/server/auth/authorize": mcpServerAuthAuthorizeRequestSchema,
   "cowork/mcp/server/auth/callback": mcpServerAuthCallbackRequestSchema,
@@ -1380,6 +1393,7 @@ export const jsonRpcControlResultSchemas = {
   "cowork/mcp/servers/read": sessionEventEnvelope(mcpServersEventSchema),
   "cowork/mcp/server/upsert": sessionEventEnvelope(mcpServersEventSchema),
   "cowork/mcp/server/delete": sessionEventEnvelope(mcpServersEventSchema),
+  "cowork/mcp/server/setEnabled": sessionEventEnvelope(mcpServersEventSchema),
   "cowork/mcp/server/validate": sessionEventEnvelope(mcpValidationEventSchema),
   "cowork/mcp/server/auth/authorize": sessionEventEnvelope(
     z.union([mcpAuthChallengeEventSchema, mcpAuthResultEventSchema]),

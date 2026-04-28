@@ -51,6 +51,7 @@ const authSchema = z.discriminatedUnion("type", [
 const wrappedMcpServerConfigSchema = z
   .object({
     transport: transportSchema,
+    enabled: z.boolean().optional(),
     required: z.boolean().optional(),
     retries: z.number().finite().optional(),
     auth: authSchema.optional(),
@@ -60,6 +61,7 @@ const wrappedMcpServerConfigSchema = z
 const shorthandMcpServerConfigSchema = z.union([
   stdioTransportSchema
     .extend({
+      enabled: z.boolean().optional(),
       required: z.boolean().optional(),
       retries: z.number().finite().optional(),
       auth: authSchema.optional(),
@@ -67,6 +69,7 @@ const shorthandMcpServerConfigSchema = z.union([
     .strict(),
   httpTransportSchema
     .extend({
+      enabled: z.boolean().optional(),
       required: z.boolean().optional(),
       retries: z.number().finite().optional(),
       auth: authSchema.optional(),
@@ -123,6 +126,7 @@ export function parsePluginMcpDocument(
                   ...(config.env ? { env: config.env } : {}),
                   ...(config.cwd ? { cwd: config.cwd } : {}),
                 },
+                ...(config.enabled !== undefined ? { enabled: config.enabled } : {}),
                 ...(config.required !== undefined ? { required: config.required } : {}),
                 ...(config.retries !== undefined ? { retries: config.retries } : {}),
                 ...(config.auth ? { auth: config.auth } : {}),
@@ -134,6 +138,7 @@ export function parsePluginMcpDocument(
                   url: config.url,
                   ...(config.headers ? { headers: config.headers } : {}),
                 },
+                ...(config.enabled !== undefined ? { enabled: config.enabled } : {}),
                 ...(config.required !== undefined ? { required: config.required } : {}),
                 ...(config.retries !== undefined ? { retries: config.retries } : {}),
                 ...(config.auth ? { auth: config.auth } : {}),

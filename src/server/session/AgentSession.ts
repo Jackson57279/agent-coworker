@@ -1228,6 +1228,10 @@ export class AgentSession {
     await this.getMcpManager().delete(nameRaw);
   }
 
+  async setMcpServerEnabled(opts: Parameters<McpManager["setEnabled"]>[0]) {
+    await this.getMcpManager().setEnabled(opts);
+  }
+
   async validateMcpServer(nameRaw: string) {
     await this.getMcpManager().validate(nameRaw);
   }

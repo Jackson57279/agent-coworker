@@ -39,6 +39,7 @@ const authSchema = z.discriminatedUnion("type", [
 const mcpServerSchema = z.object({
   name: z.string().trim().min(1),
   transport: transportSchema,
+  enabled: z.boolean().optional(),
   required: z.boolean().optional(),
   retries: z.number().finite().optional(),
   auth: authSchema.optional(),

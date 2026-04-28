@@ -70,6 +70,8 @@ function createRuntimeDouble(session: Record<string, any>) {
       upsert: async (server: unknown, previousName?: string) =>
         await session.upsertMcpServer?.(server, previousName),
       delete: async (name: string) => await session.deleteMcpServer?.(name),
+      setEnabled: async (opts: Record<string, unknown>) =>
+        await session.setMcpServerEnabled?.(opts),
       validate: async (name: string) => await session.validateMcpServer?.(name),
       authorizeAuth: async (name: string) => await session.authorizeMcpServerAuth?.(name),
       callbackAuth: async (name: string, code?: string) =>
@@ -626,6 +628,58 @@ describe("JSON-RPC extracted route review fixes", () => {
     });
   });
 
+  test("mcp server setEnabled forwards source metadata and returns refreshed server list", async () => {
+    let received: Record<string, unknown> | null = null;
+    const harness = createRouteHarness({
+      setMcpServerEnabled: async (opts: Record<string, unknown>) => {
+        received = opts;
+      },
+      emitMcpServers: async () => {
+        harness.emitted.push({
+          type: "mcp_servers",
+          sessionId: "session-1",
+          servers: [
+            {
+              name: "figma",
+              transport: { type: "stdio", command: "figma" },
+              enabled: false,
+              source: "plugin",
+              inherited: false,
+              pluginId: "figma-toolkit",
+              pluginScope: "workspace",
+              authMode: "none",
+              authScope: "workspace",
+              authMessage: "",
+            },
+          ],
+          files: [],
+        });
+      },
+    });
+
+    const handlers = createMcpRouteHandlers(harness.context);
+    const response = await harness.invoke(handlers, "cowork/mcp/server/setEnabled", {
+      cwd: "C:/workspace",
+      name: "figma",
+      source: "plugin",
+      enabled: false,
+      pluginId: "figma-toolkit",
+      pluginScope: "workspace",
+    });
+
+    expect(received).toMatchObject({
+      name: "figma",
+      source: "plugin",
+      enabled: false,
+      pluginId: "figma-toolkit",
+      pluginScope: "workspace",
+    });
+    expect((response.result as any).event.servers[0]).toMatchObject({
+      name: "figma",
+      enabled: false,
+    });
+  });
+
   for (const scenario of [
     {
       method: "cowork/mcp/server/auth/authorize",
@@ -751,6 +805,31 @@ describe("JSON-RPC extracted route review fixes", () => {
     });
 
     expect(response.error?.message).toContain("Invalid MCP server configuration");
+    expect(response.result).toBeUndefined();
+    expect(emittedServers).toBe(false);
+  });
+
+  test("mcp server setEnabled stops before emitting the server list when the mutation emits an error", async () => {
+    let emittedServers = false;
+    let harness!: RouteHarness;
+    harness = createRouteHarness({
+      setMcpServerEnabled: async () => {
+        harness.emitted.push(sessionError("System MCP servers are read-only."));
+      },
+      emitMcpServers: async () => {
+        emittedServers = true;
+      },
+    });
+
+    const handlers = createMcpRouteHandlers(harness.context);
+    const response = await harness.invoke(handlers, "cowork/mcp/server/setEnabled", {
+      cwd: "C:/workspace",
+      name: "builtin",
+      source: "system",
+      enabled: false,
+    });
+
+    expect(response.error?.message).toContain("read-only");
     expect(response.result).toBeUndefined();
     expect(emittedServers).toBe(false);
   });

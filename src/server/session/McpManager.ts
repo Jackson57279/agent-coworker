@@ -1,4 +1,4 @@
-import type { MCPServerConfig } from "../../types";
+import type { MCPServerConfig, PluginScope } from "../../types";
 import { McpAuthFlow } from "./mcp/McpAuthFlow";
 import { McpRegistryFlow } from "./mcp/McpRegistryFlow";
 import { McpServerResolver } from "./mcp/McpServerResolver";
@@ -46,6 +46,16 @@ export class McpManager {
 
   async delete(nameRaw: string) {
     await this.registryFlow.delete(nameRaw);
+  }
+
+  async setEnabled(opts: {
+    name: string;
+    source: "workspace" | "user" | "plugin" | "system";
+    enabled: boolean;
+    pluginId?: string;
+    pluginScope?: PluginScope;
+  }) {
+    await this.registryFlow.setEnabled(opts);
   }
 
   async validate(nameRaw: string) {

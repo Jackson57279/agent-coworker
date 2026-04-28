@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import type { AgentConfig, MCPServerConfig } from "../../types";
+import type { AgentConfig, MCPServerConfig, PluginScope } from "../../types";
 import { resolveMcpConfigPaths } from "../configPaths";
 import {
   DEFAULT_MCP_SERVERS_DOCUMENT,
@@ -12,6 +12,8 @@ import {
 } from "./parser";
 
 const errorWithCodeSchema = z.object({ code: z.string() }).passthrough();
+
+export type MCPServerConfigSource = "workspace" | "user" | "plugin" | "system";
 
 function sortServersByName(servers: MCPServerConfig[]): MCPServerConfig[] {
   return [...servers].sort((a, b) => a.name.localeCompare(b.name));
@@ -54,6 +56,27 @@ export async function readWorkspaceMCPServersDocument(config: AgentConfig): Prom
     rawJson,
     workspaceServers,
   };
+}
+
+async function readMCPServersDocumentFile(filePath: string): Promise<MCPServerConfig[]> {
+  let rawJson = DEFAULT_MCP_SERVERS_DOCUMENT;
+  try {
+    rawJson = await fs.readFile(filePath, "utf-8");
+  } catch (error) {
+    const parsedCode = errorWithCodeSchema.safeParse(error);
+    if (!parsedCode.success || parsedCode.data.code !== "ENOENT") {
+      throw error;
+    }
+  }
+  return parseMCPServersDocument(rawJson).servers;
+}
+
+async function writeMCPServersDocumentFile(
+  filePath: string,
+  servers: MCPServerConfig[],
+): Promise<void> {
+  const payload = `${JSON.stringify({ servers: sortServersByName(servers) }, null, 2)}\n`;
+  await atomicWriteFile(filePath, payload, 0o600);
 }
 
 export async function writeWorkspaceMCPServersDocument(
@@ -132,4 +155,59 @@ export async function deleteWorkspaceMCPServer(
   const workspaceServers = await readEditableWorkspaceServers(config);
   const nextServers = workspaceServers.filter((entry) => entry.name !== name);
   await writeWorkspaceServers(config, nextServers);
+}
+
+export async function setMCPServerEnabled(opts: {
+  config: AgentConfig;
+  source: MCPServerConfigSource;
+  name: string;
+  enabled: boolean;
+  pluginId?: string;
+  pluginScope?: PluginScope;
+}): Promise<void> {
+  const name = opts.name.trim();
+  if (!name) {
+    throw new Error("mcp-servers.json: server name is required");
+  }
+
+  if (opts.source === "system") {
+    throw new Error("mcp-servers.json: system MCP servers are read-only");
+  }
+
+  if (opts.source === "plugin") {
+    if (!opts.pluginId?.trim() || !opts.pluginScope) {
+      throw new Error("mcp-servers.json: plugin MCP server toggles require plugin metadata");
+    }
+    const { setPluginMcpServerEnabled } = await import("../../plugins/overrides");
+    await setPluginMcpServerEnabled({
+      config: opts.config,
+      pluginId: opts.pluginId,
+      scope: opts.pluginScope,
+      serverName: name,
+      enabled: opts.enabled,
+    });
+    return;
+  }
+
+  const paths = resolveMcpConfigPaths(opts.config);
+  const filePath = opts.source === "workspace" ? paths.workspaceConfigFile : paths.userConfigFile;
+  const servers = await readMCPServersDocumentFile(filePath);
+  let found = false;
+  const nextServers = servers.map((server) => {
+    if (server.name !== name) {
+      return server;
+    }
+    found = true;
+    const next = { ...server };
+    if (opts.enabled) {
+      delete next.enabled;
+    } else {
+      next.enabled = false;
+    }
+    return next;
+  });
+  if (!found) {
+    throw new Error(`mcp-servers.json: server "${name}" was not found in ${opts.source} config`);
+  }
+  await writeMCPServersDocumentFile(filePath, nextServers);
 }

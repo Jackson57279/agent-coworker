@@ -345,6 +345,7 @@ export type AppStoreState = {
     server: {
       name: string;
       transport: MCPServerConfig["transport"];
+      enabled?: boolean;
       required?: boolean;
       retries?: number;
       auth?: MCPServerConfig["auth"];
@@ -352,6 +353,16 @@ export type AppStoreState = {
     previousName?: string,
   ) => Promise<void>;
   deleteWorkspaceMcpServer: (workspaceId: string, name: string) => Promise<void>;
+  setWorkspaceMcpServerEnabled: (
+    workspaceId: string,
+    server: {
+      name: string;
+      source: "workspace" | "user" | "plugin" | "system";
+      enabled: boolean;
+      pluginId?: string;
+      pluginScope?: "workspace" | "user";
+    },
+  ) => Promise<void>;
   validateWorkspaceMcpServer: (workspaceId: string, name: string) => Promise<void>;
   authorizeWorkspaceMcpServerAuth: (workspaceId: string, name: string) => Promise<void>;
   callbackWorkspaceMcpServerAuth: (

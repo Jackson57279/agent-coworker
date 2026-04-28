@@ -33,10 +33,12 @@ export {
 } from "./operations";
 export {
   isPluginEnabled,
+  isPluginMcpServerEnabled,
   isPluginSkillEnabled,
   type PluginOverrideSnapshot,
   readPluginOverrides,
   setPluginEnabled,
+  setPluginMcpServerEnabled,
   setPluginSkillEnabled,
 } from "./overrides";
 export {

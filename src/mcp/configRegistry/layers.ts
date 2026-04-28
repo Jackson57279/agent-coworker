@@ -6,7 +6,9 @@ import { z } from "zod";
 import {
   buildPluginCatalogSnapshot,
   comparePluginCatalogEntries,
+  isPluginMcpServerEnabled,
   readPluginMcpServers,
+  readPluginOverrides,
 } from "../../plugins";
 import type { AgentConfig, MCPServerConfig } from "../../types";
 import { canonicalizePathForBoundaryCheckSync, isPathInside } from "../../utils/paths";
@@ -81,6 +83,7 @@ function mergeLayers(layers: MCPConfigLayer[]): MCPRegistryServer[] {
     for (const server of layer.servers) {
       mergedByName.set(server.name, {
         ...server,
+        enabled: server.enabled !== false,
         source,
         inherited: source !== "workspace",
       });
@@ -166,7 +169,10 @@ function rebasePluginLocalTransport(
 async function readPluginLayers(
   config: AgentConfig,
 ): Promise<{ layers: MCPConfigLayer[]; warnings: string[] }> {
-  const catalog = await buildPluginCatalogSnapshot(config);
+  const [catalog, overrides] = await Promise.all([
+    buildPluginCatalogSnapshot(config),
+    readPluginOverrides(config),
+  ]);
   const layers: MCPConfigLayer[] = [];
   const warnings = [...catalog.warnings];
 
@@ -178,7 +184,19 @@ async function readPluginLayers(
     let parseError: string | undefined;
     try {
       servers = (await readPluginMcpServers(plugin.mcpPath)).map((server) =>
-        rebasePluginLocalTransport(server, plugin.rootDir),
+        rebasePluginLocalTransport(
+          {
+            ...server,
+            enabled: isPluginMcpServerEnabled(
+              plugin.id,
+              plugin.scope,
+              server.name,
+              overrides,
+              server.enabled !== false,
+            ),
+          },
+          plugin.rootDir,
+        ),
       );
     } catch (error) {
       parseError = String(error);
@@ -227,6 +245,7 @@ function mergePluginLayers(
       }
       mergedByName.set(server.name, {
         ...server,
+        enabled: server.enabled !== false,
         source: "plugin",
         inherited: layer.file.pluginScope !== "workspace",
         pluginId: layer.file.pluginId,

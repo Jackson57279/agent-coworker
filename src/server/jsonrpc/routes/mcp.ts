@@ -83,6 +83,47 @@ export function createMcpRouteHandlers(context: JsonRpcRouteContext): JsonRpcReq
       context.jsonrpc.sendResult(ws, message.id, { event: outcome });
     },
 
+    "cowork/mcp/server/setEnabled": async (ws, message) => {
+      const params = toJsonRpcParams(message.params);
+      const cwd = context.utils.resolveWorkspacePath(params, message.method);
+      const name = typeof params.name === "string" ? params.name.trim() : "";
+      const source = typeof params.source === "string" ? params.source : "";
+      const enabled = params.enabled === true;
+      const pluginId = typeof params.pluginId === "string" ? params.pluginId.trim() : undefined;
+      const pluginScope =
+        params.pluginScope === "workspace" || params.pluginScope === "user"
+          ? params.pluginScope
+          : undefined;
+      const mutationError = await captureWorkspaceControlMutationError(
+        context,
+        cwd,
+        async (runtime) =>
+          await runtime.mcp.setEnabled({
+            name,
+            source: source as "workspace" | "user" | "plugin" | "system",
+            enabled,
+            pluginId,
+            pluginScope,
+          }),
+      );
+      if (mutationError) {
+        sendSessionMutationError(context, ws, message.id, mutationError);
+        return;
+      }
+      const outcome = await captureWorkspaceControlOutcome(
+        context,
+        cwd,
+        async (runtime) => await runtime.mcp.emitServers(),
+        (event): event is Extract<SessionEvent, { type: "mcp_servers" }> =>
+          event.type === "mcp_servers",
+      );
+      if (context.utils.isSessionError(outcome)) {
+        sendSessionMutationError(context, ws, message.id, outcome);
+        return;
+      }
+      context.jsonrpc.sendResult(ws, message.id, { event: outcome });
+    },
+
     "cowork/mcp/server/validate": async (ws, message) => {
       const params = toJsonRpcParams(message.params);
       const cwd = context.utils.resolveWorkspacePath(params, message.method);

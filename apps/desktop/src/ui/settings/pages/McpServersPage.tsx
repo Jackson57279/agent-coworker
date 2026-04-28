@@ -35,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
+import { Switch } from "../../../components/ui/switch";
 import { cn } from "../../../lib/utils";
 import {
   buildServerFromDraft,
@@ -64,6 +65,7 @@ export function McpServersPage() {
   const requestWorkspaceMcpServers = useAppStore((s) => s.requestWorkspaceMcpServers);
   const upsertWorkspaceMcpServer = useAppStore((s) => s.upsertWorkspaceMcpServer);
   const deleteWorkspaceMcpServer = useAppStore((s) => s.deleteWorkspaceMcpServer);
+  const setWorkspaceMcpServerEnabled = useAppStore((s) => s.setWorkspaceMcpServerEnabled);
   const validateWorkspaceMcpServer = useAppStore((s) => s.validateWorkspaceMcpServer);
   const authorizeWorkspaceMcpServerAuth = useAppStore((s) => s.authorizeWorkspaceMcpServerAuth);
   const callbackWorkspaceMcpServerAuth = useAppStore((s) => s.callbackWorkspaceMcpServerAuth);
@@ -353,6 +355,11 @@ export function McpServersPage() {
           const apiKeyDraft = apiKeyByName[draftKey] ?? "";
           const oauthCode = oauthCodeByName[draftKey] ?? "";
           const isExpanded = expandedServers[server.name] ?? false;
+          const serverEnabled = server.enabled !== false;
+          const canToggle =
+            server.source !== "system" &&
+            (server.source !== "plugin" ||
+              (Boolean(server.pluginId) && Boolean(server.pluginScope)));
 
           return (
             <div
@@ -379,6 +386,11 @@ export function McpServersPage() {
                       {sourceLabel(server.source)}
                     </Badge>
                   )}
+                  {!serverEnabled ? (
+                    <Badge variant="secondary" className="h-5 text-[10px] uppercase">
+                      Disabled
+                    </Badge>
+                  ) : null}
                   {validation?.ok ? (
                     <CheckCircle2Icon className="w-4 h-4 text-success" />
                   ) : validation && !validation.ok ? (
@@ -387,6 +399,26 @@ export function McpServersPage() {
                 </button>
 
                 <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {serverEnabled ? "Enabled" : "Disabled"}
+                    </span>
+                    <Switch
+                      checked={serverEnabled}
+                      disabled={!canToggle}
+                      aria-label={`Enable ${server.name}`}
+                      onCheckedChange={(enabled) => {
+                        if (!workspace || !canToggle) return;
+                        void setWorkspaceMcpServerEnabled(workspace.id, {
+                          name: server.name,
+                          source: server.source,
+                          enabled,
+                          ...(server.pluginId ? { pluginId: server.pluginId } : {}),
+                          ...(server.pluginScope ? { pluginScope: server.pluginScope } : {}),
+                        });
+                      }}
+                    />
+                  </div>
                   {canEdit && (
                     <Button
                       variant="ghost"
