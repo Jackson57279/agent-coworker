@@ -166,6 +166,7 @@ rl.on("line", (line) => {
         title: "Agent Coworker",
         version: VERSION,
       },
+      capabilities: { experimentalApi: true },
     });
   });
 

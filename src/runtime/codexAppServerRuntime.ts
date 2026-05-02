@@ -2,7 +2,7 @@ import {
   type CodexAppServerClient,
   type CodexAppServerJsonRpcNotification,
   type CodexAppServerJsonRpcRequest,
-  codexAppServerClientInfo,
+  codexAppServerInitializeParams,
   startCodexAppServerClient,
 } from "../providers/codexAppServerClient";
 import { isCodexAppServerContinuationState } from "../shared/providerContinuation";
@@ -309,9 +309,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
       let unregisterSteerHandler: (() => void) | undefined;
       try {
         params.abortSignal?.throwIfAborted();
-        await client.request("initialize", {
-          clientInfo: codexAppServerClientInfo(),
-        });
+        await client.request("initialize", codexAppServerInitializeParams());
         client.notify("initialized");
 
         const currentState = isCodexAppServerContinuationState(params.providerState)

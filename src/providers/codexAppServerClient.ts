@@ -51,6 +51,16 @@ export function codexAppServerClientInfo(): { name: string; title: string; versi
   };
 }
 
+export function codexAppServerInitializeParams(): {
+  clientInfo: ReturnType<typeof codexAppServerClientInfo>;
+  capabilities: { experimentalApi: boolean };
+} {
+  return {
+    clientInfo: codexAppServerClientInfo(),
+    capabilities: { experimentalApi: true },
+  };
+}
+
 function codexCommand(): { command: string; args: string[] } {
   const command = process.env.COWORK_CODEX_APP_SERVER_COMMAND?.trim();
   const args = process.env.COWORK_CODEX_APP_SERVER_ARGS?.trim();
@@ -214,9 +224,7 @@ export async function withCodexAppServerClient<T>(
 ): Promise<T> {
   const client = startCodexAppServerClient(opts);
   try {
-    await client.request("initialize", {
-      clientInfo: codexAppServerClientInfo(),
-    });
+    await client.request("initialize", codexAppServerInitializeParams());
     client.notify("initialized");
     return await fn(client);
   } finally {
