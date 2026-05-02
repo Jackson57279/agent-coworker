@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const OPENAI_CONTINUATION_PROVIDER_NAMES = ["openai", "codex-cli"] as const;
+export const OPENAI_CONTINUATION_PROVIDER_NAMES = ["openai"] as const;
 export type OpenAiContinuationProvider = (typeof OPENAI_CONTINUATION_PROVIDER_NAMES)[number];
 
 export type OpenAiContinuationState = {
@@ -37,13 +37,5 @@ export function continuationMatchesTarget(
   if (!state) return false;
   if (state.provider !== target.provider) return false;
   if (state.model !== target.model) return false;
-  if (
-    target.provider === "codex-cli" &&
-    state.accountId &&
-    target.accountId &&
-    state.accountId !== target.accountId
-  ) {
-    return false;
-  }
   return true;
 }

@@ -49,25 +49,25 @@ describe("runtime selection", () => {
     expect(createRuntime(config).name).toBe("openai-responses");
   });
 
-  test("defaults codex-cli provider to the OpenAI Responses runtime", () => {
+  test("defaults codex-cli provider to the Codex app-server runtime", () => {
     const config = makeConfig({
       provider: "codex-cli",
       model: "gpt-5.4",
       preferredChildModel: "gpt-5.4",
     });
-    expect(resolveRuntimeName(config)).toBe("openai-responses");
-    expect(createRuntime(config).name).toBe("openai-responses");
+    expect(resolveRuntimeName(config)).toBe("codex-app-server");
+    expect(createRuntime(config).name).toBe("codex-app-server");
   });
 
-  test("treats legacy pi runtime config as the OpenAI Responses runtime for codex-cli", () => {
+  test("treats legacy pi runtime config as the Codex app-server runtime for codex-cli", () => {
     const config = makeConfig({
       provider: "codex-cli",
       model: "gpt-5.4",
       preferredChildModel: "gpt-5.4",
       runtime: "pi",
     });
-    expect(resolveRuntimeName(config)).toBe("openai-responses");
-    expect(createRuntime(config).name).toBe("openai-responses");
+    expect(resolveRuntimeName(config)).toBe("codex-app-server");
+    expect(createRuntime(config).name).toBe("codex-app-server");
   });
 
   for (const { provider, model } of PI_PROVIDER_CASES) {

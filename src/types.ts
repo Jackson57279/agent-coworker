@@ -47,7 +47,12 @@ export function resolveChildModelRoutingMode(v: unknown): ChildModelRoutingMode 
   return parsed.success ? parsed.data : null;
 }
 
-export const RUNTIME_NAMES = ["pi", "openai-responses", "google-interactions"] as const;
+export const RUNTIME_NAMES = [
+  "pi",
+  "openai-responses",
+  "google-interactions",
+  "codex-app-server",
+] as const;
 
 export type RuntimeName = (typeof RUNTIME_NAMES)[number];
 const runtimeNameSchema = z.enum(RUNTIME_NAMES);
@@ -58,7 +63,10 @@ export function resolveRuntimeName(v: unknown): RuntimeName | null {
 }
 
 export function defaultRuntimeNameForProvider(provider: ProviderName): RuntimeName {
-  if (provider === "openai" || provider === "codex-cli") {
+  if (provider === "codex-cli") {
+    return "codex-app-server";
+  }
+  if (provider === "openai") {
     return "openai-responses";
   }
   if (provider === "google") {
@@ -71,13 +79,20 @@ export function normalizeRuntimeNameForProvider(
   provider: ProviderName,
   runtime: RuntimeName | null | undefined,
 ): RuntimeName {
-  if (provider === "openai" || provider === "codex-cli") {
+  if (provider === "codex-cli") {
+    return "codex-app-server";
+  }
+  if (provider === "openai") {
     return "openai-responses";
   }
   if (provider === "google") {
     return "google-interactions";
   }
-  if (runtime === "openai-responses" || runtime === "google-interactions") {
+  if (
+    runtime === "openai-responses" ||
+    runtime === "google-interactions" ||
+    runtime === "codex-app-server"
+  ) {
     return defaultRuntimeNameForProvider(provider);
   }
   return runtime ?? defaultRuntimeNameForProvider(provider);

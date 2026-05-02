@@ -2,7 +2,7 @@ import type { ProviderContinuationState } from "../shared/providerContinuation";
 import type { AgentConfig, ModelMessage } from "../types";
 
 export type RuntimeModelRawEvent = {
-  format: "openai-responses-v1" | "google-interactions-v1";
+  format: "openai-responses-v1" | "google-interactions-v1" | "codex-app-server-v2";
   event: Record<string, unknown>;
 };
 
