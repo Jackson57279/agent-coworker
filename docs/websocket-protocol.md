@@ -8,7 +8,7 @@ Cowork supports one live WebSocket protocol on `/ws`: JSON-RPC-lite. The canonic
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.31`
+- Current protocol version: `7.32`
 - WebSocket protocol mode: `jsonrpc`
 
 ## Mobile direct HTTP/3 transport
@@ -457,6 +457,13 @@ The remainder of this document describes the JSON-RPC method and notification pa
 - [Session event payload shapes](#session-event-payload-shapes)
 
 ## Protocol v7 Notes
+
+Changes in `7.32`:
+
+- Added JSON-RPC controls for the runtime-managed Codex app-server payload:
+  - `cowork/provider/codexAppServer/status` returns `{ status }` with source, version, latest version, and update availability.
+  - `cowork/provider/codexAppServer/update` downloads/promotes the latest Cowork-managed Codex app-server under `~/.cowork/codex-app-server`.
+- Desktop/runtime Codex app-server resolution now prefers explicit overrides, then a Cowork-managed install, then a system `codex app-server`, and downloads a managed latest release only when missing.
 
 Changes in `7.31`:
 

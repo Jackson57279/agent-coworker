@@ -557,6 +557,15 @@ describe("desktop providers page", () => {
       } as any,
       providerLastAuthChallenge: null,
       providerLastAuthResult: null,
+      codexAppServerStatus: {
+        available: true,
+        source: "managed",
+        version: "0.128.0",
+        latestVersion: "0.129.0",
+        updateAvailable: true,
+        managedPath: "/Users/max/.cowork/codex-app-server/current/darwin-arm64/codex-app-server",
+        message: "Using Cowork-managed Codex app-server.",
+      },
     });
 
     const html = renderToStaticMarkup(
@@ -686,6 +695,11 @@ describe("desktop providers page", () => {
     expect(html).toContain("0% remaining");
     expect(html).toContain("Using credits");
     expect(html).toContain("42.13 remaining");
+    expect(html).toContain("App server");
+    expect(html).toContain("Cowork managed");
+    expect(html).toContain("0.128.0");
+    expect(html).toContain("0.129.0");
+    expect(html).toContain("Using Cowork-managed Codex app-server.");
     expect(html).not.toContain("Allowed");
     expect(html).not.toContain("Limit reached");
     expect(html).not.toContain("Rate limited");

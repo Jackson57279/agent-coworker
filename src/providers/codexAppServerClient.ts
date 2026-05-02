@@ -1,8 +1,9 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 
 import { asRecord, asString } from "../runtime/piRuntimeOptions";
 import { VERSION } from "../version";
+import { resolveCodexAppServerCommand, spawnCodexAppServer } from "./codexAppServerResolver";
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -40,9 +41,6 @@ export type CodexAppServerClientOptions = {
   onServerRequest?: CodexAppServerRequestHandler;
 };
 
-const DEFAULT_CODEX_COMMAND = "codex";
-const DEFAULT_CODEX_ARGS = ["app-server"] as const;
-
 export function codexAppServerClientInfo(): { name: string; title: string; version: string } {
   return {
     name: "agent-coworker",
@@ -61,24 +59,11 @@ export function codexAppServerInitializeParams(): {
   };
 }
 
-function codexCommand(): { command: string; args: string[] } {
-  const command = process.env.COWORK_CODEX_APP_SERVER_COMMAND?.trim();
-  const args = process.env.COWORK_CODEX_APP_SERVER_ARGS?.trim();
-  return {
-    command: command || DEFAULT_CODEX_COMMAND,
-    args: args ? args.split(/\s+/).filter(Boolean) : command ? [] : [...DEFAULT_CODEX_ARGS],
-  };
-}
-
-export function startCodexAppServerClient(
+export async function startCodexAppServerClient(
   opts: CodexAppServerClientOptions = {},
-): CodexAppServerClient {
-  const { command, args } = codexCommand();
-  const child = spawn(command, args, {
-    ...(opts.cwd ? { cwd: opts.cwd } : {}),
-    env: process.env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+): Promise<CodexAppServerClient> {
+  const command = await resolveCodexAppServerCommand();
+  const child = spawnCodexAppServer(command, { cwd: opts.cwd, env: process.env });
   const pending = new Map<number | string, PendingRequest>();
   const listeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
   let nextId = 1;
@@ -222,7 +207,7 @@ export async function withCodexAppServerClient<T>(
   fn: (client: CodexAppServerClient) => Promise<T>,
   opts: CodexAppServerClientOptions = {},
 ): Promise<T> {
-  const client = startCodexAppServerClient(opts);
+  const client = await startCodexAppServerClient(opts);
   try {
     await client.request("initialize", codexAppServerInitializeParams());
     client.notify("initialized");

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, RefreshCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAppStore } from "../../../app/store";
@@ -72,8 +72,13 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
   const authorizeProviderAuth = useAppStore((s) => s.authorizeProviderAuth);
   const callbackProviderAuth = useAppStore((s) => s.callbackProviderAuth);
   const refreshProviderStatus = useAppStore((s) => s.refreshProviderStatus);
+  const checkCodexAppServerStatus = useAppStore((s) => s.checkCodexAppServerStatus);
+  const updateCodexAppServer = useAppStore((s) => s.updateCodexAppServer);
   const providerStatusByNameFromStore = useAppStore((s) => s.providerStatusByName);
   const providerStatusRefreshingFromStore = useAppStore((s) => s.providerStatusRefreshing);
+  const codexAppServerStatusFromStore = useAppStore((s) => s.codexAppServerStatus);
+  const codexAppServerCheckingFromStore = useAppStore((s) => s.codexAppServerChecking);
+  const codexAppServerUpdatingFromStore = useAppStore((s) => s.codexAppServerUpdating);
   const providerCatalogFromStore = useAppStore((s) => s.providerCatalog);
   const providerAuthMethodsByProviderFromStore = useAppStore(
     (s) => s.providerAuthMethodsByProvider,
@@ -86,6 +91,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
   const providerStatusByName = serverState?.providerStatusByName ?? providerStatusByNameFromStore;
   const providerStatusRefreshing =
     serverState?.providerStatusRefreshing ?? providerStatusRefreshingFromStore;
+  const codexAppServerStatus = serverState?.codexAppServerStatus ?? codexAppServerStatusFromStore;
+  const codexAppServerChecking =
+    serverState?.codexAppServerChecking ?? codexAppServerCheckingFromStore;
+  const codexAppServerUpdating =
+    serverState?.codexAppServerUpdating ?? codexAppServerUpdatingFromStore;
   const providerCatalog = serverState?.providerCatalog ?? providerCatalogFromStore;
   const providerAuthMethodsByProvider =
     serverState?.providerAuthMethodsByProvider ?? providerAuthMethodsByProviderFromStore;
@@ -178,6 +188,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     if (!canConnectProvider) return;
     void refreshProviderStatus();
   }, [canConnectProvider, refreshProviderStatus]);
+
+  useEffect(() => {
+    if (!canConnectProvider) return;
+    void checkCodexAppServerStatus({ checkLatest: false });
+  }, [canConnectProvider, checkCodexAppServerStatus]);
 
   const settingsChrome = useOptionalSettingsChrome();
   useEffect(() => {
@@ -569,6 +584,14 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const visibleRateLimits = Array.isArray(status?.usage?.rateLimits)
       ? status.usage.rateLimits.filter(isVisibleUsageRateLimit)
       : [];
+    const codexSourceLabel =
+      codexAppServerStatus?.source === "system"
+        ? "System"
+        : codexAppServerStatus?.source === "managed"
+          ? "Cowork managed"
+          : codexAppServerStatus?.source === "override"
+            ? "Override"
+            : "Not installed";
 
     if (provider === "lmstudio") {
       const lmStudioEnabled = providerUiState.lmstudio.enabled;
@@ -908,6 +931,64 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
               ) : typeof status?.message === "string" && status.message.trim() ? (
                 <div className="border-t border-border/70 pt-4 text-sm text-muted-foreground">
                   {status.message}
+                </div>
+              ) : null}
+
+              {provider === "codex-cli" ? (
+                <div className="space-y-2 border-t border-border/70 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      App server
+                    </div>
+                    <Badge variant="secondary">{codexSourceLabel}</Badge>
+                  </div>
+                  <div className="grid gap-x-3 gap-y-1 text-sm sm:grid-cols-[5.75rem_minmax(0,1fr)]">
+                    {codexAppServerStatus?.version ? (
+                      <>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Version
+                        </div>
+                        <div className="text-sm text-foreground/95">
+                          {codexAppServerStatus.version}
+                        </div>
+                      </>
+                    ) : null}
+                    {codexAppServerStatus?.latestVersion ? (
+                      <>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Latest
+                        </div>
+                        <div className="text-sm text-foreground/95">
+                          {codexAppServerStatus.latestVersion}
+                        </div>
+                      </>
+                    ) : null}
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Status
+                    </div>
+                    <div className="text-sm text-foreground/95">
+                      {codexAppServerStatus?.message ?? "Checking Codex app-server."}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      type="button"
+                      disabled={codexAppServerChecking || codexAppServerUpdating}
+                      onClick={() => void checkCodexAppServerStatus({ checkLatest: true })}
+                    >
+                      <RefreshCcwIcon data-icon="inline-start" />
+                      {codexAppServerChecking ? "Checking..." : "Check"}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={codexAppServerUpdating || codexAppServerChecking}
+                      onClick={() => void updateCodexAppServer()}
+                    >
+                      <DownloadIcon data-icon="inline-start" />
+                      {codexAppServerUpdating ? "Updating..." : "Update"}
+                    </Button>
+                  </div>
                 </div>
               ) : null}
 

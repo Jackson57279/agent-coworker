@@ -1496,6 +1496,19 @@ export function createControlSocketHelpers(
     }
   }
 
+  async function requestJsonRpcControl(
+    get: StoreGet,
+    set: StoreSet,
+    workspaceId: string,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (isWorkspaceDisposed(workspaceId)) {
+      throw new Error("Workspace control session was disposed.");
+    }
+    return await requestJsonRpc(get, set, workspaceId, method, params);
+  }
+
   function disposeWorkspaceControlState(workspaceId: string) {
     const currentGet = getControlStoreGet(workspaceId);
     const currentSet = getControlStoreSet(workspaceId);
@@ -1540,6 +1553,7 @@ export function createControlSocketHelpers(
     waitForControlSession,
     requestWorkspaceSessions,
     requestSessionSnapshot,
+    requestJsonRpcControl,
     requestJsonRpcControlEvent,
     __internal: {
       getWorkspaceStateSnapshot: (workspaceId: string) => ({

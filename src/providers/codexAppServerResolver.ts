@@ -1,0 +1,496 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { resolveAuthHomeDir } from "../utils/authHome";
+
+export type CodexAppServerSource = "override" | "system" | "managed";
+
+export type CodexAppServerCommand = {
+  command: string;
+  args: string[];
+  source: CodexAppServerSource;
+  version?: string;
+};
+
+export type CodexAppServerInstallStatus = {
+  available: boolean;
+  source: CodexAppServerSource | "missing";
+  command?: string;
+  args?: string[];
+  version?: string;
+  latestVersion?: string;
+  updateAvailable?: boolean;
+  managedPath?: string;
+  message: string;
+};
+
+type BuildTarget = {
+  platform: NodeJS.Platform;
+  arch: string;
+};
+
+type GitHubReleaseAsset = {
+  name?: unknown;
+  browser_download_url?: unknown;
+};
+
+type GitHubReleaseResponse = {
+  tag_name?: unknown;
+  assets?: unknown;
+};
+
+type ProcessResult = {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  error?: string;
+};
+
+export type CodexAppServerResolverOverrides = {
+  fetchImpl?: typeof fetch;
+  spawnForResult?: (command: string, args: string[]) => Promise<ProcessResult>;
+  spawnAppServer?: typeof spawn;
+  homeDir?: string;
+  platform?: NodeJS.Platform;
+  arch?: string;
+};
+
+const DEFAULT_CODEX_COMMAND = "codex";
+const DEFAULT_CODEX_ARGS = ["app-server"] as const;
+const CODEX_RELEASES_LATEST_URL = "https://api.github.com/repos/openai/codex/releases/latest";
+const CODEX_RELEASE_TAG_URL = "https://api.github.com/repos/openai/codex/releases/tags";
+const CODEX_USER_AGENT = "agent-coworker-codex-app-server-runtime";
+const inFlightInstalls = new Map<string, Promise<CodexAppServerCommand>>();
+
+function normalizeBuildArch(arch: string): string {
+  if (arch === "x64" || arch === "arm64") return arch;
+  throw new Error(`Unsupported Codex app-server architecture: ${arch}`);
+}
+
+function currentTarget(overrides: CodexAppServerResolverOverrides = {}): BuildTarget {
+  return {
+    platform: overrides.platform ?? process.platform,
+    arch: normalizeBuildArch(overrides.arch ?? process.arch),
+  };
+}
+
+function resolveTargetTriple(target: BuildTarget): string {
+  if (target.platform === "win32") {
+    if (target.arch === "x64") return "x86_64-pc-windows-msvc";
+    if (target.arch === "arm64") return "aarch64-pc-windows-msvc";
+  }
+  if (target.platform === "darwin") {
+    if (target.arch === "x64") return "x86_64-apple-darwin";
+    if (target.arch === "arm64") return "aarch64-apple-darwin";
+  }
+  if (target.platform === "linux") {
+    if (target.arch === "x64") return "x86_64-unknown-linux-musl";
+    if (target.arch === "arm64") return "aarch64-unknown-linux-musl";
+  }
+  throw new Error(`Unsupported Codex app-server target: ${target.platform}/${target.arch}`);
+}
+
+function resolveCodexAppServerAssetName(target: BuildTarget): string {
+  const triple = resolveTargetTriple(target);
+  return target.platform === "win32"
+    ? `codex-app-server-${triple}.exe`
+    : `codex-app-server-${triple}.tar.gz`;
+}
+
+function normalizeCodexReleaseVersion(tagName: string): string {
+  return tagName.startsWith("rust-v") ? tagName.slice("rust-v".length) : tagName;
+}
+
+function codexReleaseTag(version: string): string {
+  const trimmed = version.trim();
+  if (!trimmed) throw new Error("Codex app-server version cannot be empty.");
+  return trimmed.startsWith("rust-v") ? trimmed : `rust-v${trimmed}`;
+}
+
+function managedRoot(homeDir: string): string {
+  return path.join(homeDir, ".cowork", "codex-app-server");
+}
+
+function managedExecutablePath(homeDir: string, version: string, target: BuildTarget): string {
+  const ext = target.platform === "win32" ? ".exe" : "";
+  return path.join(
+    managedRoot(homeDir),
+    "versions",
+    version,
+    `${target.platform}-${target.arch}`,
+    `codex-app-server${ext}`,
+  );
+}
+
+function managedCurrentPath(homeDir: string, target: BuildTarget): string {
+  const ext = target.platform === "win32" ? ".exe" : "";
+  return path.join(
+    managedRoot(homeDir),
+    "current",
+    `${target.platform}-${target.arch}`,
+    `codex-app-server${ext}`,
+  );
+}
+
+function parseCodexVersion(output: string): string | undefined {
+  const match = output.match(/(?:codex(?:-cli)?\s+)?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/);
+  return match?.[1];
+}
+
+function compareVersions(a: string | undefined, b: string | undefined): number {
+  if (!a || !b) return 0;
+  const left = a.split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  const right = b.split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const leftPart = Number.isFinite(left[index] ?? NaN) ? (left[index] as number) : 0;
+    const rightPart = Number.isFinite(right[index] ?? NaN) ? (right[index] as number) : 0;
+    if (leftPart !== rightPart) return leftPart > rightPart ? 1 : -1;
+  }
+  return 0;
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fs.stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultSpawnForResult(command: string, args: string[]): Promise<ProcessResult> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve({ ok: false, stdout, stderr, error: "Timed out." });
+    }, 5_000);
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      resolve({ ok: false, stdout, stderr, error: error.message });
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      resolve({ ok: code === 0, stdout, stderr });
+    });
+  });
+}
+
+async function readVersionFile(executablePath: string): Promise<string | undefined> {
+  try {
+    const raw = await fs.readFile(`${executablePath}.version`, "utf8");
+    return raw.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveOverrideCommand(
+  overrides: CodexAppServerResolverOverrides,
+): Promise<CodexAppServerCommand | null> {
+  const command = process.env.COWORK_CODEX_APP_SERVER_COMMAND?.trim();
+  const rawArgs = process.env.COWORK_CODEX_APP_SERVER_ARGS?.trim();
+  if (!command) return null;
+  return {
+    command,
+    args: rawArgs ? rawArgs.split(/\s+/).filter(Boolean) : [],
+    source: "override",
+  };
+}
+
+async function resolveSystemCommand(
+  overrides: CodexAppServerResolverOverrides,
+): Promise<CodexAppServerCommand | null> {
+  const spawnForResult = overrides.spawnForResult ?? defaultSpawnForResult;
+  const result = await spawnForResult(DEFAULT_CODEX_COMMAND, ["--version"]);
+  if (!result.ok) return null;
+  return {
+    command: DEFAULT_CODEX_COMMAND,
+    args: [...DEFAULT_CODEX_ARGS],
+    source: "system",
+    version: parseCodexVersion(`${result.stdout}\n${result.stderr}`),
+  };
+}
+
+async function resolveManagedCommand(
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<CodexAppServerCommand | null> {
+  const target = currentTarget(overrides);
+  const homeDir = overrides.homeDir ?? resolveAuthHomeDir();
+  const command = managedCurrentPath(homeDir, target);
+  if (!(await pathExists(command))) return null;
+  return {
+    command,
+    args: [],
+    source: "managed",
+    version: await readVersionFile(command),
+  };
+}
+
+async function fetchCodexRelease(
+  opts: { version?: string },
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<{ tagName: string; version: string; assets: GitHubReleaseAsset[] }> {
+  const fetchImpl = overrides.fetchImpl ?? fetch;
+  const url = opts.version
+    ? `${CODEX_RELEASE_TAG_URL}/${codexReleaseTag(opts.version)}`
+    : CODEX_RELEASES_LATEST_URL;
+  const response = await fetchImpl(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": CODEX_USER_AGENT,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to read Codex app-server release metadata: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const release = (await response.json()) as GitHubReleaseResponse;
+  const tagName = typeof release.tag_name === "string" ? release.tag_name : "";
+  if (!tagName) throw new Error("Codex app-server release metadata did not include tag_name.");
+  const assets = Array.isArray(release.assets)
+    ? release.assets.filter((asset): asset is GitHubReleaseAsset => Boolean(asset))
+    : [];
+  return { tagName, version: normalizeCodexReleaseVersion(tagName), assets };
+}
+
+function findReleaseAsset(assets: GitHubReleaseAsset[], assetName: string): string {
+  const asset = assets.find((candidate) => candidate.name === assetName);
+  const downloadUrl = asset?.browser_download_url;
+  if (typeof downloadUrl !== "string" || !downloadUrl) {
+    throw new Error(`Codex app-server release did not include required asset ${assetName}.`);
+  }
+  return downloadUrl;
+}
+
+async function downloadFile(
+  url: string,
+  dest: string,
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<void> {
+  const fetchImpl = overrides.fetchImpl ?? fetch;
+  const response = await fetchImpl(url, {
+    headers: {
+      Accept: "application/octet-stream",
+      "User-Agent": CODEX_USER_AGENT,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download Codex app-server: ${response.status} ${response.statusText}`,
+    );
+  }
+  await fs.writeFile(dest, Buffer.from(await response.arrayBuffer()));
+}
+
+async function extractTarGz(archivePath: string, destDir: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("tar", ["-xzf", archivePath, "-C", destDir], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Failed to extract Codex app-server archive: ${stderr.trim()}`));
+      }
+    });
+  });
+}
+
+async function findFileRecursive(dir: string, wantedBasename: string): Promise<string | null> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name === wantedBasename) return path.join(dir, entry.name);
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findFileRecursive(path.join(dir, entry.name), wantedBasename);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function installCodexAppServer(
+  opts: { version?: string; force?: boolean } = {},
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<CodexAppServerCommand> {
+  const target = currentTarget(overrides);
+  const homeDir = overrides.homeDir ?? resolveAuthHomeDir();
+  const release = await fetchCodexRelease({ version: opts.version }, overrides);
+  const executablePath = managedExecutablePath(homeDir, release.version, target);
+  const currentPath = managedCurrentPath(homeDir, target);
+  const key = `${target.platform}-${target.arch}-${release.version}`;
+  const existing = await pathExists(executablePath);
+  if (existing && !opts.force) {
+    await promoteManagedInstall(executablePath, currentPath, release.version, target);
+    return { command: currentPath, args: [], source: "managed", version: release.version };
+  }
+
+  const inFlight = inFlightInstalls.get(key);
+  if (inFlight) return await inFlight;
+
+  const installPromise: Promise<CodexAppServerCommand> = (async () => {
+    const assetName = resolveCodexAppServerAssetName(target);
+    const downloadUrl = findReleaseAsset(release.assets, assetName);
+    const parent = path.dirname(executablePath);
+    const tempRoot = path.join(os.tmpdir(), `cowork-codex-app-server-${process.pid}-${Date.now()}`);
+    await fs.mkdir(parent, { recursive: true });
+    await fs.mkdir(tempRoot, { recursive: true });
+    try {
+      const assetPath = path.join(tempRoot, assetName);
+      await downloadFile(downloadUrl, assetPath, overrides);
+      if (assetName.endsWith(".tar.gz")) {
+        const extractDir = path.join(tempRoot, "extract");
+        await fs.mkdir(extractDir, { recursive: true });
+        await extractTarGz(assetPath, extractDir);
+        const extracted =
+          (await findFileRecursive(extractDir, "codex-app-server")) ??
+          (await findFileRecursive(extractDir, assetName.slice(0, -".tar.gz".length)));
+        if (!extracted) throw new Error(`Unable to find codex-app-server in ${assetName}.`);
+        await fs.copyFile(extracted, executablePath);
+        await fs.chmod(executablePath, 0o755);
+      } else {
+        await fs.copyFile(assetPath, executablePath);
+      }
+      await fs.writeFile(`${executablePath}.version`, `${release.version}\n`, "utf8");
+      await promoteManagedInstall(executablePath, currentPath, release.version, target);
+      return {
+        command: currentPath,
+        args: [],
+        source: "managed" as const,
+        version: release.version,
+      };
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  })();
+
+  inFlightInstalls.set(key, installPromise);
+  try {
+    return await installPromise;
+  } finally {
+    inFlightInstalls.delete(key);
+  }
+}
+
+async function promoteManagedInstall(
+  executablePath: string,
+  currentPath: string,
+  version: string,
+  target: BuildTarget,
+): Promise<void> {
+  await fs.mkdir(path.dirname(currentPath), { recursive: true });
+  await fs.copyFile(executablePath, currentPath);
+  if (target.platform !== "win32") await fs.chmod(currentPath, 0o755);
+  await fs.writeFile(`${currentPath}.version`, `${version}\n`, "utf8");
+}
+
+export async function resolveCodexAppServerCommand(
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<CodexAppServerCommand> {
+  const override = await resolveOverrideCommand(overrides);
+  if (override) return override;
+  const managed = await resolveManagedCommand(overrides);
+  if (managed) return managed;
+  const system = await resolveSystemCommand(overrides);
+  if (system) return system;
+  return await installCodexAppServer({}, overrides);
+}
+
+export async function getCodexAppServerInstallStatus(
+  opts: { checkLatest?: boolean } = {},
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<CodexAppServerInstallStatus> {
+  const latest = opts.checkLatest ? await fetchCodexRelease({}, overrides).catch(() => null) : null;
+  const command =
+    (await resolveOverrideCommand(overrides)) ??
+    (await resolveManagedCommand(overrides)) ??
+    (await resolveSystemCommand(overrides));
+  if (!command) {
+    return {
+      available: false,
+      source: "missing",
+      latestVersion: latest?.version,
+      message: "Codex app-server is not installed. Cowork will download it before first use.",
+    };
+  }
+  const updateAvailable = compareVersions(command.version, latest?.version) < 0;
+  return {
+    available: true,
+    source: command.source,
+    command: command.command,
+    args: command.args,
+    version: command.version,
+    latestVersion: latest?.version,
+    updateAvailable,
+    ...(command.source === "managed" ? { managedPath: command.command } : {}),
+    message:
+      command.source === "system"
+        ? "Using the Codex installation on PATH."
+        : command.source === "managed"
+          ? "Using Cowork-managed Codex app-server."
+          : "Using explicit Codex app-server override.",
+  };
+}
+
+export async function updateManagedCodexAppServer(
+  opts: { version?: string; force?: boolean } = {},
+  overrides: CodexAppServerResolverOverrides = {},
+): Promise<CodexAppServerInstallStatus> {
+  const command = await installCodexAppServer(opts, overrides);
+  const latest = opts.version ? null : await fetchCodexRelease({}, overrides).catch(() => null);
+  return {
+    available: true,
+    source: command.source,
+    command: command.command,
+    args: command.args,
+    version: command.version,
+    latestVersion: latest?.version ?? command.version,
+    updateAvailable: compareVersions(command.version, latest?.version ?? command.version) < 0,
+    managedPath: command.command,
+    message: `Installed Cowork-managed Codex app-server ${command.version ?? "latest"}.`,
+  };
+}
+
+export function spawnCodexAppServer(
+  command: CodexAppServerCommand,
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): ChildProcessWithoutNullStreams {
+  return spawn(command.command, command.args, {
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    env: opts.env ?? process.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
+
+export const __internal = {
+  parseCodexVersion,
+  compareVersions,
+  resolveCodexAppServerAssetName,
+  managedExecutablePath,
+  managedCurrentPath,
+  installCodexAppServer,
+  resolveSystemCommand,
+  resolveManagedCommand,
+} as const;

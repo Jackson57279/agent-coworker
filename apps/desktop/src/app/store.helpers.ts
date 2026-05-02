@@ -6,7 +6,13 @@ import type {
 import { createDefaultUpdaterState, type UpdaterState } from "../lib/desktopApi";
 import { startWorkspaceServer } from "../lib/desktopCommands";
 import { fallbackAuthMethods } from "../lib/providerDisplayNames";
-import type { MCPServerConfig, ProviderName, SessionEvent, TodoItem } from "../lib/wsProtocol";
+import type {
+  CodexAppServerInstallStatus,
+  MCPServerConfig,
+  ProviderName,
+  SessionEvent,
+  TodoItem,
+} from "../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../lib/wsProtocol";
 import {
   buildContextPreamble,
@@ -179,6 +185,9 @@ export type AppStoreState = {
   providerStatusByName: Partial<Record<ProviderName, ProviderStatus>>;
   providerStatusLastUpdatedAt: string | null;
   providerStatusRefreshing: boolean;
+  codexAppServerStatus: CodexAppServerInstallStatus | null;
+  codexAppServerChecking: boolean;
+  codexAppServerUpdating: boolean;
   providerCatalog: ProviderCatalogEntry[];
   providerDefaultModelByProvider: Record<string, string>;
   providerConnected: ProviderName[];
@@ -430,6 +439,8 @@ export type AppStoreState = {
   requestProviderCatalog: () => Promise<void>;
   requestProviderAuthMethods: () => Promise<void>;
   refreshProviderStatus: (opts?: { refreshBedrockDiscovery?: boolean }) => Promise<void>;
+  checkCodexAppServerStatus: (opts?: { checkLatest?: boolean }) => Promise<void>;
+  updateCodexAppServer: () => Promise<void>;
   setLmStudioEnabled: (enabled: boolean) => Promise<void>;
   setLmStudioModelVisible: (modelId: string, visible: boolean) => Promise<void>;
 
@@ -504,6 +515,7 @@ const {
   waitForControlSession,
   requestWorkspaceSessions,
   requestSessionSnapshot,
+  requestJsonRpcControl,
   requestJsonRpcControlEvent,
   __internal: __controlSocketInternal,
 } = createControlSocketHelpers({
@@ -689,6 +701,7 @@ export {
   RUNTIME,
   reactivateWorkspaceJsonRpcState,
   rememberPendingThreadSteer,
+  requestJsonRpcControl,
   requestJsonRpcControlEvent,
   requestSessionSnapshot,
   requestWorkspaceSessions,

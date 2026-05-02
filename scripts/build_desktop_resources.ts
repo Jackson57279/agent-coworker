@@ -137,7 +137,7 @@ async function main() {
   const includeDocs = process.env.COWORK_BUNDLE_DESKTOP_DOCS === "1";
   const codexAppServerVersionOverride =
     process.env.COWORK_CODEX_APP_SERVER_VERSION?.trim() || undefined;
-  const shouldBundleCodexAppServer = process.env.COWORK_BUNDLE_CODEX_APP_SERVER !== "0";
+  const shouldBundleCodexAppServer = process.env.COWORK_BUNDLE_CODEX_APP_SERVER === "1";
   const cachePath = path.join(distDir, `.desktop-resources-cache-${platform}-${arch}.json`);
 
   await fs.mkdir(distDir, { recursive: true });

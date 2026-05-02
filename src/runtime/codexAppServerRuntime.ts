@@ -151,8 +151,8 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
   };
 }
 
-function startCodexAppServer(params: RuntimeRunTurnParams): CodexAppServerClient {
-  const client = startCodexAppServerClient({
+async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<CodexAppServerClient> {
+  const client = await startCodexAppServerClient({
     cwd: params.config.workingDirectory,
     log: params.log,
     invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
@@ -316,7 +316,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
   return {
     name: "codex-app-server",
     runTurn: async (params): Promise<RuntimeRunTurnResult> => {
-      const client = startCodexAppServer(params);
+      const client = await startCodexAppServer(params);
       let threadId: string | undefined;
       let usage: RuntimeUsage | undefined;
       let unregisterSteerHandler: (() => void) | undefined;

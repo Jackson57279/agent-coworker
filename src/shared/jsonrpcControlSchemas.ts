@@ -301,6 +301,28 @@ export const providerStatusEventSchema = z
   })
   .passthrough();
 
+export const codexAppServerSourceSchema = z.enum(["override", "system", "managed", "missing"]);
+
+export const codexAppServerInstallStatusSchema = z
+  .object({
+    available: z.boolean(),
+    source: codexAppServerSourceSchema,
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+    version: z.string().optional(),
+    latestVersion: z.string().optional(),
+    updateAvailable: z.boolean().optional(),
+    managedPath: z.string().optional(),
+    message: z.string(),
+  })
+  .passthrough();
+
+export const codexAppServerInstallStatusEnvelopeSchema = z
+  .object({
+    status: codexAppServerInstallStatusSchema,
+  })
+  .strict();
+
 export const providerAuthChallengeSchema = z
   .object({
     method: z.enum(["auto", "code"]),
@@ -999,6 +1021,21 @@ export const providerStatusRefreshRequestSchema = z
   })
   .strict();
 
+export const providerCodexAppServerStatusRequestSchema = z
+  .object({
+    cwd: optionalNonEmptyTrimmedStringSchema,
+    checkLatest: z.boolean().optional(),
+  })
+  .strict();
+
+export const providerCodexAppServerUpdateRequestSchema = z
+  .object({
+    cwd: optionalNonEmptyTrimmedStringSchema,
+    version: z.string().optional(),
+    force: z.boolean().optional(),
+  })
+  .strict();
+
 export const providerAuthAuthorizeRequestSchema = z
   .object({
     cwd: optionalNonEmptyTrimmedStringSchema,
@@ -1322,6 +1359,8 @@ export const jsonRpcControlRequestSchemas = {
   "cowork/provider/catalog/read": providerCatalogReadRequestSchema,
   "cowork/provider/authMethods/read": providerAuthMethodsReadRequestSchema,
   "cowork/provider/status/refresh": providerStatusRefreshRequestSchema,
+  "cowork/provider/codexAppServer/status": providerCodexAppServerStatusRequestSchema,
+  "cowork/provider/codexAppServer/update": providerCodexAppServerUpdateRequestSchema,
   "cowork/provider/auth/authorize": providerAuthAuthorizeRequestSchema,
   "cowork/provider/auth/logout": providerAuthLogoutRequestSchema,
   "cowork/provider/auth/callback": providerAuthCallbackRequestSchema,
@@ -1382,6 +1421,8 @@ export const jsonRpcControlResultSchemas = {
   "cowork/provider/catalog/read": sessionEventEnvelope(providerCatalogEventSchema),
   "cowork/provider/authMethods/read": sessionEventEnvelope(providerAuthMethodsEventSchema),
   "cowork/provider/status/refresh": sessionEventEnvelope(providerStatusEventSchema),
+  "cowork/provider/codexAppServer/status": codexAppServerInstallStatusEnvelopeSchema,
+  "cowork/provider/codexAppServer/update": codexAppServerInstallStatusEnvelopeSchema,
   "cowork/provider/auth/authorize": sessionEventEnvelope(
     z.union([providerAuthChallengeEventSchema, providerAuthResultEventSchema]),
   ),
@@ -1456,6 +1497,7 @@ export type JsonRpcControlResult<M extends JsonRpcControlResultMethod> = z.outpu
 
 export type ProviderCatalogEntry = z.infer<typeof providerCatalogEntrySchema>;
 export type ProviderAuthMethod = z.infer<typeof providerAuthMethodSchema>;
+export type CodexAppServerInstallStatus = z.infer<typeof codexAppServerInstallStatusSchema>;
 export type ProviderStatusEntry = z.infer<typeof providerStatusEntrySchema>;
 export type McpServerEntry = z.infer<typeof mcpServersEventSchema.shape.servers.element>;
 export type McpServerValidation = z.infer<typeof mcpValidationEventSchema>;
