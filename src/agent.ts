@@ -239,6 +239,10 @@ function extractTurnUserPrompt(messages: ModelMessage[]): string | undefined {
   return undefined;
 }
 
+function providerOwnsExecutableTools(config: AgentConfig): boolean {
+  return config.provider === "codex-cli";
+}
+
 type RunTurnDeps = {
   createRuntime: typeof createRuntime;
   createTools: typeof createTools;
@@ -325,10 +329,11 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       onSessionUsageBudgetUpdated: params.onSessionUsageBudgetUpdated,
       applyA2uiEnvelope: params.applyA2uiEnvelope,
     };
-    const builtInTools = deps.createTools(toolCtx);
+    const useProviderNativeTools = providerOwnsExecutableTools(config);
+    const builtInTools = useProviderNativeTools ? {} : deps.createTools(toolCtx);
 
     let mcpTools: Record<string, any> = {};
-    const enableMcp = params.enableMcp ?? config.enableMcp ?? false;
+    const enableMcp = !useProviderNativeTools && (params.enableMcp ?? config.enableMcp ?? false);
     let closeMcp: undefined | (() => Promise<void>);
     if (enableMcp) {
       const servers = await deps.loadMCPServers(config);

@@ -215,6 +215,44 @@ rl.on("line", (line) => {
     );
   });
 
+  test("marks Codex app-server as owner of native tools, apps, and plugins", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-tools-"));
+    const script = await writeMockAppServer(dir);
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.\n\n## Enabled Plugin Bundles\n\nCowork plugin example.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {
+        localOnlyTool: {
+          description: "A Cowork-only custom tool.",
+          execute: () => "should not be called",
+        },
+      },
+      maxSteps: 1,
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    const startParams = requests.find((entry) => entry.method === "thread/start")?.params;
+    expect(startParams).toMatchObject({
+      modelProvider: "openai",
+      experimentalRawEvents: true,
+    });
+    expect(startParams).not.toHaveProperty("tools");
+    expect(startParams?.baseInstructions).toContain("## Codex App-Server Tool Boundary");
+    expect(startParams?.baseInstructions).toContain(
+      "Executable tools, MCP servers, ChatGPT apps/connectors, and Codex plugins for this turn are owned by Codex app-server.",
+    );
+    expect(startParams?.baseInstructions).toContain(
+      "Cowork custom tools and Cowork-managed MCP tools are not injected into Codex app-server turns",
+    );
+  });
+
   test("passes workspace-write sandbox and approval prompts for regular Codex turns", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-sandbox-"));
     const script = await writeMockAppServer(dir);

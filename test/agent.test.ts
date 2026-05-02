@@ -194,6 +194,59 @@ describe("runTurn", () => {
     expect(callArg.system).toContain("`mcp__{serverName}__{toolName}`");
   });
 
+  test("codex app-server turns leave Cowork custom tools and MCP out of the runtime tool map", async () => {
+    const runtimeRunTurn = mock(async (input: any) => ({
+      text: "ok",
+      responseMessages: [{ role: "assistant", content: "ok" }],
+      providerState: { provider: "codex-cli", model: input.config.model, threadId: "thread_1" },
+    }));
+    const createRuntimeForCodex = mock((_config: AgentConfig) => ({
+      name: "codex-app-server" as const,
+      runTurn: runtimeRunTurn,
+    }));
+    const createToolsForCodex = mock((_ctx: any) => ({
+      bash: { type: "builtin" },
+      usage: { type: "builtin" },
+    }));
+    const loadMCPServersForCodex = mock(async (_config: AgentConfig) => [
+      { name: "srv", transport: { type: "stdio", command: "x", args: [] } },
+    ]);
+    const loadMCPToolsForCodex = mock(async (_servers: any[], _opts?: any) => ({
+      tools: { mcp__srv__custom: { type: "mcp-tool" } },
+      errors: [],
+    }));
+    const runCodexTurn = createRunTurn({
+      createRuntime: createRuntimeForCodex,
+      createTools: createToolsForCodex,
+      loadMCPServers: loadMCPServersForCodex,
+      loadMCPTools: loadMCPToolsForCodex,
+    });
+
+    await runCodexTurn(
+      makeParams({
+        config: makeConfig({
+          provider: "codex-cli",
+          runtime: "codex-app-server",
+          model: "gpt-5.4",
+          preferredChildModel: "gpt-5.4",
+          enableMcp: true,
+        }),
+        enableMcp: true,
+        system:
+          "Base system prompt\nMCP tool names are namespaced as `mcp__{serverName}__{toolName}`.",
+      }),
+    );
+
+    expect(createToolsForCodex).not.toHaveBeenCalled();
+    expect(loadMCPServersForCodex).not.toHaveBeenCalled();
+    expect(loadMCPToolsForCodex).not.toHaveBeenCalled();
+    expect(runtimeRunTurn).toHaveBeenCalledTimes(1);
+    const runtimeParams = runtimeRunTurn.mock.calls[0][0] as any;
+    expect(runtimeParams.tools).toEqual({});
+    expect(runtimeParams.system).not.toContain("## Active MCP Tools");
+    expect(runtimeParams.system).not.toContain("`mcp__{serverName}__{toolName}`");
+  });
+
   test("buildTurnSystemPrompt appends harness context when present", () => {
     const system = buildTurnSystemPrompt("Base system prompt", makeConfig(), [], {
       runId: "run-01",

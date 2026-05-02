@@ -90,6 +90,19 @@ function codexThreadConfig(params: RuntimeRunTurnParams): Record<string, unknown
   return webSearchMode ? { web_search: webSearchMode } : undefined;
 }
 
+function codexBaseInstructions(system: string): string {
+  return [
+    system,
+    [
+      "## Codex App-Server Tool Boundary",
+      "",
+      "Executable tools, MCP servers, ChatGPT apps/connectors, and Codex plugins for this turn are owned by Codex app-server.",
+      "Use only the tools and plugins that Codex app-server exposes natively in the active thread.",
+      "Cowork custom tools and Cowork-managed MCP tools are not injected into Codex app-server turns; do not assume Cowork-only tool names are callable unless Codex app-server exposes them.",
+    ].join("\n"),
+  ].join("\n\n");
+}
+
 function codexSandboxMode(params: RuntimeRunTurnParams): CodexSandboxMode {
   if (params.shellPolicy === "no_project_write") return "read-only";
   return params.yolo === true ? "danger-full-access" : "workspace-write";
@@ -329,7 +342,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 approvalPolicy,
                 sandbox: sandboxMode,
                 ...(threadConfig ? { config: threadConfig } : {}),
-                baseInstructions: params.system,
+                baseInstructions: codexBaseInstructions(params.system),
               })
             : await client.request("thread/start", {
                 cwd: params.config.workingDirectory,
@@ -338,7 +351,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 approvalPolicy,
                 sandbox: sandboxMode,
                 ...(threadConfig ? { config: threadConfig } : {}),
-                baseInstructions: params.system,
+                baseInstructions: codexBaseInstructions(params.system),
                 experimentalRawEvents: params.includeRawChunks ?? true,
               });
         const thread = asRecord(asRecord(threadResult)?.thread);
