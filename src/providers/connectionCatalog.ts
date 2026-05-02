@@ -1,7 +1,6 @@
 import { type AiCoworkerPaths, getAiCoworkerPaths, readConnectionStore } from "../connect";
 import {
   defaultSupportedModel,
-  getSupportedModel,
   listSupportedModels,
   type SupportedModel,
 } from "../models/registry";
@@ -83,40 +82,52 @@ function staticCatalogEntry(provider: Exclude<ProviderName, "lmstudio">): Provid
 async function codexCatalogEntry(opts: {
   listCodexAppServerModelsImpl?: typeof listCodexAppServerModels;
 }): Promise<ProviderCatalogEntry> {
-  const fallback = staticCatalogEntry("codex-cli");
   const listModels = opts.listCodexAppServerModelsImpl ?? listCodexAppServerModels;
   let appServerModels: Awaited<ReturnType<typeof listCodexAppServerModels>> = [];
   try {
     appServerModels = await listModels();
-  } catch {
-    return fallback;
+  } catch (error) {
+    return {
+      id: "codex-cli",
+      name: PROVIDER_LABELS["codex-cli"],
+      models: [],
+      defaultModel: "",
+      state: "unreachable",
+      message: error instanceof Error ? error.message : "Unable to read Codex app-server models.",
+    };
   }
 
-  const models = appServerModels
-    .map((model) => {
-      const supported =
-        getSupportedModel("codex-cli", model.model) ?? getSupportedModel("codex-cli", model.id);
-      if (!supported) return null;
-      return {
-        id: supported.id,
-        displayName: model.displayName || supported.displayName,
-        knowledgeCutoff: supported.knowledgeCutoff,
-        supportsImageInput: supported.supportsImageInput,
-      };
-    })
-    .filter((model): model is ProviderCatalogModelEntry => Boolean(model));
-  if (models.length === 0) return fallback;
+  const supportedById = new Map(listSupportedModels("codex-cli").map((model) => [model.id, model]));
+  const modelsById = new Map<string, ProviderCatalogModelEntry>();
+  for (const model of appServerModels) {
+    const supported = supportedById.get(model.model) ?? supportedById.get(model.id);
+    if (!supported || modelsById.has(supported.id)) continue;
+    modelsById.set(supported.id, {
+      id: supported.id,
+      displayName: model.displayName || supported.displayName,
+      knowledgeCutoff: supported.knowledgeCutoff,
+      supportsImageInput: supported.supportsImageInput,
+    });
+  }
+  const models = [...modelsById.values()];
+  if (models.length === 0) {
+    return {
+      id: "codex-cli",
+      name: PROVIDER_LABELS["codex-cli"],
+      models: [],
+      defaultModel: "",
+      state: "empty",
+      message: "Codex app-server did not report any locally supported models.",
+    };
+  }
 
   const defaultFromAppServer = appServerModels.find((model) => model.isDefault);
   const defaultModel =
     (defaultFromAppServer
-      ? (getSupportedModel("codex-cli", defaultFromAppServer.model) ??
-        getSupportedModel("codex-cli", defaultFromAppServer.id))
+      ? (supportedById.get(defaultFromAppServer.model) ?? supportedById.get(defaultFromAppServer.id))
       : null)?.id ??
-    (models.some((model) => model.id === fallback.defaultModel)
-      ? fallback.defaultModel
-      : models[0]?.id) ??
-    fallback.defaultModel;
+    models[0]?.id ??
+    "";
 
   return {
     id: "codex-cli",

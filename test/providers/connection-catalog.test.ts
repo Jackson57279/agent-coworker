@@ -332,16 +332,34 @@ describe("providers/connectionCatalog", () => {
       }),
       listCodexAppServerModelsImpl: async () => [
         {
+          id: "gpt-5.5",
+          model: "gpt-5.5",
+          displayName: "GPT-5.5 from app-server",
+          isDefault: true,
+        },
+        {
           id: "gpt-5.4",
           model: "gpt-5.4",
           displayName: "GPT-5.4 from app-server",
           isDefault: false,
         },
         {
+          id: "gpt-5.4-duplicate",
+          model: "gpt-5.4",
+          displayName: "Duplicate GPT-5.4",
+          isDefault: false,
+        },
+        {
           id: "gpt-5.4-mini",
           model: "gpt-5.4-mini",
           displayName: "GPT-5.4 Mini from app-server",
-          isDefault: true,
+          isDefault: false,
+        },
+        {
+          id: "gpt-5.3-codex",
+          model: "gpt-5.3-codex",
+          displayName: "Unsupported alias",
+          isDefault: false,
         },
         {
           id: "future-model",
@@ -353,12 +371,45 @@ describe("providers/connectionCatalog", () => {
     });
 
     const codex = payload.all.find((entry) => entry.id === "codex-cli");
-    expect(codex?.defaultModel).toBe("gpt-5.4-mini");
-    expect(codex?.models.map((model) => model.id)).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+    expect(codex?.defaultModel).toBe("gpt-5.5");
+    expect(codex?.models.map((model) => model.id)).toEqual([
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+    ]);
     expect(codex?.models.map((model) => model.displayName)).toEqual([
+      "GPT-5.5 from app-server",
       "GPT-5.4 from app-server",
       "GPT-5.4 Mini from app-server",
     ]);
+    expect(payload.connected).toContain("codex-cli");
+  });
+
+  test("codex-cli catalog does not fall back to hardcoded models for app-server failures", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "connection-catalog-codex-failure-"));
+    const paths = getAiCoworkerPaths({ homedir: home });
+
+    const payload = await getProviderCatalog({
+      paths,
+      readStore: async () => ({
+        version: 1,
+        updatedAt: "2026-02-17T00:00:00.000Z",
+        services: {},
+      }),
+      readCodexAppServerAccountImpl: async () => ({
+        account: { type: "chatgpt", email: "tester@example.com" },
+        requiresOpenaiAuth: false,
+      }),
+      listCodexAppServerModelsImpl: async () => {
+        throw new Error("model/list failed");
+      },
+    });
+
+    const codex = payload.all.find((entry) => entry.id === "codex-cli");
+    expect(codex?.models).toEqual([]);
+    expect(codex?.defaultModel).toBe("");
+    expect(codex?.state).toBe("unreachable");
+    expect(codex?.message).toBe("model/list failed");
     expect(payload.connected).toContain("codex-cli");
   });
 
