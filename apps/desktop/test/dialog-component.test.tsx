@@ -12,10 +12,9 @@ describe("desktop dialog component", () => {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
 
-      const { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } =
-        await import(
-          new URL("../src/components/ui/dialog.tsx?dialog-component-test", import.meta.url).href
-        );
+      const { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } = await import(
+        new URL("../src/components/ui/dialog.tsx?dialog-component-test", import.meta.url).href
+      );
       const root = createRoot(container);
 
       await act(async () => {

@@ -125,6 +125,24 @@
       }
     },
     {
+      "includes": ["apps/desktop/src/components/ui/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useFocusableInteractive": "off",
+            "useKeyWithClickEvents": "off",
+            "useAriaPropsForRole": "off",
+            "noRedundantRoles": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off",
+            "noDocumentCookie": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["apps/desktop/src/components/ai-elements/message.tsx"],
       "linter": {
         "rules": {

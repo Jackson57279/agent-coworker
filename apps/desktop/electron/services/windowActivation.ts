@@ -1,4 +1,4 @@
-import type { app as electronApp, BrowserWindow } from "electron";
+import type { BrowserWindow, app as electronApp } from "electron";
 
 type ActivatableApp = Pick<typeof electronApp, "focus"> &
   Partial<Pick<typeof electronApp, "isHidden" | "show">>;

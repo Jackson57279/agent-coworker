@@ -75,8 +75,7 @@ const {
   InstallPluginDialog,
   shouldDisablePluginInstallForScope,
   shouldRequireFreshPluginPreviewForScope,
-} =
-  await import("../src/ui/plugins/InstallPluginDialog");
+} = await import("../src/ui/plugins/InstallPluginDialog");
 const { PluginsCatalogPage } = await import("../src/ui/plugins/PluginsCatalogPage");
 mock.restore();
 

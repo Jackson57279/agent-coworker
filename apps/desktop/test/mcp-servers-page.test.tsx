@@ -127,10 +127,8 @@ describe("MCP servers settings page", () => {
     const harness = setupJsdom({
       includeAnimationFrame: true,
       setupWindow: (dom) => {
-        (dom.window.HTMLElement.prototype as { attachEvent?: () => void }).attachEvent =
-          () => {};
-        (dom.window.HTMLElement.prototype as { detachEvent?: () => void }).detachEvent =
-          () => {};
+        (dom.window.HTMLElement.prototype as { attachEvent?: () => void }).attachEvent = () => {};
+        (dom.window.HTMLElement.prototype as { detachEvent?: () => void }).detachEvent = () => {};
       },
     });
     try {
