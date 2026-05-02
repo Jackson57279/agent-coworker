@@ -9,9 +9,15 @@ import {
 } from "../../src/providers/connectionCatalog";
 import { PROVIDER_NAMES } from "../../src/types";
 
+const noCodexAccount = async () => ({
+  account: null,
+  requiresOpenaiAuth: true,
+});
+
 describe("providers/connectionCatalog", () => {
   test("catalog entries stay aligned with provider names and default-model map", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -30,6 +36,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists OpenCode providers in the provider catalog with the expected model sets", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -111,6 +118,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists Baseten in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -148,6 +156,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists Together AI in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -185,6 +194,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists Fireworks AI in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -228,6 +238,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists NVIDIA in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -253,6 +264,7 @@ describe("providers/connectionCatalog", () => {
 
   test("connected providers exclude oauth_pending entries", async () => {
     const payload = await getProviderCatalog({
+      readCodexAppServerAccountImpl: noCodexAccount,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -297,8 +309,56 @@ describe("providers/connectionCatalog", () => {
         account: { type: "chatgpt", email: "tester@example.com" },
         requiresOpenaiAuth: false,
       }),
+      listCodexAppServerModelsImpl: async () => [],
     });
 
+    expect(payload.connected).toContain("codex-cli");
+  });
+
+  test("codex-cli catalog uses app-server available models when account exists", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "connection-catalog-codex-models-"));
+    const paths = getAiCoworkerPaths({ homedir: home });
+
+    const payload = await getProviderCatalog({
+      paths,
+      readStore: async () => ({
+        version: 1,
+        updatedAt: "2026-02-17T00:00:00.000Z",
+        services: {},
+      }),
+      readCodexAppServerAccountImpl: async () => ({
+        account: { type: "chatgpt", email: "tester@example.com" },
+        requiresOpenaiAuth: false,
+      }),
+      listCodexAppServerModelsImpl: async () => [
+        {
+          id: "gpt-5.4",
+          model: "gpt-5.4",
+          displayName: "GPT-5.4 from app-server",
+          isDefault: false,
+        },
+        {
+          id: "gpt-5.4-mini",
+          model: "gpt-5.4-mini",
+          displayName: "GPT-5.4 Mini from app-server",
+          isDefault: true,
+        },
+        {
+          id: "future-model",
+          model: "future-model",
+          displayName: "Future Model",
+          isDefault: false,
+        },
+      ],
+    });
+
+    const codex = payload.all.find((entry) => entry.id === "codex-cli");
+    expect(codex?.defaultModel).toBe("gpt-5.4-mini");
+    expect(codex?.models.map((model) => model.id)).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+    expect(codex?.models.map((model) => model.displayName)).toEqual([
+      "GPT-5.4 from app-server",
+      "GPT-5.4 Mini from app-server",
+    ]);
     expect(payload.connected).toContain("codex-cli");
   });
 
@@ -323,6 +383,7 @@ describe("providers/connectionCatalog", () => {
         account: { type: "chatgpt", email: "tester@example.com" },
         requiresOpenaiAuth: false,
       }),
+      listCodexAppServerModelsImpl: async () => [],
     });
 
     expect(payload.connected.filter((provider) => provider === "codex-cli")).toEqual(["codex-cli"]);

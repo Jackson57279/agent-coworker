@@ -49,6 +49,14 @@ export type CodexAppServerRateLimits = {
   } | null;
 };
 
+export type CodexAppServerModel = {
+  id: string;
+  model: string;
+  displayName: string;
+  description?: string;
+  isDefault: boolean;
+};
+
 type ReadAccountOptions = {
   refreshToken?: boolean;
   log?: (line: string) => void;
@@ -63,12 +71,17 @@ type LoginOptions = {
   log?: (line: string) => void;
 };
 
+type ListModelsOptions = {
+  log?: (line: string) => void;
+};
+
 type AppServerAuthOverrides = {
   readAccount?: (
     opts: ReadAccountOptions,
   ) => Promise<{ account: CodexAppServerAccount | null; requiresOpenaiAuth: boolean }>;
   readRateLimits?: (opts: ReadRateLimitsOptions) => Promise<CodexAppServerRateLimits | null>;
   login?: (opts: LoginOptions) => Promise<{ account: CodexAppServerAccount | null }>;
+  listModels?: (opts: ListModelsOptions) => Promise<CodexAppServerModel[]>;
 };
 
 const DEFAULT_CODEX_COMMAND = "codex";
@@ -239,6 +252,51 @@ function normalizeAccount(value: unknown): CodexAppServerAccount | null {
   return null;
 }
 
+function normalizeModel(value: unknown): CodexAppServerModel | null {
+  const model = asRecord(value);
+  const id = asString(model?.id);
+  const modelId = asString(model?.model);
+  const canonicalId = modelId || id;
+  if (!canonicalId) return null;
+  const description = asString(model?.description);
+  return {
+    id: canonicalId,
+    model: modelId || canonicalId,
+    displayName: asString(model?.displayName) || canonicalId,
+    ...(description ? { description } : {}),
+    isDefault: model?.isDefault === true,
+  };
+}
+
+export async function listCodexAppServerModels(
+  opts: ListModelsOptions = {},
+): Promise<CodexAppServerModel[]> {
+  if (appServerAuthOverrides.listModels) return await appServerAuthOverrides.listModels(opts);
+  return await withClient(async (client) => {
+    const models: CodexAppServerModel[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = asRecord(
+        await client.request("model/list", {
+          limit: 100,
+          cursor: cursor ?? null,
+        }),
+      );
+      const items = Array.isArray(result?.data)
+        ? result.data
+        : Array.isArray(result?.items)
+          ? result.items
+          : [];
+      for (const item of items) {
+        const model = normalizeModel(item);
+        if (model) models.push(model);
+      }
+      cursor = asString(result?.nextCursor) ?? asString(result?.next_cursor);
+    } while (cursor);
+    return models;
+  }, opts.log);
+}
+
 export async function readCodexAppServerAccount(
   opts: ReadAccountOptions,
 ): Promise<{ account: CodexAppServerAccount | null; requiresOpenaiAuth: boolean }> {
@@ -292,11 +350,13 @@ export const __internal = {
     appServerAuthOverrides.readAccount = overrides.readAccount;
     appServerAuthOverrides.readRateLimits = overrides.readRateLimits;
     appServerAuthOverrides.login = overrides.login;
+    appServerAuthOverrides.listModels = overrides.listModels;
   },
   resetAuthOverridesForTests(): void {
     delete appServerAuthOverrides.readAccount;
     delete appServerAuthOverrides.readRateLimits;
     delete appServerAuthOverrides.login;
+    delete appServerAuthOverrides.listModels;
   },
 } as const;
 

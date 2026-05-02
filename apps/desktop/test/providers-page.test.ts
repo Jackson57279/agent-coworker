@@ -501,7 +501,7 @@ describe("desktop providers page", () => {
     expect(html).not.toContain("https://auth.openai.com/oauth/authorize");
   });
 
-  test("codex oauth card shows logout when connected", () => {
+  test("codex app-server card hides auth actions when connected", () => {
     useAppStore.setState({
       workspaces: [
         {
@@ -565,7 +565,9 @@ describe("desktop providers page", () => {
       }),
     );
 
-    expect(html).toContain("Log out");
+    expect(html).toContain("OAuth connected.");
+    expect(html).not.toContain("Sign in with ChatGPT (browser)");
+    expect(html).not.toContain("Log out");
   });
 
   test("codex provider card renders usage status and rate limits", () => {

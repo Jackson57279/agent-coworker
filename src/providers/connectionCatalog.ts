@@ -1,13 +1,14 @@
 import { type AiCoworkerPaths, getAiCoworkerPaths, readConnectionStore } from "../connect";
 import {
   defaultSupportedModel,
+  getSupportedModel,
   listSupportedModels,
   type SupportedModel,
 } from "../models/registry";
 import { PROVIDER_NAMES, type ProviderName } from "../types";
 import { resolveAuthHomeDir } from "../utils/authHome";
 import { readBedrockCatalogSnapshot } from "./bedrockShared";
-import { readCodexAppServerAccount } from "./codexAppServerAuth";
+import { listCodexAppServerModels, readCodexAppServerAccount } from "./codexAppServerAuth";
 import {
   listLmStudioLlms,
   lmStudioCatalogStateMessage,
@@ -76,6 +77,53 @@ function staticCatalogEntry(provider: Exclude<ProviderName, "lmstudio">): Provid
       supportsImageInput: model.supportsImageInput,
     })),
     defaultModel: defaultSupportedModel(provider).id,
+  };
+}
+
+async function codexCatalogEntry(opts: {
+  listCodexAppServerModelsImpl?: typeof listCodexAppServerModels;
+}): Promise<ProviderCatalogEntry> {
+  const fallback = staticCatalogEntry("codex-cli");
+  const listModels = opts.listCodexAppServerModelsImpl ?? listCodexAppServerModels;
+  let appServerModels: Awaited<ReturnType<typeof listCodexAppServerModels>> = [];
+  try {
+    appServerModels = await listModels();
+  } catch {
+    return fallback;
+  }
+
+  const models = appServerModels
+    .map((model) => {
+      const supported =
+        getSupportedModel("codex-cli", model.model) ?? getSupportedModel("codex-cli", model.id);
+      if (!supported) return null;
+      return {
+        id: supported.id,
+        displayName: model.displayName || supported.displayName,
+        knowledgeCutoff: supported.knowledgeCutoff,
+        supportsImageInput: supported.supportsImageInput,
+      };
+    })
+    .filter((model): model is ProviderCatalogModelEntry => Boolean(model));
+  if (models.length === 0) return fallback;
+
+  const defaultFromAppServer = appServerModels.find((model) => model.isDefault);
+  const defaultModel =
+    (defaultFromAppServer
+      ? (getSupportedModel("codex-cli", defaultFromAppServer.model) ??
+        getSupportedModel("codex-cli", defaultFromAppServer.id))
+      : null)?.id ??
+    (models.some((model) => model.id === fallback.defaultModel)
+      ? fallback.defaultModel
+      : models[0]?.id) ??
+    fallback.defaultModel;
+
+  return {
+    id: "codex-cli",
+    name: PROVIDER_LABELS["codex-cli"],
+    models,
+    defaultModel,
+    state: "ready",
   };
 }
 
@@ -183,6 +231,7 @@ export async function listProviderCatalogEntries(
     providerOptions?: unknown;
     env?: NodeJS.ProcessEnv;
     lmstudioFetchImpl?: typeof fetch;
+    listCodexAppServerModelsImpl?: typeof listCodexAppServerModels;
   } = {},
 ): Promise<ProviderCatalogEntry[]> {
   const bedrock = await bedrockCatalogEntry({
@@ -190,9 +239,13 @@ export async function listProviderCatalogEntries(
     env: opts.env,
   });
   const lmstudio = await lmStudioCatalogEntry(opts);
+  const codex = opts.listCodexAppServerModelsImpl
+    ? await codexCatalogEntry({ listCodexAppServerModelsImpl: opts.listCodexAppServerModelsImpl })
+    : staticCatalogEntry("codex-cli");
   return PROVIDER_NAMES.map((provider) => {
     if (provider === "bedrock") return bedrock.entry;
     if (provider === "lmstudio") return lmstudio.entry;
+    if (provider === "codex-cli") return codex;
     return staticCatalogEntry(provider);
   });
 }
@@ -203,6 +256,7 @@ export async function getProviderCatalog(
     paths?: AiCoworkerPaths;
     readStore?: typeof readConnectionStore;
     readCodexAppServerAccountImpl?: typeof readCodexAppServerAccount;
+    listCodexAppServerModelsImpl?: typeof listCodexAppServerModels;
     providerOptions?: unknown;
     env?: NodeJS.ProcessEnv;
     lmstudioFetchImpl?: typeof fetch;
@@ -218,25 +272,31 @@ export async function getProviderCatalog(
     providerOptions: opts.providerOptions,
     env: opts.env,
   });
-  const lmstudio = await lmStudioCatalogEntry({
-    store,
-    providerOptions: opts.providerOptions,
-    env: opts.env,
-    lmstudioFetchImpl: opts.lmstudioFetchImpl,
-  });
-  const all = PROVIDER_NAMES.map((provider) => {
-    if (provider === "bedrock") return bedrock.entry;
-    if (provider === "lmstudio") return lmstudio.entry;
-    return staticCatalogEntry(provider);
-  });
-  const defaults: Record<string, string> = {};
-  for (const entry of all) defaults[entry.id] = entry.defaultModel;
   const hasCodexAccount = Boolean(
     await readCodexAppServerAccountImpl({ refreshToken: false }).then(
       (result) => result.account,
       () => null,
     ),
   );
+  const lmstudio = await lmStudioCatalogEntry({
+    store,
+    providerOptions: opts.providerOptions,
+    env: opts.env,
+    lmstudioFetchImpl: opts.lmstudioFetchImpl,
+  });
+  const codex = hasCodexAccount
+    ? await codexCatalogEntry({
+        listCodexAppServerModelsImpl: opts.listCodexAppServerModelsImpl,
+      })
+    : staticCatalogEntry("codex-cli");
+  const all = PROVIDER_NAMES.map((provider) => {
+    if (provider === "bedrock") return bedrock.entry;
+    if (provider === "lmstudio") return lmstudio.entry;
+    if (provider === "codex-cli") return codex;
+    return staticCatalogEntry(provider);
+  });
+  const defaults: Record<string, string> = {};
+  for (const entry of all) defaults[entry.id] = entry.defaultModel;
   const connected = PROVIDER_NAMES.filter((provider) => {
     if (provider === "lmstudio") {
       return lmstudio.connected;

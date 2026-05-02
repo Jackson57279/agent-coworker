@@ -70,7 +70,6 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
   const setProviderConfig = useAppStore((s) => s.setProviderConfig);
   const copyProviderApiKey = useAppStore((s) => s.copyProviderApiKey);
   const authorizeProviderAuth = useAppStore((s) => s.authorizeProviderAuth);
-  const logoutProviderAuth = useAppStore((s) => s.logoutProviderAuth);
   const callbackProviderAuth = useAppStore((s) => s.callbackProviderAuth);
   const refreshProviderStatus = useAppStore((s) => s.refreshProviderStatus);
   const providerStatusByNameFromStore = useAppStore((s) => s.providerStatusByName);
@@ -284,11 +283,6 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
       providerLastAuthResult?.methodId === opts.method.id
         ? providerLastAuthResult
         : null;
-    const showLogout =
-      opts.provider === "codex-cli" &&
-      opts.method.id === "oauth_cli" &&
-      opts.status?.mode === "oauth" &&
-      Boolean(opts.status?.authorized);
     const siblingProvider =
       opts.method.type === "api" && opts.method.id === "api_key" && !isStructuredMethod
         ? siblingOpenCodeProvider(opts.provider)
@@ -494,19 +488,6 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             >
               Sign in
             </Button>
-            {showLogout ? (
-              <Button
-                variant="outline"
-                type="button"
-                disabled={!canConnectProvider}
-                title={!canConnectProvider ? "Add a workspace first." : undefined}
-                onClick={() => {
-                  void logoutProviderAuth(opts.provider);
-                }}
-              >
-                Log out
-              </Button>
-            ) : null}
             {opts.method.oauthMode === "code" ? (
               <>
                 <Input
@@ -575,8 +556,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const catalogEntry = providerCatalog.find(
       (entry): entry is ProviderCatalogEntry => entry.id === provider,
     );
-    const methods = visibleAuthMethods(provider, authMethodsForProvider(provider));
     const connected = Boolean(status?.authorized || status?.verified);
+    const methods =
+      provider === "codex-cli" && connected
+        ? []
+        : visibleAuthMethods(provider, authMethodsForProvider(provider));
     const providerDisplayName =
       catalogNameByProvider.get(provider) ?? displayProviderName(provider);
     const models = (modelChoices[provider] ?? []).slice(0, 8);
