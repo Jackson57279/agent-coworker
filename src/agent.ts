@@ -81,6 +81,7 @@ export interface RunTurnParams {
   spawnDepth?: number;
   agentRole?: AgentRole;
   shellPolicy?: AgentShellPolicy;
+  yolo?: boolean;
 
   maxSteps?: number;
   enableMcp?: boolean;
@@ -497,12 +498,15 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
           allMessages: params.allMessages,
           tools,
           maxSteps: params.maxSteps ?? 100,
+          yolo: params.yolo,
+          shellPolicy: params.shellPolicy ?? getAgentRoleShellPolicy(params.agentRole),
           providerOptions: turnProviderOptions,
           providerState: params.providerState,
           abortSignal,
           includeRawChunks: params.includeRawChunks ?? true,
           telemetry,
           ...(prepareStep ? { prepareStep } : {}),
+          approveCommand,
           onModelStreamPart: params.onModelStreamPart,
           onModelRawEvent: params.onModelRawEvent,
           onModelError: params.onModelError,

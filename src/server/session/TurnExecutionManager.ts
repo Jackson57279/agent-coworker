@@ -823,6 +823,7 @@ export class TurnExecutionManager {
         updateTodos: (todos) => this.updateTodos(todos),
         discoveredSkills: this.context.state.discoveredSkills,
         maxSteps,
+        yolo: this.context.state.yolo,
         enableMcp: this.context.state.config.enableMcp,
         spawnDepth:
           typeof this.context.state.sessionInfo.depth === "number"

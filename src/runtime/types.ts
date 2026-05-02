@@ -41,12 +41,15 @@ export interface RuntimeRunTurnParams {
   allMessages?: ModelMessage[];
   tools: RuntimeToolMap;
   maxSteps: number;
+  yolo?: boolean;
+  shellPolicy?: "full" | "no_project_write";
   providerOptions?: Record<string, any>;
   providerState?: ProviderContinuationState | null;
   abortSignal?: AbortSignal;
   includeRawChunks?: boolean;
   telemetry?: unknown;
   prepareStep?: RuntimePrepareStep;
+  approveCommand?: (command: string) => Promise<boolean>;
   onModelStreamPart?: (part: unknown) => void | Promise<void>;
   onModelRawEvent?: (event: RuntimeModelRawEvent) => void | Promise<void>;
   onModelError?: (error: unknown) => void | Promise<void>;

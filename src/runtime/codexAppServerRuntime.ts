@@ -38,6 +38,18 @@ type CodexAppServerClient = {
 const CODEX_APP_SERVER_PROVIDER = "codex-cli" as const;
 const DEFAULT_CODEX_COMMAND = "codex";
 const DEFAULT_CODEX_ARGS = ["app-server"] as const;
+type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+type CodexApprovalPolicy = "on-request" | "never";
+type CodexSandboxPolicy =
+  | { type: "dangerFullAccess" }
+  | { type: "readOnly"; networkAccess: boolean }
+  | {
+      type: "workspaceWrite";
+      writableRoots: string[];
+      networkAccess: boolean;
+      excludeTmpdirEnvVar: boolean;
+      excludeSlashTmp: boolean;
+    };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -95,6 +107,28 @@ function normalizeEffort(value: string | undefined): string | undefined {
 function normalizeSummary(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return ["auto", "concise", "detailed", "none"].includes(value) ? value : undefined;
+}
+
+function codexSandboxMode(params: RuntimeRunTurnParams): CodexSandboxMode {
+  if (params.shellPolicy === "no_project_write") return "read-only";
+  return params.yolo === true ? "danger-full-access" : "workspace-write";
+}
+
+function codexApprovalPolicy(params: RuntimeRunTurnParams): CodexApprovalPolicy {
+  return params.yolo === true ? "never" : "on-request";
+}
+
+function codexSandboxPolicy(params: RuntimeRunTurnParams): CodexSandboxPolicy {
+  const sandbox = codexSandboxMode(params);
+  if (sandbox === "danger-full-access") return { type: "dangerFullAccess" };
+  if (sandbox === "read-only") return { type: "readOnly", networkAccess: true };
+  return {
+    type: "workspaceWrite",
+    writableRoots: [params.config.workingDirectory],
+    networkAccess: true,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  };
 }
 
 function parseUsage(value: unknown): RuntimeUsage | undefined {
@@ -186,7 +220,7 @@ function startCodexAppServer(params: RuntimeRunTurnParams): CodexAppServerClient
     }
 
     if ("id" in record && typeof record.method === "string") {
-      handleServerRequest(child, record as JsonRpcRequest);
+      void handleServerRequest(child, record as JsonRpcRequest, params);
       return;
     }
 
@@ -233,16 +267,47 @@ function startCodexAppServer(params: RuntimeRunTurnParams): CodexAppServerClient
   };
 }
 
-function handleServerRequest(child: ChildProcessWithoutNullStreams, request: JsonRpcRequest) {
-  const method = request.method;
-  let result: unknown = {};
-  if (
-    method === "item/commandExecution/requestApproval" ||
-    method === "item/fileChange/requestApproval"
-  ) {
-    result = { decision: "accept", acceptSettings: { forSession: true } };
+async function handleServerRequest(
+  child: ChildProcessWithoutNullStreams,
+  request: JsonRpcRequest,
+  params: RuntimeRunTurnParams,
+) {
+  try {
+    const method = request.method;
+    let result: unknown = {};
+    if (
+      method === "item/commandExecution/requestApproval" ||
+      method === "item/fileChange/requestApproval"
+    ) {
+      const approved =
+        params.yolo === true || (await params.approveCommand?.(approvalPromptForRequest(request)));
+      result = { decision: approved ? "accept" : "decline" };
+    }
+    child.stdin.write(`${JSON.stringify({ id: request.id, result })}\n`);
+  } catch (error) {
+    child.stdin.write(
+      `${JSON.stringify({
+        id: request.id,
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })}\n`,
+    );
   }
-  child.stdin.write(`${JSON.stringify({ id: request.id, result })}\n`);
+}
+
+function approvalPromptForRequest(request: JsonRpcRequest): string {
+  const params = asRecord(request.params);
+  if (request.method === "item/commandExecution/requestApproval") {
+    return asString(params?.command) ?? "Approve Codex command execution";
+  }
+  const reason = asString(params?.reason);
+  const grantRoot = asString(params?.grantRoot);
+  return (
+    reason ||
+    (grantRoot ? `Approve Codex file changes under ${grantRoot}` : "Approve Codex file changes")
+  );
 }
 
 async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
@@ -397,6 +462,9 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const currentState = isCodexAppServerContinuationState(params.providerState)
           ? params.providerState
           : null;
+        const approvalPolicy = codexApprovalPolicy(params);
+        const sandboxMode = codexSandboxMode(params);
+        const sandboxPolicy = codexSandboxPolicy(params);
         const threadResult =
           currentState?.model === params.config.model
             ? await client.request("thread/resume", {
@@ -404,14 +472,16 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 cwd: params.config.workingDirectory,
                 model: params.config.model,
                 modelProvider: "openai",
+                approvalPolicy,
+                sandbox: sandboxMode,
                 baseInstructions: params.system,
               })
             : await client.request("thread/start", {
                 cwd: params.config.workingDirectory,
                 model: params.config.model,
                 modelProvider: "openai",
-                approvalPolicy: "never",
-                sandbox: "dangerFullAccess",
+                approvalPolicy,
+                sandbox: sandboxMode,
                 baseInstructions: params.system,
                 experimentalRawEvents: params.includeRawChunks ?? true,
               });
@@ -444,6 +514,8 @@ export function createCodexAppServerRuntime(): LlmRuntime {
           input: [{ type: "text", text: userText, text_elements: [] }],
           cwd: params.config.workingDirectory,
           model: params.config.model,
+          approvalPolicy,
+          sandboxPolicy,
           effort: normalizeEffort(providerOptionString(params.providerOptions, "reasoningEffort")),
           summary: normalizeSummary(
             providerOptionString(params.providerOptions, "reasoningSummary"),

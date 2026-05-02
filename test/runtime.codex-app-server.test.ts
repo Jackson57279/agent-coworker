@@ -8,6 +8,7 @@ import type { AgentConfig } from "../src/types";
 
 const previousCommand = process.env.COWORK_CODEX_APP_SERVER_COMMAND;
 const previousArgs = process.env.COWORK_CODEX_APP_SERVER_ARGS;
+const previousCapturePath = process.env.CODEX_APP_SERVER_CAPTURE_PATH;
 
 function makeConfig(dir: string): AgentConfig {
   return {
@@ -36,17 +37,29 @@ async function writeMockAppServer(dir: string): Promise<string> {
     script,
     `
 const readline = require("node:readline");
+const fs = require("node:fs");
 const rl = readline.createInterface({ input: process.stdin });
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
+function capture(msg) {
+  if (!process.env.CODEX_APP_SERVER_CAPTURE_PATH) return;
+  if (msg.method === "thread/start" || msg.method === "thread/resume" || msg.method === "turn/start") {
+    fs.appendFileSync(process.env.CODEX_APP_SERVER_CAPTURE_PATH, JSON.stringify({ method: msg.method, params: msg.params }) + "\\n");
+  }
+}
 rl.on("line", (line) => {
   const msg = JSON.parse(line);
+  capture(msg);
   if (msg.method === "initialize") {
     send({ id: msg.id, result: { userAgent: "mock" } });
     return;
   }
   if (msg.method === "initialized") return;
   if (msg.method === "thread/start") {
-    send({ id: msg.id, result: { thread: { id: "thread_1", modelProvider: "openai", turns: [] }, model: "gpt-5.4", modelProvider: "openai", cwd: process.cwd(), approvalPolicy: "never", sandbox: { type: "dangerFullAccess" }, reasoningEffort: "high" } });
+    send({ id: msg.id, result: { thread: { id: "thread_1", modelProvider: "openai", turns: [] }, model: "gpt-5.4", modelProvider: "openai", cwd: process.cwd(), approvalPolicy: msg.params.approvalPolicy, sandbox: msg.params.sandbox, reasoningEffort: "high" } });
+    return;
+  }
+  if (msg.method === "thread/resume") {
+    send({ id: msg.id, result: { thread: { id: msg.params.threadId, modelProvider: "openai", turns: [] }, model: "gpt-5.4", modelProvider: "openai", cwd: process.cwd(), approvalPolicy: msg.params.approvalPolicy, sandbox: msg.params.sandbox, reasoningEffort: "high" } });
     return;
   }
   if (msg.method === "turn/start") {
@@ -64,11 +77,24 @@ rl.on("line", (line) => {
   return script;
 }
 
+async function readCapturedRequests(
+  capturePath: string,
+): Promise<Array<{ method: string; params: Record<string, unknown> }>> {
+  const raw = await fs.readFile(capturePath, "utf-8");
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 afterEach(() => {
   if (previousCommand === undefined) delete process.env.COWORK_CODEX_APP_SERVER_COMMAND;
   else process.env.COWORK_CODEX_APP_SERVER_COMMAND = previousCommand;
   if (previousArgs === undefined) delete process.env.COWORK_CODEX_APP_SERVER_ARGS;
   else process.env.COWORK_CODEX_APP_SERVER_ARGS = previousArgs;
+  if (previousCapturePath === undefined) delete process.env.CODEX_APP_SERVER_CAPTURE_PATH;
+  else process.env.CODEX_APP_SERVER_CAPTURE_PATH = previousCapturePath;
 });
 
 describe("codex app-server runtime", () => {
@@ -115,5 +141,102 @@ describe("codex app-server runtime", () => {
         format: "codex-app-server-v2",
       }),
     );
+  });
+
+  test("passes workspace-write sandbox and approval prompts for regular Codex turns", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-sandbox-"));
+    const script = await writeMockAppServer(dir);
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+      yolo: false,
+      shellPolicy: "full",
+      approveCommand: async () => true,
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+      approvalPolicy: "on-request",
+      sandbox: "workspace-write",
+    });
+    expect(requests.find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+      approvalPolicy: "on-request",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        writableRoots: [dir],
+        networkAccess: true,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      },
+    });
+  });
+
+  test("passes danger-full-access sandbox when the session is in yolo mode", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-yolo-"));
+    const script = await writeMockAppServer(dir);
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+      yolo: true,
+      shellPolicy: "full",
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+    });
+    expect(requests.find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "dangerFullAccess" },
+    });
+  });
+
+  test("passes read-only sandbox for read-only subagent shell policy", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-readonly-"));
+    const script = await writeMockAppServer(dir);
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are a read-only child agent.",
+      messages: [{ role: "user", content: "Inspect only" }],
+      tools: {},
+      maxSteps: 1,
+      yolo: true,
+      shellPolicy: "no_project_write",
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    });
+    expect(requests.find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "readOnly", networkAccess: true },
+    });
   });
 });
