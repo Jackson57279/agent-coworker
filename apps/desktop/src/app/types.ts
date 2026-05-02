@@ -395,7 +395,6 @@ export type WorkspaceRuntime = {
   openAiNativeConnectorsAuthenticated: boolean;
   openAiNativeConnectorsMessage: string | null;
   openAiNativeConnectorsEnabledIds: string[];
-  openAiNativeConnectorsServerName: OpenAiNativeConnectorsEvent["codexAppsMcpServerName"] | null;
   pluginsCatalog: PluginCatalogSnapshot | null;
   selectedPluginId: string | null;
   selectedPluginScope: PluginCatalogEntry["scope"] | null;

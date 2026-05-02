@@ -212,13 +212,6 @@ export async function connectProvider(opts: {
       openUrl: opts.openUrl,
     });
 
-    store.services[provider] = {
-      service: provider,
-      mode: "oauth",
-      updatedAt: now,
-    };
-    store.updatedAt = now;
-    await writeConnectionStore(paths, store);
     return {
       ok: true,
       provider,

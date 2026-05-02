@@ -523,6 +523,7 @@ export class TurnExecutionManager {
       this.context.emitError("validation_failed", "session", "Steer input must be non-empty.");
       return;
     }
+    const displayText = resolveUserInputDisplayText(text, attachments);
     const attachmentValidationMessage = getTurnAttachmentValidationMessage(attachments);
     if (attachmentValidationMessage) {
       this.context.emitError("validation_failed", "session", attachmentValidationMessage);
@@ -533,6 +534,32 @@ export class TurnExecutionManager {
     } catch (error) {
       const classified = this.classifyTurnError(error);
       this.context.emitError(classified.code, classified.source, this.context.formatError(error));
+      return;
+    }
+    const activeSteerHandler = this.context.state.activeSteerHandler;
+    if (activeSteerHandler) {
+      try {
+        await activeSteerHandler({ text, expectedTurnId: currentTurnId });
+        const content = await this.buildUserMessageContent(text, attachments, inputParts);
+        this.deps.historyManager.appendMessagesToHistory([{ role: "user", content }]);
+        this.context.emit({
+          type: "user_message",
+          sessionId: this.context.id,
+          text: displayText,
+          ...(clientMessageId ? { clientMessageId } : {}),
+        });
+        this.context.queuePersistSessionSnapshot("session.steer_committed");
+        this.context.emit({
+          type: "steer_accepted",
+          sessionId: this.context.id,
+          turnId: currentTurnId,
+          text,
+          ...(clientMessageId ? { clientMessageId } : {}),
+        });
+      } catch (error) {
+        const classified = this.classifyTurnError(error);
+        this.context.emitError(classified.code, classified.source, this.context.formatError(error));
+      }
       return;
     }
     const nextPendingSteerAttachmentBase64Size =
@@ -558,8 +585,6 @@ export class TurnExecutionManager {
       );
       return;
     }
-    const displayText = resolveUserInputDisplayText(text, attachments);
-
     this.context.state.pendingSteers.push({
       text,
       ...(displayText ? { displayText } : {}),
@@ -720,6 +745,14 @@ export class TurnExecutionManager {
         providerState: providerStateOverride,
         harnessContext,
         prepareStep: async ({ messages }) => this.drainPendingSteers(messages),
+        registerSteerHandler: (handler) => {
+          this.context.state.activeSteerHandler = handler;
+          return () => {
+            if (this.context.state.activeSteerHandler === handler) {
+              this.context.state.activeSteerHandler = null;
+            }
+          };
+        },
         agentControl:
           this.context.state.sessionInfo.sessionKind === "agent" ||
           !this.context.deps.createAgentSessionImpl
@@ -1113,6 +1146,7 @@ export class TurnExecutionManager {
     } finally {
       persistAggregatedUsage();
       this.context.state.acceptingSteers = false;
+      this.context.state.activeSteerHandler = null;
       this.context.state.pendingSteers.splice(0);
       this.deps.metadataManager.updateSessionInfo({
         executionState: this.settledExecutionState(),

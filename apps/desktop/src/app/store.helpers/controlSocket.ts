@@ -944,7 +944,6 @@ export function createControlSocketHelpers(
             openAiNativeConnectorsAuthenticated: evt.authenticated,
             openAiNativeConnectorsMessage: evt.message ?? null,
             openAiNativeConnectorsEnabledIds: evt.enabledConnectorIds,
-            openAiNativeConnectorsServerName: evt.codexAppsMcpServerName,
             openAiNativeConnectorsLoading: false,
             openAiNativeConnectorsError: null,
           },

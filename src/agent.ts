@@ -8,6 +8,7 @@ import { createRuntime } from "./runtime";
 import type {
   RuntimeModelRawEvent,
   RuntimePrepareStep,
+  RuntimeRegisterSteerHandler,
   RuntimeStepOverride,
 } from "./runtime/types";
 import type { AgentShellPolicy } from "./server/agents/commandPolicy";
@@ -68,6 +69,7 @@ export interface RunTurnParams {
   harnessContext?: HarnessContextState | null;
   agentControl?: AgentControl;
   prepareStep?: RuntimePrepareStep;
+  registerSteerHandler?: RuntimeRegisterSteerHandler;
 
   log: (line: string) => void;
   askUser: (question: string, options?: string[]) => Promise<string>;
@@ -506,6 +508,9 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
           includeRawChunks: params.includeRawChunks ?? true,
           telemetry,
           ...(prepareStep ? { prepareStep } : {}),
+          ...(params.registerSteerHandler
+            ? { registerSteerHandler: params.registerSteerHandler }
+            : {}),
           approveCommand,
           onModelStreamPart: params.onModelStreamPart,
           onModelRawEvent: params.onModelRawEvent,

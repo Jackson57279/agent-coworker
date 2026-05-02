@@ -255,15 +255,15 @@ OpenAI native connectors are workspace-scoped ChatGPT apps owned by `codex app-s
 
 - `cowork/connectors/openai-native/list`
   - Params: `{ "cwd"?: string }`
-  - Result event: `{ "type": "openai_native_connectors", "connectors": OpenAiNativeConnector[], "enabledConnectorIds": string[], "codexAppsMcpServerName": "codex_apps", "authenticated": boolean, "message"?: string }`
+  - Result event: `{ "type": "openai_native_connectors", "connectors": OpenAiNativeConnector[], "enabledConnectorIds": string[], "authenticated": boolean, "message"?: string }`
 - `cowork/connectors/openai-native/refresh`
   - Params: `{ "cwd"?: string }`
-  - Result: same event shape as `list`, after re-reading Codex app-server connector state.
+  - Result: same event shape as `list`, after forcing Codex app-server to refresh its app list.
 - `cowork/connectors/openai-native/setEnabled`
   - Params: `{ "cwd"?: string, "connectorId": string, "enabled": boolean }`
-  - Result: same event shape as `list`, after persisting workspace connector enablement under `.cowork/openai-native-connectors.json`.
+  - Result: same event shape as `list`, after writing `apps.<connectorId>.enabled` through Codex app-server config.
 
-Cowork no longer injects a direct streamable HTTP MCP server at the ChatGPT Codex apps endpoint. The reserved `codex_apps` name remains in the event schema for backward-compatible UI rendering, but connector execution and ChatGPT app access are delegated to `codex app-server`.
+Cowork no longer injects a direct streamable HTTP MCP server at the ChatGPT Codex apps endpoint. Connector execution, app listing, and app enablement are delegated to `codex app-server`.
 
 ### Research JSON-RPC methods
 
@@ -520,7 +520,7 @@ Changes in `7.21`:
 
 Changes in `7.20`:
 
-- `set_config.config.providerOptions.codex-cli` and `session_config.config.providerOptions.codex-cli` now support native web-search fields: `webSearchMode`, `webSearch.contextSize`, `webSearch.allowedDomains`, and `webSearch.location`.
+- `set_config.config.providerOptions.codex-cli` and `session_config.config.providerOptions.codex-cli` now support `webSearchMode`. Cowork forwards this to Codex app-server as the thread `web_search` config override for Codex turns.
 - `model_stream_raw` may now carry OpenAI Responses `web_search_call` items so clients can synthesize native web-search activity alongside normalized stream chunks.
 
 Changes in `7.19`:
@@ -3002,15 +3002,7 @@ Current runtime config. Sent on connection and after `set_config`.
         "reasoningSummary": "detailed",
         "textVerbosity": "medium",
         "webSearchBackend": "native",
-        "webSearchMode": "live",
-        "webSearch": {
-          "contextSize": "medium",
-          "allowedDomains": ["openai.com"],
-          "location": {
-            "country": "US",
-            "timezone": "America/New_York"
-          }
-        }
+        "webSearchMode": "live"
       },
       "google": {
         "nativeWebSearch": true,
@@ -3057,13 +3049,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.providerOptions.codex-cli.reasoningSummary` | `"auto" \| "concise" \| "detailed"` | Current editable Codex CLI reasoning summary |
 | `config.providerOptions.codex-cli.textVerbosity` | `"low" \| "medium" \| "high"` | Current editable Codex CLI verbosity |
 | `config.providerOptions.codex-cli.webSearchBackend` | `"native" \| "exa"` | Current Codex web search backend. Omitted means the workspace is using the default `"native"` backend |
-| `config.providerOptions.codex-cli.webSearchMode` | `"disabled" \| "cached" \| "live"` | Current editable Codex native web-search mode |
-| `config.providerOptions.codex-cli.webSearch.contextSize` | `"low" \| "medium" \| "high"` | Current editable Codex native web-search context size |
-| `config.providerOptions.codex-cli.webSearch.allowedDomains` | `string[]` | Current editable Codex native web-search domain allowlist |
-| `config.providerOptions.codex-cli.webSearch.location.country` | `string` | Current editable Codex native web-search country |
-| `config.providerOptions.codex-cli.webSearch.location.region` | `string` | Current editable Codex native web-search region/state |
-| `config.providerOptions.codex-cli.webSearch.location.city` | `string` | Current editable Codex native web-search city |
-| `config.providerOptions.codex-cli.webSearch.location.timezone` | `string` | Current editable Codex native web-search timezone |
+| `config.providerOptions.codex-cli.webSearchMode` | `"disabled" \| "cached" \| "live"` | Codex native web-search mode forwarded to Codex app-server as `web_search` |
 | `config.providerOptions.google.nativeWebSearch` | `boolean` | Current Gemini built-in Search + URL Context toggle |
 | `config.providerOptions.google.thinkingConfig.thinkingLevel` | `"minimal" \| "low" \| "medium" \| "high"` | Current explicit Gemini `thinking_level` override when set. Omitted means the workspace is using Gemini's dynamic default |
 | `config.providerOptions.lmstudio.baseUrl` | `string` | Current LM Studio base URL override |

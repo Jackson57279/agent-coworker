@@ -1,34 +1,18 @@
-import fs from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
 
 import { resolveOpenAiNativeConnectorsConfig } from "../../experimental/openaiNativeConnectors/flags";
-import { readCodexAppServerAccount } from "../../providers/codexAppServerAuth";
 import {
-  CODEX_APPS_MCP_SERVER_NAME,
-  type OpenAiNativeConnector,
-  type OpenAiNativeConnectorsConfig,
+  listCodexAppServerApps,
+  readCodexAppServerAccount,
+  setCodexAppServerAppEnabled,
+} from "../../providers/codexAppServerAuth";
+import type {
+  OpenAiNativeConnector,
+  OpenAiNativeConnectorsConfig,
 } from "../../shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../../types";
-import { writeTextFileAtomic } from "../../utils/atomicFile";
 
 const CONNECTORS_CONFIG_FILE_NAME = "openai-native-connectors.json";
-
-const nonEmptyStringSchema = z.string().trim().min(1);
-const connectorConfigSchema = z
-  .object({
-    version: z.literal(1),
-    updatedAt: nonEmptyStringSchema,
-    connectors: z.record(
-      z.string().trim().min(1),
-      z
-        .object({
-          enabled: z.boolean(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
 
 export type OpenAiNativeConnectorsSnapshot = {
   connectors: OpenAiNativeConnector[];
@@ -52,24 +36,8 @@ function emptyConnectorsConfig(): OpenAiNativeConnectorsConfig {
 export async function readOpenAiNativeConnectorsConfig(
   config: Pick<AgentConfig, "projectCoworkDir">,
 ): Promise<OpenAiNativeConnectorsConfig> {
-  const filePath = openAiNativeConnectorsConfigPath(config);
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    const parsed = connectorConfigSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : emptyConnectorsConfig();
-  } catch (error) {
-    if ((error as { code?: unknown })?.code === "ENOENT") return emptyConnectorsConfig();
-    throw error;
-  }
-}
-
-async function writeOpenAiNativeConnectorsConfig(
-  config: Pick<AgentConfig, "projectCoworkDir">,
-  document: OpenAiNativeConnectorsConfig,
-): Promise<void> {
-  const filePath = openAiNativeConnectorsConfigPath(config);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await writeTextFileAtomic(filePath, JSON.stringify(document, null, 2), { mode: 0o600 });
+  void config;
+  return emptyConnectorsConfig();
 }
 
 export async function setOpenAiNativeConnectorEnabled(
@@ -79,17 +47,9 @@ export async function setOpenAiNativeConnectorEnabled(
 ): Promise<OpenAiNativeConnectorsConfig> {
   const id = connectorId.trim();
   if (!id) throw new Error("Connector id is required.");
-  const current = await readOpenAiNativeConnectorsConfig(config);
-  const next: OpenAiNativeConnectorsConfig = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    connectors: {
-      ...current.connectors,
-      [id]: { enabled },
-    },
-  };
-  await writeOpenAiNativeConnectorsConfig(config, next);
-  return next;
+  await setCodexAppServerAppEnabled({ appId: id, enabled });
+  void config;
+  return emptyConnectorsConfig();
 }
 
 export function enabledConnectorIdsFromConfig(document: OpenAiNativeConnectorsConfig): string[] {
@@ -101,11 +61,8 @@ export function enabledConnectorIdsFromConfig(document: OpenAiNativeConnectorsCo
 
 export async function listOpenAiNativeConnectors(opts: {
   config: AgentConfig;
-  fetchImpl?: typeof fetch;
-  discoverAccessible?: boolean;
+  forceRefetch?: boolean;
 }): Promise<OpenAiNativeConnectorsSnapshot> {
-  const connectorConfig = await readOpenAiNativeConnectorsConfig(opts.config);
-  const enabledConnectorIds = enabledConnectorIdsFromConfig(connectorConfig);
   if (!resolveOpenAiNativeConnectorsConfig(opts.config)) {
     return {
       connectors: [],
@@ -118,18 +75,40 @@ export async function listOpenAiNativeConnectors(opts: {
   if (!accountResult?.account) {
     return {
       connectors: [],
-      enabledConnectorIds,
+      enabledConnectorIds: [],
       authenticated: false,
       message: "Sign in to Codex before using Codex app-server apps.",
     };
   }
 
+  const connectors = (await listCodexAppServerApps({ forceRefetch: opts.forceRefetch === true }))
+    .map(
+      (app): OpenAiNativeConnector => ({
+        id: app.id,
+        name: app.name,
+        ...(app.description ? { description: app.description } : {}),
+        ...(app.logoUrl ? { logoUrl: app.logoUrl } : {}),
+        ...(app.logoUrlDark ? { logoUrlDark: app.logoUrlDark } : {}),
+        ...(app.distributionChannel ? { distributionChannel: app.distributionChannel } : {}),
+        ...(app.installUrl ? { installUrl: app.installUrl } : {}),
+        isAccessible: app.isAccessible,
+        isEnabled: app.isEnabled,
+        ...(app.appMetadata ? { appMetadata: app.appMetadata } : {}),
+        ...(app.labels ? { labels: app.labels } : {}),
+      }),
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const enabledConnectorIds = connectors
+    .filter((connector) => connector.isEnabled)
+    .map((connector) => connector.id)
+    .sort((left, right) => left.localeCompare(right));
+
   return {
-    connectors: [],
-    enabledConnectorIds: [],
+    connectors,
+    enabledConnectorIds,
     authenticated: true,
     message:
-      "Codex app-server owns ChatGPT apps/connectors; Cowork no longer injects a direct codex_apps MCP bridge.",
+      connectors.length === 0 ? "Codex app-server did not report any ChatGPT apps." : undefined,
   };
 }
 

@@ -256,6 +256,7 @@ export class AgentSession {
       abortController: null,
       currentTurnId: null,
       acceptingSteers: false,
+      activeSteerHandler: null,
       pendingSteers: [],
       pendingExternalSkillRefreshReason: null,
       currentTurnOutcome: initialCurrentTurnOutcome(hydrated),

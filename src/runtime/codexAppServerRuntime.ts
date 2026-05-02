@@ -1,43 +1,15 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import readline from "node:readline";
-
+import {
+  type CodexAppServerClient,
+  type CodexAppServerJsonRpcNotification,
+  type CodexAppServerJsonRpcRequest,
+  startCodexAppServerClient,
+} from "../providers/codexAppServerClient";
 import { isCodexAppServerContinuationState } from "../shared/providerContinuation";
 import type { ModelMessage } from "../types";
 import { asRecord, asString } from "./piRuntimeOptions";
 import type { LlmRuntime, RuntimeRunTurnParams, RuntimeRunTurnResult, RuntimeUsage } from "./types";
 
-type JsonRpcResponse = {
-  id: number | string;
-  result?: unknown;
-  error?: { message?: string; [key: string]: unknown };
-};
-
-type JsonRpcNotification = {
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcRequest = {
-  id: number | string;
-  method: string;
-  params?: unknown;
-};
-
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-};
-
-type CodexAppServerClient = {
-  request: (method: string, params?: unknown) => Promise<unknown>;
-  notify: (method: string, params?: unknown) => void;
-  onNotification: (listener: (notification: JsonRpcNotification) => void) => () => void;
-  close: () => Promise<void>;
-};
-
 const CODEX_APP_SERVER_PROVIDER = "codex-cli" as const;
-const DEFAULT_CODEX_COMMAND = "codex";
-const DEFAULT_CODEX_ARGS = ["app-server"] as const;
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 type CodexApprovalPolicy = "on-request" | "never";
 type CodexSandboxPolicy =
@@ -50,10 +22,6 @@ type CodexSandboxPolicy =
       excludeTmpdirEnvVar: boolean;
       excludeSlashTmp: boolean;
     };
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -109,6 +77,18 @@ function normalizeSummary(value: string | undefined): string | undefined {
   return ["auto", "concise", "detailed", "none"].includes(value) ? value : undefined;
 }
 
+function normalizeWebSearchMode(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return ["disabled", "cached", "live"].includes(value) ? value : undefined;
+}
+
+function codexThreadConfig(params: RuntimeRunTurnParams): Record<string, unknown> | undefined {
+  const webSearchMode = normalizeWebSearchMode(
+    providerOptionString(params.providerOptions, "webSearchMode"),
+  );
+  return webSearchMode ? { web_search: webSearchMode } : undefined;
+}
+
 function codexSandboxMode(params: RuntimeRunTurnParams): CodexSandboxMode {
   if (params.shellPolicy === "no_project_write") return "read-only";
   return params.yolo === true ? "danger-full-access" : "workspace-write";
@@ -158,146 +138,35 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
 }
 
 function startCodexAppServer(params: RuntimeRunTurnParams): CodexAppServerClient {
-  const command = process.env.COWORK_CODEX_APP_SERVER_COMMAND?.trim() || DEFAULT_CODEX_COMMAND;
-  const args = process.env.COWORK_CODEX_APP_SERVER_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [
-    ...DEFAULT_CODEX_ARGS,
-  ];
-  const child = spawn(command, args, {
+  const client = startCodexAppServerClient({
     cwd: params.config.workingDirectory,
-    env: process.env,
-    stdio: ["pipe", "pipe", "pipe"],
+    log: params.log,
+    invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
+    onServerRequest: async (request) => await handleServerRequest(request, params),
   });
-  const pending = new Map<number | string, PendingRequest>();
-  const notificationListeners = new Set<(notification: JsonRpcNotification) => void>();
-  let nextId = 1;
-  let closed = false;
-
-  const rejectAll = (error: Error) => {
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
-  };
-
-  child.once("error", (error) => {
-    rejectAll(new Error(`Failed to start codex app-server: ${error.message}`));
-  });
-  child.once("exit", (code, signal) => {
-    closed = true;
-    if (pending.size > 0) {
-      rejectAll(
-        new Error(`codex app-server exited before replying (code=${code}, signal=${signal})`),
-      );
-    }
-  });
-  child.stderr.on("data", (chunk) => {
-    const text = String(chunk).trim();
-    if (text) params.log?.(`[codex-app-server:stderr] ${text}`);
-  });
-
-  const rl = readline.createInterface({ input: child.stdout });
-  rl.on("line", (line) => {
-    if (!line.trim()) return;
-    let message: unknown;
-    try {
-      message = JSON.parse(line);
-    } catch (error) {
-      params.log?.(`[codex-app-server] ignored invalid JSONL: ${String(error)}`);
-      return;
-    }
-
-    const record = asRecord(message);
-    if (!record) return;
-    if ("id" in record && ("result" in record || "error" in record)) {
-      const response = record as JsonRpcResponse;
-      const request = pending.get(response.id);
-      if (!request) return;
-      pending.delete(response.id);
-      if (response.error) {
-        request.reject(new Error(response.error.message || "codex app-server request failed"));
-      } else {
-        request.resolve(response.result);
-      }
-      return;
-    }
-
-    if ("id" in record && typeof record.method === "string") {
-      void handleServerRequest(child, record as JsonRpcRequest, params);
-      return;
-    }
-
-    const notification = record as JsonRpcNotification;
-    for (const listener of notificationListeners) listener(notification);
+  client.onNotification((notification) => {
     void handleNotification(notification, params);
   });
-
-  const write = (payload: unknown) => {
-    if (closed || child.stdin.destroyed) {
-      throw new Error("codex app-server is not running.");
-    }
-    child.stdin.write(`${JSON.stringify(payload)}\n`);
-  };
-
-  return {
-    request: (method, requestParams) =>
-      new Promise((resolve, reject) => {
-        const id = nextId++;
-        pending.set(id, { resolve, reject });
-        try {
-          write({ id, method, ...(requestParams !== undefined ? { params: requestParams } : {}) });
-        } catch (error) {
-          pending.delete(id);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      }),
-    notify: (method, notificationParams) => {
-      write({
-        method,
-        ...(notificationParams !== undefined ? { params: notificationParams } : {}),
-      });
-    },
-    onNotification: (listener) => {
-      notificationListeners.add(listener);
-      return () => {
-        notificationListeners.delete(listener);
-      };
-    },
-    close: async () => {
-      rl.close();
-      await stopProcess(child);
-    },
-  };
+  return client;
 }
 
 async function handleServerRequest(
-  child: ChildProcessWithoutNullStreams,
-  request: JsonRpcRequest,
+  request: CodexAppServerJsonRpcRequest,
   params: RuntimeRunTurnParams,
-) {
-  try {
-    const method = request.method;
-    let result: unknown = {};
-    if (
-      method === "item/commandExecution/requestApproval" ||
-      method === "item/fileChange/requestApproval"
-    ) {
-      const approved =
-        params.yolo === true || (await params.approveCommand?.(approvalPromptForRequest(request)));
-      result = { decision: approved ? "accept" : "decline" };
-    }
-    child.stdin.write(`${JSON.stringify({ id: request.id, result })}\n`);
-  } catch (error) {
-    child.stdin.write(
-      `${JSON.stringify({
-        id: request.id,
-        error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      })}\n`,
-    );
+): Promise<unknown> {
+  const method = request.method;
+  if (
+    method === "item/commandExecution/requestApproval" ||
+    method === "item/fileChange/requestApproval"
+  ) {
+    const approved =
+      params.yolo === true || (await params.approveCommand?.(approvalPromptForRequest(request)));
+    return { decision: approved ? "accept" : "decline" };
   }
+  return {};
 }
 
-function approvalPromptForRequest(request: JsonRpcRequest): string {
+function approvalPromptForRequest(request: CodexAppServerJsonRpcRequest): string {
   const params = asRecord(request.params);
   if (request.method === "item/commandExecution/requestApproval") {
     return asString(params?.command) ?? "Approve Codex command execution";
@@ -310,22 +179,10 @@ function approvalPromptForRequest(request: JsonRpcRequest): string {
   );
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (child.exitCode !== null || child.killed) return;
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 500);
-    child.once("exit", () => {
-      clearTimeout(timeout);
-      resolve();
-    });
-    child.kill("SIGTERM");
-  });
-}
-
-async function handleNotification(notification: JsonRpcNotification, params: RuntimeRunTurnParams) {
+async function handleNotification(
+  notification: CodexAppServerJsonRpcNotification,
+  params: RuntimeRunTurnParams,
+) {
   const payload = asRecord(notification.params);
   const item = asRecord(payload?.item);
   switch (notification.method) {
@@ -448,6 +305,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
       const client = startCodexAppServer(params);
       let threadId: string | undefined;
       let usage: RuntimeUsage | undefined;
+      let unregisterSteerHandler: (() => void) | undefined;
       try {
         params.abortSignal?.throwIfAborted();
         await client.request("initialize", {
@@ -465,6 +323,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const approvalPolicy = codexApprovalPolicy(params);
         const sandboxMode = codexSandboxMode(params);
         const sandboxPolicy = codexSandboxPolicy(params);
+        const threadConfig = codexThreadConfig(params);
         const threadResult =
           currentState?.model === params.config.model
             ? await client.request("thread/resume", {
@@ -474,6 +333,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 modelProvider: "openai",
                 approvalPolicy,
                 sandbox: sandboxMode,
+                ...(threadConfig ? { config: threadConfig } : {}),
                 baseInstructions: params.system,
               })
             : await client.request("thread/start", {
@@ -482,6 +342,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 modelProvider: "openai",
                 approvalPolicy,
                 sandbox: sandboxMode,
+                ...(threadConfig ? { config: threadConfig } : {}),
                 baseInstructions: params.system,
                 experimentalRawEvents: params.includeRawChunks ?? true,
               });
@@ -524,6 +385,21 @@ export function createCodexAppServerRuntime(): LlmRuntime {
 
         const startedTurn = asRecord(asRecord(turnResult)?.turn);
         startedTurnId = asString(startedTurn?.id);
+        if (params.registerSteerHandler && startedTurnId) {
+          unregisterSteerHandler = params.registerSteerHandler(async (steer) => {
+            if (!threadId || !startedTurnId) {
+              throw new Error("Codex app-server turn is not ready for steering.");
+            }
+            if (steer.expectedTurnId !== startedTurnId) {
+              throw new Error("Codex app-server active turn mismatch.");
+            }
+            await client.request("turn/steer", {
+              threadId,
+              expectedTurnId: startedTurnId,
+              input: [{ type: "text", text: steer.text, text_elements: [] }],
+            });
+          });
+        }
         const finalTurn = await completion;
 
         const text = assistantTextFromTurn(finalTurn);
@@ -561,6 +437,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         }
         throw error;
       } finally {
+        unregisterSteerHandler?.();
         await client.close();
       }
     },

@@ -6,7 +6,6 @@ import path from "node:path";
 import { __internal as codexAppServerAuthInternal } from "../src/providers/codexAppServerAuth";
 import {
   listOpenAiNativeConnectors,
-  openAiNativeConnectorsConfigPath,
   setOpenAiNativeConnectorEnabled,
 } from "../src/server/connectors/openaiNativeConnectors";
 import type { AgentConfig } from "../src/types";
@@ -33,7 +32,7 @@ function makeConfig(workspaceRoot: string, home: string): AgentConfig {
 }
 
 describe("OpenAI native connectors", () => {
-  test("reports app-server connector ownership when Codex is signed in", async () => {
+  test("lists Codex app-server apps when Codex is signed in", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "connectors-workspace-"));
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "connectors-home-"));
     const config = makeConfig(workspaceRoot, home);
@@ -42,37 +41,57 @@ describe("OpenAI native connectors", () => {
         account: { type: "chatgpt", email: "tester@example.com" },
         requiresOpenaiAuth: true,
       }),
+      listApps: async () => [
+        {
+          id: "connector_gmail",
+          name: "Gmail",
+          description: "Search mail",
+          isAccessible: true,
+          isEnabled: true,
+        },
+      ],
     });
     try {
-      await setOpenAiNativeConnectorEnabled(config, "connector_gmail", true);
-
       const snapshot = await listOpenAiNativeConnectors({
         config,
-        fetchImpl: async () => {
-          throw new Error("direct connector fetch should not run");
-        },
-        discoverAccessible: false,
+        forceRefetch: true,
       });
 
       expect(snapshot.authenticated).toBe(true);
-      expect(snapshot.enabledConnectorIds).toEqual([]);
-      expect(snapshot.connectors).toEqual([]);
-      expect(snapshot.message).toContain("app-server owns ChatGPT apps/connectors");
+      expect(snapshot.enabledConnectorIds).toEqual(["connector_gmail"]);
+      expect(snapshot.connectors).toEqual([
+        expect.objectContaining({
+          id: "connector_gmail",
+          name: "Gmail",
+          isAccessible: true,
+          isEnabled: true,
+        }),
+      ]);
     } finally {
       codexAppServerAuthInternal.resetAuthOverridesForTests();
     }
   });
 
-  test("persists connector enabled state in the workspace .cowork directory", async () => {
+  test("persists connector enabled state through Codex app-server config", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "connectors-config-"));
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "connectors-config-home-"));
     const config = makeConfig(workspaceRoot, home);
+    const writes: Array<{ appId: string; enabled: boolean }> = [];
+    codexAppServerAuthInternal.setAuthOverridesForTests({
+      setAppEnabled: async (opts) => {
+        writes.push({ appId: opts.appId, enabled: opts.enabled });
+      },
+    });
 
-    await setOpenAiNativeConnectorEnabled(config, "connector_dropbox", true);
+    try {
+      await setOpenAiNativeConnectorEnabled(config, "connector_dropbox", true);
 
-    const persisted = JSON.parse(
-      await fs.readFile(openAiNativeConnectorsConfigPath(config), "utf-8"),
-    );
-    expect(persisted.connectors.connector_dropbox.enabled).toBe(true);
+      expect(writes).toEqual([{ appId: "connector_dropbox", enabled: true }]);
+      await expect(
+        fs.readFile(path.join(config.projectCoworkDir, "openai-native-connectors.json"), "utf-8"),
+      ).rejects.toThrow();
+    } finally {
+      codexAppServerAuthInternal.resetAuthOverridesForTests();
+    }
   });
 });

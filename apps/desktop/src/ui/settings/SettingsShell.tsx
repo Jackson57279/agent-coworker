@@ -34,7 +34,7 @@ const SETTINGS_PAGE_META: Record<SettingsPageId, { title: string; description: s
   },
   openAiNativeConnectors: {
     title: "OpenAI Native Connectors",
-    description: "Enable ChatGPT apps as native Codex tools for this workspace.",
+    description: "Manage ChatGPT apps exposed by the Codex app-server.",
   },
   desktop: {
     title: "Desktop",

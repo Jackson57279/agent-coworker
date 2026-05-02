@@ -34,6 +34,15 @@ export type RuntimePrepareStep = (step: {
   messages: ModelMessage[];
 }) => Promise<RuntimeStepOverride | undefined>;
 
+export type RuntimeSteerInput = {
+  text: string;
+  expectedTurnId: string;
+};
+
+export type RuntimeSteerHandler = (input: RuntimeSteerInput) => Promise<void>;
+
+export type RuntimeRegisterSteerHandler = (handler: RuntimeSteerHandler) => () => void;
+
 export interface RuntimeRunTurnParams {
   config: AgentConfig;
   system: string;
@@ -49,6 +58,7 @@ export interface RuntimeRunTurnParams {
   includeRawChunks?: boolean;
   telemetry?: unknown;
   prepareStep?: RuntimePrepareStep;
+  registerSteerHandler?: RuntimeRegisterSteerHandler;
   approveCommand?: (command: string) => Promise<boolean>;
   onModelStreamPart?: (part: unknown) => void | Promise<void>;
   onModelRawEvent?: (event: RuntimeModelRawEvent) => void | Promise<void>;

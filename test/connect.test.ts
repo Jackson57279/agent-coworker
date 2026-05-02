@@ -224,7 +224,7 @@ describe("connectProvider", () => {
     expect(entry?.apiKey).toBe("opencode-zen-test-key-5678");
   });
 
-  test("codex-cli app-server login succeeds and stores oauth mode", async () => {
+  test("codex-cli app-server login succeeds without storing a Cowork oauth marker", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });
     const openedUrls: string[] = [];
@@ -248,9 +248,7 @@ describe("connectProvider", () => {
     ).rejects.toThrow();
 
     const store = await readConnectionStore(paths);
-    const entry = store.services["codex-cli"];
-    expect(entry).toBeDefined();
-    expect(entry?.mode).toBe("oauth");
+    expect(store.services["codex-cli"]).toBeUndefined();
   });
 
   test("codex-cli ignores legacy external auth and runs app-server login", async () => {
@@ -299,6 +297,8 @@ describe("connectProvider", () => {
     await expect(
       fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8"),
     ).rejects.toThrow();
+    const store = await readConnectionStore(paths);
+    expect(store.services["codex-cli"]).toBeUndefined();
   });
 
   test("codex-cli rejects pasted authorization codes because app-server owns the browser handoff", async () => {

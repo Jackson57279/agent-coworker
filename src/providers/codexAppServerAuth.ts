@@ -1,31 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import readline from "node:readline";
-
 import { asRecord, asString } from "../runtime/piRuntimeOptions";
 import { openExternalUrl, type UrlOpener } from "../utils/browser";
-
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-};
-
-type JsonRpcNotification = {
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcRequest = {
-  id: number | string;
-  method: string;
-  params?: unknown;
-};
-
-type CodexAppServerClient = {
-  request: (method: string, params?: unknown) => Promise<unknown>;
-  notify: (method: string, params?: unknown) => void;
-  onNotification: (listener: (notification: JsonRpcNotification) => void) => () => void;
-  close: () => Promise<void>;
-};
+import { type CodexAppServerClient, withCodexAppServerClient } from "./codexAppServerClient";
 
 export type CodexAppServerAccount = {
   type: "apiKey" | "chatgpt";
@@ -57,6 +32,20 @@ export type CodexAppServerModel = {
   isDefault: boolean;
 };
 
+export type CodexAppServerApp = {
+  id: string;
+  name: string;
+  description?: string;
+  logoUrl?: string;
+  logoUrlDark?: string;
+  distributionChannel?: string;
+  installUrl?: string;
+  isAccessible: boolean;
+  isEnabled: boolean;
+  appMetadata?: Record<string, unknown>;
+  labels?: Record<string, string>;
+};
+
 type ReadAccountOptions = {
   refreshToken?: boolean;
   log?: (line: string) => void;
@@ -75,6 +64,17 @@ type ListModelsOptions = {
   log?: (line: string) => void;
 };
 
+type ListAppsOptions = {
+  forceRefetch?: boolean;
+  log?: (line: string) => void;
+};
+
+type SetAppEnabledOptions = {
+  appId: string;
+  enabled: boolean;
+  log?: (line: string) => void;
+};
+
 type AppServerAuthOverrides = {
   readAccount?: (
     opts: ReadAccountOptions,
@@ -82,158 +82,17 @@ type AppServerAuthOverrides = {
   readRateLimits?: (opts: ReadRateLimitsOptions) => Promise<CodexAppServerRateLimits | null>;
   login?: (opts: LoginOptions) => Promise<{ account: CodexAppServerAccount | null }>;
   listModels?: (opts: ListModelsOptions) => Promise<CodexAppServerModel[]>;
+  listApps?: (opts: ListAppsOptions) => Promise<CodexAppServerApp[]>;
+  setAppEnabled?: (opts: SetAppEnabledOptions) => Promise<void>;
 };
 
-const DEFAULT_CODEX_COMMAND = "codex";
-const DEFAULT_CODEX_ARGS = ["app-server"] as const;
 const appServerAuthOverrides: AppServerAuthOverrides = {};
-
-function codexCommand(): { command: string; args: string[] } {
-  return {
-    command: process.env.COWORK_CODEX_APP_SERVER_COMMAND?.trim() || DEFAULT_CODEX_COMMAND,
-    args: process.env.COWORK_CODEX_APP_SERVER_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [
-      ...DEFAULT_CODEX_ARGS,
-    ],
-  };
-}
-
-function startClient(log?: (line: string) => void): CodexAppServerClient {
-  const { command, args } = codexCommand();
-  const child = spawn(command, args, {
-    env: process.env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const pending = new Map<number | string, PendingRequest>();
-  const listeners = new Set<(notification: JsonRpcNotification) => void>();
-  let nextId = 1;
-  let closed = false;
-
-  const rejectAll = (error: Error) => {
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
-  };
-
-  child.once("error", (error) => {
-    rejectAll(new Error(`Failed to start codex app-server: ${error.message}`));
-  });
-  child.once("exit", (code, signal) => {
-    closed = true;
-    if (pending.size > 0) {
-      rejectAll(
-        new Error(`codex app-server exited before replying (code=${code}, signal=${signal})`),
-      );
-    }
-  });
-  child.stderr.on("data", (chunk) => {
-    const text = String(chunk).trim();
-    if (text) log?.(`[codex-app-server:stderr] ${text}`);
-  });
-
-  const rl = readline.createInterface({ input: child.stdout });
-  rl.on("line", (line) => {
-    if (!line.trim()) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      log?.(`[codex-app-server:stdout] ${line}`);
-      return;
-    }
-    const record = asRecord(parsed);
-    if (!record) return;
-
-    if ("id" in record && ("result" in record || "error" in record)) {
-      const request = pending.get(record.id as number | string);
-      if (!request) return;
-      pending.delete(record.id as number | string);
-      const error = asRecord(record.error);
-      if (error) {
-        request.reject(new Error(asString(error.message) ?? "codex app-server request failed"));
-      } else {
-        request.resolve(record.result);
-      }
-      return;
-    }
-
-    if ("id" in record && typeof record.method === "string") {
-      respondToServerRequest(child, record as JsonRpcRequest);
-      return;
-    }
-
-    const notification = record as JsonRpcNotification;
-    for (const listener of listeners) listener(notification);
-  });
-
-  const write = (payload: unknown) => {
-    if (closed || child.stdin.destroyed) throw new Error("codex app-server is not running.");
-    child.stdin.write(`${JSON.stringify(payload)}\n`);
-  };
-
-  return {
-    request: (method, params) =>
-      new Promise((resolve, reject) => {
-        const id = nextId++;
-        pending.set(id, { resolve, reject });
-        try {
-          write({ id, method, ...(params !== undefined ? { params } : {}) });
-        } catch (error) {
-          pending.delete(id);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      }),
-    notify: (method, params) => {
-      write({ method, ...(params !== undefined ? { params } : {}) });
-    },
-    onNotification: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    close: async () => {
-      rl.close();
-      await stopProcess(child);
-    },
-  };
-}
-
-function respondToServerRequest(child: ChildProcessWithoutNullStreams, request: JsonRpcRequest) {
-  child.stdin.write(`${JSON.stringify({ id: request.id, result: {} })}\n`);
-}
-
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (child.exitCode !== null || child.killed) return;
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 500);
-    child.once("exit", () => {
-      clearTimeout(timeout);
-      resolve();
-    });
-    child.kill("SIGTERM");
-  });
-}
 
 async function withClient<T>(
   fn: (client: CodexAppServerClient) => Promise<T>,
   log?: (line: string) => void,
 ): Promise<T> {
-  const client = startClient(log);
-  try {
-    await client.request("initialize", {
-      clientInfo: {
-        name: "agent-coworker",
-        title: "Agent Coworker",
-        version: "0.1.0",
-      },
-    });
-    client.notify("initialized");
-    return await fn(client);
-  } finally {
-    await client.close();
-  }
+  return await withCodexAppServerClient(fn, { log });
 }
 
 function normalizeAccount(value: unknown): CodexAppServerAccount | null {
@@ -268,6 +127,44 @@ function normalizeModel(value: unknown): CodexAppServerModel | null {
   };
 }
 
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const normalized: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    const text = asString(entry);
+    if (text !== undefined) normalized[key] = text;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeApp(value: unknown): CodexAppServerApp | null {
+  const app = asRecord(value);
+  const id = asString(app?.id);
+  const name = asString(app?.name);
+  if (!id || !name) return null;
+  const description = asString(app?.description);
+  const logoUrl = asString(app?.logoUrl);
+  const logoUrlDark = asString(app?.logoUrlDark);
+  const distributionChannel = asString(app?.distributionChannel);
+  const installUrl = asString(app?.installUrl);
+  const appMetadata = asRecord(app?.appMetadata);
+  const labels = normalizeStringRecord(app?.labels);
+  return {
+    id,
+    name,
+    ...(description ? { description } : {}),
+    ...(logoUrl ? { logoUrl } : {}),
+    ...(logoUrlDark ? { logoUrlDark } : {}),
+    ...(distributionChannel ? { distributionChannel } : {}),
+    ...(installUrl ? { installUrl } : {}),
+    isAccessible: app?.isAccessible === true,
+    isEnabled: app?.isEnabled === true,
+    ...(appMetadata ? { appMetadata } : {}),
+    ...(labels ? { labels } : {}),
+  };
+}
+
 export async function listCodexAppServerModels(
   opts: ListModelsOptions = {},
 ): Promise<CodexAppServerModel[]> {
@@ -294,6 +191,48 @@ export async function listCodexAppServerModels(
       cursor = asString(result?.nextCursor) ?? asString(result?.next_cursor);
     } while (cursor);
     return models;
+  }, opts.log);
+}
+
+export async function listCodexAppServerApps(
+  opts: ListAppsOptions = {},
+): Promise<CodexAppServerApp[]> {
+  if (appServerAuthOverrides.listApps) return await appServerAuthOverrides.listApps(opts);
+  return await withClient(async (client) => {
+    const apps: CodexAppServerApp[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = asRecord(
+        await client.request("app/list", {
+          limit: 100,
+          cursor: cursor ?? null,
+          forceRefetch: opts.forceRefetch === true,
+        }),
+      );
+      const items = Array.isArray(result?.data) ? result.data : [];
+      for (const item of items) {
+        const app = normalizeApp(item);
+        if (app) apps.push(app);
+      }
+      cursor = asString(result?.nextCursor) ?? asString(result?.next_cursor);
+    } while (cursor);
+    return apps;
+  }, opts.log);
+}
+
+export async function setCodexAppServerAppEnabled(opts: SetAppEnabledOptions): Promise<void> {
+  if (appServerAuthOverrides.setAppEnabled) {
+    await appServerAuthOverrides.setAppEnabled(opts);
+    return;
+  }
+  const appId = opts.appId.trim();
+  if (!appId) throw new Error("App id is required.");
+  await withClient(async (client) => {
+    await client.request("config/value/write", {
+      keyPath: `apps.${appId}.enabled`,
+      value: opts.enabled,
+      mergeStrategy: "upsert",
+    });
   }, opts.log);
 }
 
@@ -351,12 +290,16 @@ export const __internal = {
     appServerAuthOverrides.readRateLimits = overrides.readRateLimits;
     appServerAuthOverrides.login = overrides.login;
     appServerAuthOverrides.listModels = overrides.listModels;
+    appServerAuthOverrides.listApps = overrides.listApps;
+    appServerAuthOverrides.setAppEnabled = overrides.setAppEnabled;
   },
   resetAuthOverridesForTests(): void {
     delete appServerAuthOverrides.readAccount;
     delete appServerAuthOverrides.readRateLimits;
     delete appServerAuthOverrides.login;
     delete appServerAuthOverrides.listModels;
+    delete appServerAuthOverrides.listApps;
+    delete appServerAuthOverrides.setAppEnabled;
   },
 } as const;
 

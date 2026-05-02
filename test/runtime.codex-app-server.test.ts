@@ -9,6 +9,7 @@ import type { AgentConfig } from "../src/types";
 const previousCommand = process.env.COWORK_CODEX_APP_SERVER_COMMAND;
 const previousArgs = process.env.COWORK_CODEX_APP_SERVER_ARGS;
 const previousCapturePath = process.env.CODEX_APP_SERVER_CAPTURE_PATH;
+const previousDelayCompletion = process.env.CODEX_APP_SERVER_DELAY_COMPLETION;
 
 function makeConfig(dir: string): AgentConfig {
   return {
@@ -42,9 +43,16 @@ const rl = readline.createInterface({ input: process.stdin });
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
 function capture(msg) {
   if (!process.env.CODEX_APP_SERVER_CAPTURE_PATH) return;
-  if (msg.method === "thread/start" || msg.method === "thread/resume" || msg.method === "turn/start") {
+  if (msg.method === "thread/start" || msg.method === "thread/resume" || msg.method === "turn/start" || msg.method === "turn/steer") {
     fs.appendFileSync(process.env.CODEX_APP_SERVER_CAPTURE_PATH, JSON.stringify({ method: msg.method, params: msg.params }) + "\\n");
   }
+}
+function completeTurn(extraItems = []) {
+  send({ method: "item/started", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "", phase: null, memoryCitation: null } } });
+  send({ method: "item/agentMessage/delta", params: { threadId: "thread_1", turnId: "turn_1", itemId: "item_1", delta: "hello from app-server" } });
+  send({ method: "item/completed", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null } } });
+  send({ method: "thread/tokenUsage/updated", params: { threadId: "thread_1", turnId: "turn_1", tokenUsage: { total: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, last: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, modelContextWindow: 272000 } } });
+  send({ method: "turn/completed", params: { turn: { id: "turn_1", status: "completed", items: [...extraItems, { type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null }], error: null } } });
 }
 rl.on("line", (line) => {
   const msg = JSON.parse(line);
@@ -64,11 +72,12 @@ rl.on("line", (line) => {
   }
   if (msg.method === "turn/start") {
     send({ id: msg.id, result: { turn: { id: "turn_1", status: "inProgress", items: [], error: null } } });
-    send({ method: "item/started", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "", phase: null, memoryCitation: null } } });
-    send({ method: "item/agentMessage/delta", params: { threadId: "thread_1", turnId: "turn_1", itemId: "item_1", delta: "hello from app-server" } });
-    send({ method: "item/completed", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null } } });
-    send({ method: "thread/tokenUsage/updated", params: { threadId: "thread_1", turnId: "turn_1", tokenUsage: { total: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, last: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, modelContextWindow: 272000 } } });
-    send({ method: "turn/completed", params: { turn: { id: "turn_1", status: "completed", items: [{ type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null }], error: null } } });
+    if (process.env.CODEX_APP_SERVER_DELAY_COMPLETION !== "1") completeTurn();
+    return;
+  }
+  if (msg.method === "turn/steer") {
+    send({ id: msg.id, result: { turnId: msg.params.expectedTurnId } });
+    completeTurn([{ type: "userMessage", id: "steer_user_1", content: msg.params.input }]);
   }
 });
 `,
@@ -95,6 +104,8 @@ afterEach(() => {
   else process.env.COWORK_CODEX_APP_SERVER_ARGS = previousArgs;
   if (previousCapturePath === undefined) delete process.env.CODEX_APP_SERVER_CAPTURE_PATH;
   else process.env.CODEX_APP_SERVER_CAPTURE_PATH = previousCapturePath;
+  if (previousDelayCompletion === undefined) delete process.env.CODEX_APP_SERVER_DELAY_COMPLETION;
+  else process.env.CODEX_APP_SERVER_DELAY_COMPLETION = previousDelayCompletion;
 });
 
 describe("codex app-server runtime", () => {
@@ -238,5 +249,45 @@ describe("codex app-server runtime", () => {
       approvalPolicy: "never",
       sandboxPolicy: { type: "readOnly", networkAccess: true },
     });
+  });
+
+  test("registers an active steer handler that sends turn/steer to app-server", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-steer-"));
+    const script = await writeMockAppServer(dir);
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+    process.env.CODEX_APP_SERVER_DELAY_COMPLETION = "1";
+
+    let steerHandler:
+      | ((input: { text: string; expectedTurnId: string }) => Promise<void>)
+      | undefined;
+    const runtime = createRuntime(makeConfig(dir));
+    const result = await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+      registerSteerHandler: (handler) => {
+        steerHandler = handler;
+        queueMicrotask(() => {
+          void handler({ text: "also mention steering", expectedTurnId: "turn_1" });
+        });
+        return () => {
+          if (steerHandler === handler) steerHandler = undefined;
+        };
+      },
+    });
+
+    expect(result.text).toBe("hello from app-server");
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "turn/steer")?.params).toMatchObject({
+      threadId: "thread_1",
+      expectedTurnId: "turn_1",
+      input: [{ type: "text", text: "also mention steering", text_elements: [] }],
+    });
+    expect(steerHandler).toBeUndefined();
   });
 });
