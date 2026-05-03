@@ -1,6 +1,7 @@
 import {
   type CodexAppServerClient,
   type CodexAppServerJsonRpcNotification,
+  type CodexAppServerJsonRpcRawMessage,
   type CodexAppServerJsonRpcRequest,
   codexAppServerInitializeParams,
   startCodexAppServerClient,
@@ -17,6 +18,10 @@ type CodexAppServerModelListEntry = {
   id: string;
   model: string;
   isDefault: boolean;
+};
+type StartedCodexAppServer = {
+  client: CodexAppServerClient;
+  waitForRawEvents: () => Promise<void>;
 };
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 type CodexApprovalPolicy = "on-request" | "never";
@@ -259,17 +264,41 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
   };
 }
 
-async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<CodexAppServerClient> {
+async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<StartedCodexAppServer> {
+  const rawEventPromises: Promise<void>[] = [];
+  const rawEventErrors: unknown[] = [];
+  const recordJsonRpcMessage = (message: CodexAppServerJsonRpcRawMessage) => {
+    const persist = params.onModelRawEvent?.({
+      format: "codex-app-server-v2",
+      event: message,
+    });
+    if (!persist) return;
+    rawEventPromises.push(
+      Promise.resolve(persist).catch((error) => {
+        rawEventErrors.push(error);
+      }),
+    );
+  };
   const client = await startCodexAppServerClient({
     cwd: params.config.workingDirectory,
     log: params.log,
     invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
     onServerRequest: async (request) => await handleServerRequest(request, params),
+    onJsonRpcMessage: recordJsonRpcMessage,
   });
   client.onNotification((notification) => {
     void handleNotification(notification, params);
   });
-  return client;
+  return {
+    client,
+    waitForRawEvents: async () => {
+      await Promise.all(rawEventPromises);
+      if (rawEventErrors.length > 0) {
+        const first = rawEventErrors[0];
+        throw first instanceof Error ? first : new Error(String(first));
+      }
+    },
+  };
 }
 
 async function handleServerRequest(
@@ -385,13 +414,6 @@ async function handleNotification(
       break;
   }
 
-  await params.onModelRawEvent?.({
-    format: "codex-app-server-v2",
-    event: {
-      method: notification.method,
-      ...(payload ? { params: payload } : {}),
-    },
-  });
 }
 
 function assistantTextFromTurn(turn: unknown): string {
@@ -424,7 +446,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
   return {
     name: "codex-app-server",
     runTurn: async (params): Promise<RuntimeRunTurnResult> => {
-      const client = await startCodexAppServer(params);
+      const { client, waitForRawEvents } = await startCodexAppServer(params);
       let threadId: string | undefined;
       let usage: RuntimeUsage | undefined;
       let unregisterSteerHandler: (() => void) | undefined;
@@ -560,7 +582,11 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         throw contextualError;
       } finally {
         unregisterSteerHandler?.();
-        await client.close();
+        try {
+          await waitForRawEvents();
+        } finally {
+          await client.close();
+        }
       }
     },
   };

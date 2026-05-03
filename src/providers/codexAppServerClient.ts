@@ -14,6 +14,19 @@ type PendingRequest = {
   reject: (error: Error) => void;
 };
 
+export type CodexAppServerJsonRpcDirection =
+  | "client_request"
+  | "client_notification"
+  | "client_response"
+  | "server_request"
+  | "server_notification"
+  | "server_response";
+
+export type CodexAppServerJsonRpcRawMessage = {
+  direction: CodexAppServerJsonRpcDirection;
+  message: Record<string, unknown>;
+};
+
 export type CodexAppServerJsonRpcNotification = {
   method: string;
   params?: unknown;
@@ -44,6 +57,7 @@ export type CodexAppServerClientOptions = {
   log?: (line: string) => void;
   invalidJsonLogPrefix?: string;
   onServerRequest?: CodexAppServerRequestHandler;
+  onJsonRpcMessage?: (message: CodexAppServerJsonRpcRawMessage) => void;
 };
 
 export function codexAppServerClientInfo(): { name: string; title: string; version: string } {
@@ -113,6 +127,7 @@ export async function startCodexAppServerClient(
     const record = asRecord(parsed);
     if (!record) return;
     if ("id" in record && ("result" in record || "error" in record)) {
+      opts.onJsonRpcMessage?.({ direction: "server_response", message: record });
       const id = record.id as number | string;
       const request = pending.get(id);
       if (!request) return;
@@ -127,20 +142,24 @@ export async function startCodexAppServerClient(
     }
 
     if ("id" in record && typeof record.method === "string") {
+      opts.onJsonRpcMessage?.({ direction: "server_request", message: record });
       void respondToServerRequest(
         child,
         record as CodexAppServerJsonRpcRequest,
         opts.onServerRequest,
+        opts.onJsonRpcMessage,
       );
       return;
     }
 
     const notification = record as CodexAppServerJsonRpcNotification;
+    opts.onJsonRpcMessage?.({ direction: "server_notification", message: record });
     for (const listener of listeners) listener(notification);
   });
 
-  const write = (payload: unknown) => {
+  const write = (payload: Record<string, unknown>, direction: CodexAppServerJsonRpcDirection) => {
     if (closed || child.stdin.destroyed) throw new Error("codex app-server is not running.");
+    opts.onJsonRpcMessage?.({ direction, message: payload });
     child.stdin.write(`${JSON.stringify(payload)}\n`);
   };
 
@@ -151,14 +170,14 @@ export async function startCodexAppServerClient(
         const id = nextId++;
         pending.set(id, { resolve, reject });
         try {
-          write({ id, method, ...(params !== undefined ? { params } : {}) });
+          write({ id, method, ...(params !== undefined ? { params } : {}) }, "client_request");
         } catch (error) {
           pending.delete(id);
           reject(error instanceof Error ? error : new Error(String(error)));
         }
       }),
     notify: (method, params) => {
-      write({ method, ...(params !== undefined ? { params } : {}) });
+      write({ method, ...(params !== undefined ? { params } : {}) }, "client_notification");
     },
     onNotification: (listener) => {
       listeners.add(listener);
@@ -177,20 +196,23 @@ async function respondToServerRequest(
   child: ChildProcessWithoutNullStreams,
   request: CodexAppServerJsonRpcRequest,
   handler: CodexAppServerRequestHandler | undefined,
+  onJsonRpcMessage: ((message: CodexAppServerJsonRpcRawMessage) => void) | undefined,
 ) {
   try {
     const result = handler ? await handler(request) : {};
-    child.stdin.write(`${JSON.stringify({ id: request.id, result: result ?? {} })}\n`);
+    const response = { id: request.id, result: result ?? {} };
+    onJsonRpcMessage?.({ direction: "client_response", message: response });
+    child.stdin.write(`${JSON.stringify(response)}\n`);
   } catch (error) {
-    child.stdin.write(
-      `${JSON.stringify({
-        id: request.id,
-        error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      })}\n`,
-    );
+    const response = {
+      id: request.id,
+      error: {
+        code: -32000,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+    onJsonRpcMessage?.({ direction: "client_response", message: response });
+    child.stdin.write(`${JSON.stringify(response)}\n`);
   }
 }
 

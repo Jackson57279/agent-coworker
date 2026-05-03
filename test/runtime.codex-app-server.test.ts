@@ -182,6 +182,7 @@ rl.on("line", (line) => {
 
     const streamParts: unknown[] = [];
     const rawEvents: unknown[] = [];
+    const timeline: Array<{ type: "raw" | "part"; value: unknown }> = [];
     const runtime = createRuntime(makeConfig(dir));
     const result = await runtime.runTurn({
       config: makeConfig(dir),
@@ -191,9 +192,11 @@ rl.on("line", (line) => {
       maxSteps: 1,
       onModelStreamPart: (part) => {
         streamParts.push(part);
+        timeline.push({ type: "part", value: part });
       },
       onModelRawEvent: (event) => {
         rawEvents.push(event);
+        timeline.push({ type: "raw", value: event });
       },
     });
 
@@ -217,6 +220,49 @@ rl.on("line", (line) => {
         format: "codex-app-server-v2",
       }),
     );
+    expect(rawEvents).toContainEqual(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          direction: "client_request",
+          message: expect.objectContaining({
+            method: "turn/start",
+            params: expect.objectContaining({
+              threadId: "thread_1",
+              input: [{ type: "text", text: "Say hi", text_elements: [] }],
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(rawEvents).toContainEqual(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          direction: "server_response",
+          message: expect.objectContaining({
+            result: expect.objectContaining({
+              turn: expect.objectContaining({ id: "turn_1" }),
+            }),
+          }),
+        }),
+      }),
+    );
+    const rawDeltaIndex = timeline.findIndex(({ type, value }) => {
+      const raw = value as {
+        event?: { direction?: string; message?: { method?: string; params?: { delta?: string } } };
+      };
+      return (
+        type === "raw" &&
+        raw.event?.direction === "server_notification" &&
+        raw.event.message?.method === "item/agentMessage/delta" &&
+        raw.event.message.params?.delta === "hello from app-server"
+      );
+    });
+    const textDeltaIndex = timeline.findIndex(
+      ({ type, value }) => type === "part" && (value as { type?: string }).type === "text-delta",
+    );
+    expect(rawDeltaIndex).toBeGreaterThanOrEqual(0);
+    expect(textDeltaIndex).toBeGreaterThanOrEqual(0);
+    expect(rawDeltaIndex).toBeLessThanOrEqual(textDeltaIndex);
   });
 
   test("uses app-server default model when stored Codex model is not available", async () => {
