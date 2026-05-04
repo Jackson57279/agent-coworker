@@ -10,6 +10,7 @@ import {
 } from "./codexAppServerResolver";
 
 type PendingRequest = {
+  method: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
 };
@@ -40,11 +41,15 @@ export type CodexAppServerJsonRpcRequest = {
 
 export type CodexAppServerClient = {
   command: CodexAppServerCommand;
+  isClosed: () => boolean;
   request: (method: string, params?: unknown) => Promise<unknown>;
   notify: (method: string, params?: unknown) => void;
+  interruptTurn: (params: { threadId: string; turnId?: string }) => Promise<void>;
   onNotification: (
     listener: (notification: CodexAppServerJsonRpcNotification) => void,
   ) => () => void;
+  onServerRequest: (handler: CodexAppServerRequestHandler) => () => void;
+  onJsonRpcMessage: (listener: (message: CodexAppServerJsonRpcRawMessage) => void) => () => void;
   close: () => Promise<void>;
 };
 
@@ -59,6 +64,10 @@ export type CodexAppServerClientOptions = {
   onServerRequest?: CodexAppServerRequestHandler;
   onJsonRpcMessage?: (message: CodexAppServerJsonRpcRawMessage) => void;
 };
+
+let clientFactoryForTests:
+  | ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>)
+  | undefined;
 
 export function codexAppServerClientInfo(): { name: string; title: string; version: string } {
   return {
@@ -81,12 +90,23 @@ export function codexAppServerInitializeParams(): {
 export async function startCodexAppServerClient(
   opts: CodexAppServerClientOptions = {},
 ): Promise<CodexAppServerClient> {
+  if (clientFactoryForTests) return await clientFactoryForTests(opts);
+
   const command = await resolveCodexAppServerCommand();
   const child = spawnCodexAppServer(command, { cwd: opts.cwd, env: process.env });
   const pending = new Map<number | string, PendingRequest>();
   const listeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
+  const serverRequestHandlers = new Set<CodexAppServerRequestHandler>();
+  const jsonRpcMessageListeners = new Set<(message: CodexAppServerJsonRpcRawMessage) => void>();
   let nextId = 1;
   let closed = false;
+
+  if (opts.onServerRequest) serverRequestHandlers.add(opts.onServerRequest);
+
+  const emitJsonRpcMessage = (message: CodexAppServerJsonRpcRawMessage) => {
+    opts.onJsonRpcMessage?.(message);
+    for (const listener of jsonRpcMessageListeners) listener(message);
+  };
 
   const rejectAll = (error: Error) => {
     for (const request of pending.values()) request.reject(error);
@@ -99,8 +119,11 @@ export async function startCodexAppServerClient(
   child.once("exit", (code, signal) => {
     closed = true;
     if (pending.size > 0) {
+      const pendingMethods = [...pending.values()].map((request) => request.method).join(", ");
       rejectAll(
-        new Error(`codex app-server exited before replying (code=${code}, signal=${signal})`),
+        new Error(
+          `codex app-server exited before replying (code=${code}, signal=${signal}, pending=${pendingMethods}, command=${command.command}, args=${JSON.stringify(command.args)})`,
+        ),
       );
     }
   });
@@ -127,7 +150,7 @@ export async function startCodexAppServerClient(
     const record = asRecord(parsed);
     if (!record) return;
     if ("id" in record && ("result" in record || "error" in record)) {
-      opts.onJsonRpcMessage?.({ direction: "server_response", message: record });
+      emitJsonRpcMessage({ direction: "server_response", message: record });
       const id = record.id as number | string;
       const request = pending.get(id);
       if (!request) return;
@@ -142,47 +165,81 @@ export async function startCodexAppServerClient(
     }
 
     if ("id" in record && typeof record.method === "string") {
-      opts.onJsonRpcMessage?.({ direction: "server_request", message: record });
+      emitJsonRpcMessage({ direction: "server_request", message: record });
       void respondToServerRequest(
         child,
         record as CodexAppServerJsonRpcRequest,
-        opts.onServerRequest,
-        opts.onJsonRpcMessage,
+        serverRequestHandlers,
+        emitJsonRpcMessage,
       );
       return;
     }
 
     const notification = record as CodexAppServerJsonRpcNotification;
-    opts.onJsonRpcMessage?.({ direction: "server_notification", message: record });
+    emitJsonRpcMessage({ direction: "server_notification", message: record });
     for (const listener of listeners) listener(notification);
   });
 
   const write = (payload: Record<string, unknown>, direction: CodexAppServerJsonRpcDirection) => {
     if (closed || child.stdin.destroyed) throw new Error("codex app-server is not running.");
-    opts.onJsonRpcMessage?.({ direction, message: payload });
+    emitJsonRpcMessage({ direction, message: payload });
     child.stdin.write(`${JSON.stringify(payload)}\n`);
   };
 
+  const request = (method: string, params?: unknown): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, { method, resolve, reject });
+      try {
+        write({ id, method, ...(params !== undefined ? { params } : {}) }, "client_request");
+      } catch (error) {
+        pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
   return {
     command,
-    request: (method, params) =>
-      new Promise((resolve, reject) => {
-        const id = nextId++;
-        pending.set(id, { resolve, reject });
-        try {
-          write({ id, method, ...(params !== undefined ? { params } : {}) }, "client_request");
-        } catch (error) {
-          pending.delete(id);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      }),
+    isClosed: () => closed,
+    request,
     notify: (method, params) => {
       write({ method, ...(params !== undefined ? { params } : {}) }, "client_notification");
+    },
+    interruptTurn: async (params) => {
+      const payload = {
+        threadId: params.threadId,
+        ...(params.turnId ? { turnId: params.turnId } : {}),
+      };
+      try {
+        await request("turn/cancel", payload);
+      } catch (firstError) {
+        try {
+          await request("turn/interrupt", payload);
+        } catch {
+          throw firstError instanceof Error ? firstError : new Error(String(firstError));
+        }
+      }
     },
     onNotification: (listener) => {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+      };
+    },
+    onServerRequest: (handler) => {
+      serverRequestHandlers.add(handler);
+      return () => {
+        serverRequestHandlers.delete(handler);
+      };
+    },
+    onJsonRpcMessage: (listener) => {
+      jsonRpcMessageListeners.add(listener);
+      return () => {
+        jsonRpcMessageListeners.delete(listener);
       };
     },
     close: async () => {
@@ -195,13 +252,15 @@ export async function startCodexAppServerClient(
 async function respondToServerRequest(
   child: ChildProcessWithoutNullStreams,
   request: CodexAppServerJsonRpcRequest,
-  handler: CodexAppServerRequestHandler | undefined,
-  onJsonRpcMessage: ((message: CodexAppServerJsonRpcRawMessage) => void) | undefined,
+  handlers: ReadonlySet<CodexAppServerRequestHandler>,
+  onJsonRpcMessage: (message: CodexAppServerJsonRpcRawMessage) => void,
 ) {
   try {
-    const result = handler ? await handler(request) : {};
+    let result: unknown = {};
+    const handler = [...handlers].at(-1);
+    if (handler) result = await handler(request);
     const response = { id: request.id, result: result ?? {} };
-    onJsonRpcMessage?.({ direction: "client_response", message: response });
+    onJsonRpcMessage({ direction: "client_response", message: response });
     child.stdin.write(`${JSON.stringify(response)}\n`);
   } catch (error) {
     const response = {
@@ -211,7 +270,7 @@ async function respondToServerRequest(
         message: error instanceof Error ? error.message : String(error),
       },
     };
-    onJsonRpcMessage?.({ direction: "client_response", message: response });
+    onJsonRpcMessage({ direction: "client_response", message: response });
     child.stdin.write(`${JSON.stringify(response)}\n`);
   }
 }
@@ -244,3 +303,82 @@ export async function withCodexAppServerClient<T>(
     await client.close();
   }
 }
+
+const pooledClients = new Map<string, Promise<CodexAppServerClient>>();
+
+function pooledClientKey(cwd: string | undefined): string {
+  return cwd ? `cwd:${cwd}` : "cwd:";
+}
+
+export async function getPooledCodexAppServerClient(
+  opts: CodexAppServerClientOptions = {},
+): Promise<CodexAppServerClient> {
+  const key = pooledClientKey(opts.cwd);
+  const existing = pooledClients.get(key);
+  if (existing) {
+    const client = await existing;
+    if (!client.isClosed()) return client;
+    pooledClients.delete(key);
+  }
+
+  const created = (async () => {
+    const client = await startCodexAppServerClient({
+      cwd: opts.cwd,
+      log: opts.log,
+      invalidJsonLogPrefix: opts.invalidJsonLogPrefix,
+    });
+    try {
+      await client.request("initialize", codexAppServerInitializeParams());
+      client.notify("initialized");
+      return client;
+    } catch (error) {
+      await client.close().catch(() => {});
+      throw error;
+    }
+  })();
+  pooledClients.set(key, created);
+  try {
+    return await created;
+  } catch (error) {
+    pooledClients.delete(key);
+    throw error;
+  }
+}
+
+export async function closePooledCodexAppServerClients(): Promise<void> {
+  const clients = [...pooledClients.values()];
+  pooledClients.clear();
+  await Promise.all(
+    clients.map(async (clientPromise) => {
+      try {
+        const client = await clientPromise;
+        await client.close();
+      } catch {
+        // ignore cleanup failures
+      }
+    }),
+  );
+}
+
+export async function closePooledCodexAppServerClient(cwd: string | undefined): Promise<void> {
+  const key = pooledClientKey(cwd);
+  const clientPromise = pooledClients.get(key);
+  if (!clientPromise) return;
+  pooledClients.delete(key);
+  try {
+    const client = await clientPromise;
+    await client.close();
+  } catch {
+    // ignore cleanup failures
+  }
+}
+
+export const __internal = {
+  setClientFactoryForTests(
+    factory:
+      | ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>)
+      | undefined,
+  ): void {
+    clientFactoryForTests = factory;
+  },
+} as const;

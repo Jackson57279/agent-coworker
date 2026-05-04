@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { withCodexAppServerClient } from "../src/providers/codexAppServerClient";
+import {
+  type CodexAppServerClient,
+  type CodexAppServerJsonRpcNotification,
+  type CodexAppServerJsonRpcRawMessage,
+  closePooledCodexAppServerClients,
+  __internal as codexAppServerClientInternal,
+} from "../src/providers/codexAppServerClient";
 import { createRuntime } from "../src/runtime";
 import type { AgentConfig } from "../src/types";
 import { VERSION } from "../src/version";
@@ -12,6 +18,8 @@ const previousCommand = process.env.COWORK_CODEX_APP_SERVER_COMMAND;
 const previousArgs = process.env.COWORK_CODEX_APP_SERVER_ARGS;
 const previousCapturePath = process.env.CODEX_APP_SERVER_CAPTURE_PATH;
 const previousDelayCompletion = process.env.CODEX_APP_SERVER_DELAY_COMPLETION;
+const testNodeCommand = process.env.COWORK_TEST_NODE_COMMAND ?? "node";
+const mockInterrupts: Array<{ threadId: string; turnId?: string }> = [];
 
 function makeConfig(dir: string): AgentConfig {
   return {
@@ -42,6 +50,8 @@ async function writeMockAppServer(dir: string): Promise<string> {
 const readline = require("node:readline");
 const fs = require("node:fs");
 const rl = readline.createInterface({ input: process.stdin });
+process.stdin.resume();
+setInterval(() => {}, 1000);
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
 function capture(msg) {
   if (!process.env.CODEX_APP_SERVER_CAPTURE_PATH) return;
@@ -103,7 +113,280 @@ async function readCapturedRequests(
     .map((line) => JSON.parse(line));
 }
 
-afterEach(() => {
+function installMockClientFactory(): void {
+  codexAppServerClientInternal.setClientFactoryForTests(async () => createMockClient());
+}
+
+function createMockClient(): CodexAppServerClient {
+  const notificationListeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
+  const rawListeners = new Set<(message: CodexAppServerJsonRpcRawMessage) => void>();
+  const serverRequestHandlers = new Set<(request: { id: number; method: string; params?: unknown }) => unknown>();
+  let closed = false;
+  let nextTurnId = 1;
+
+  const emitRaw = (message: CodexAppServerJsonRpcRawMessage) => {
+    for (const listener of rawListeners) listener(message);
+  };
+  const sendNotification = (notification: CodexAppServerJsonRpcNotification) => {
+    emitRaw({ direction: "server_notification", message: notification as Record<string, unknown> });
+    for (const listener of notificationListeners) listener(notification);
+  };
+  const sendServerRequest = async (method: string, params?: unknown): Promise<unknown> => {
+    const id = nextTurnId++;
+    const request = { id, method, ...(params !== undefined ? { params } : {}) };
+    emitRaw({ direction: "server_request", message: request });
+    const handler = [...serverRequestHandlers].at(-1);
+    const result = handler ? await handler(request) : {};
+    emitRaw({ direction: "client_response", message: { id, result } });
+    return result;
+  };
+  const capture = async (method: string, params: unknown) => {
+    if (!process.env.CODEX_APP_SERVER_CAPTURE_PATH) return;
+    if (
+      method === "initialize" ||
+      method === "thread/start" ||
+      method === "thread/resume" ||
+      method === "turn/start" ||
+      method === "turn/steer"
+    ) {
+      await fs.appendFile(
+        process.env.CODEX_APP_SERVER_CAPTURE_PATH,
+        `${JSON.stringify({ method, params })}\n`,
+        "utf-8",
+      );
+    }
+  };
+  const completeTurn = (turnId: string, text: string, extraItems: unknown[] = []) => {
+    sendNotification({
+      method: "item/started",
+      params: {
+        threadId: "thread_1",
+        turnId,
+        item: { type: "agentMessage", id: "item_1", text: "", phase: null, memoryCitation: null },
+      },
+    });
+    sendNotification({
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread_1", turnId, itemId: "item_1", delta: text },
+    });
+    sendNotification({
+      method: "item/completed",
+      params: {
+        threadId: "thread_1",
+        turnId,
+        item: { type: "agentMessage", id: "item_1", text, phase: null, memoryCitation: null },
+      },
+    });
+    sendNotification({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread_1",
+        turnId,
+        tokenUsage: {
+          total: {
+            totalTokens: 7,
+            inputTokens: 3,
+            cachedInputTokens: 0,
+            outputTokens: 4,
+            reasoningOutputTokens: 0,
+          },
+          last: {
+            totalTokens: 7,
+            inputTokens: 3,
+            cachedInputTokens: 0,
+            outputTokens: 4,
+            reasoningOutputTokens: 0,
+          },
+          modelContextWindow: 272000,
+        },
+      },
+    });
+    sendNotification({
+      method: "turn/completed",
+      params: {
+        turn: {
+          id: turnId,
+          status: "completed",
+          items: [
+            ...extraItems,
+            { type: "agentMessage", id: "item_1", text, phase: null, memoryCitation: null },
+          ],
+          error: null,
+        },
+      },
+    });
+  };
+
+  const request = async (method: string, params?: unknown): Promise<unknown> => {
+    const requestId = nextTurnId;
+    emitRaw({
+      direction: "client_request",
+      message: { id: requestId, method, ...(params !== undefined ? { params } : {}) },
+    });
+    await capture(method, params);
+    let result: unknown = {};
+    if (method === "initialize") {
+      result = { userAgent: "mock" };
+    } else if (method === "model/list") {
+      if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("model-gated")) {
+        result = {
+          data: [
+            {
+              id: "gpt-5.3-codex-spark",
+              model: "gpt-5.3-codex-spark",
+              displayName: "Spark",
+              isDefault: true,
+            },
+          ],
+          nextCursor: null,
+        };
+      } else {
+        result = {
+          data: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", isDefault: true }],
+          nextCursor: null,
+        };
+      }
+    } else if (method === "thread/start") {
+      const record = params as { model?: string; approvalPolicy?: string; sandbox?: string };
+      if (
+        process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("model-gated") &&
+        record.model !== "gpt-5.3-codex-spark"
+      ) {
+        throw new Error(
+          `The '${record.model}' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.`,
+        );
+      }
+      result = {
+        thread: { id: "thread_1", modelProvider: "openai", turns: [] },
+        model: record.model ?? "gpt-5.4",
+        modelProvider: "openai",
+        cwd: process.cwd(),
+        approvalPolicy: record.approvalPolicy,
+        sandbox: record.sandbox,
+        reasoningEffort: "high",
+      };
+    } else if (method === "thread/resume") {
+      const record = params as { threadId?: string; model?: string; approvalPolicy?: string; sandbox?: string };
+      result = {
+        thread: { id: record.threadId ?? "thread_1", modelProvider: "openai", turns: [] },
+        model: record.model ?? "gpt-5.4",
+        modelProvider: "openai",
+        cwd: process.cwd(),
+        approvalPolicy: record.approvalPolicy,
+        sandbox: record.sandbox,
+        reasoningEffort: "high",
+      };
+    } else if (method === "turn/start") {
+      const turnId = `turn_${nextTurnId++}`;
+      result = { turn: { id: turnId, status: "inProgress", items: [], error: null } };
+      if (process.env.CODEX_APP_SERVER_DELAY_COMPLETION !== "1") {
+        queueMicrotask(async () => {
+          if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("eventful")) {
+            await sendServerRequest("requestUserInput", { question: "Need detail?", options: ["yes"] });
+            sendNotification({
+              method: "todoList/updated",
+              params: { todos: [{ content: "Wire app-server todos", status: "completed" }] },
+            });
+            sendNotification({
+              method: "item/started",
+              params: {
+                threadId: "thread_1",
+                turnId,
+                item: {
+                  type: "fileChange",
+                  id: "file_change_1",
+                  cwd: "/workspace",
+                  paths: ["src/example.ts"],
+                  summary: "Edited src/example.ts",
+                },
+              },
+            });
+            sendNotification({
+              method: "item/fileChange/delta",
+              params: {
+                threadId: "thread_1",
+                turnId,
+                itemId: "file_change_1",
+                diff: "--- a/src/example.ts\n+++ b/src/example.ts\n",
+              },
+            });
+            sendNotification({
+              method: "item/completed",
+              params: {
+                threadId: "thread_1",
+                turnId,
+                item: {
+                  type: "fileChange",
+                  id: "file_change_1",
+                  cwd: "/workspace",
+                  paths: ["src/example.ts"],
+                  summary: "Edited src/example.ts",
+                },
+              },
+            });
+          }
+          completeTurn(
+            turnId,
+            process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("model-gated")
+              ? "fallback ok"
+              : "hello from app-server",
+          );
+        });
+      }
+    } else if (method === "turn/steer") {
+      const record = params as { expectedTurnId?: string; input?: unknown };
+      result = { turnId: record.expectedTurnId };
+      queueMicrotask(() => {
+        completeTurn(record.expectedTurnId ?? "turn_1", "hello from app-server", [
+          { type: "userMessage", id: "steer_user_1", content: record.input },
+        ]);
+      });
+    }
+    emitRaw({ direction: "server_response", message: { id: requestId, result } });
+    return result;
+  };
+
+  return {
+    command: { command: "mock-codex-app-server", args: [], source: "override" },
+    isClosed: () => closed,
+    request,
+    notify: (method, params) => {
+      emitRaw({
+        direction: "client_notification",
+        message: { method, ...(params !== undefined ? { params } : {}) },
+      });
+    },
+    interruptTurn: async (params) => {
+      mockInterrupts.push(params);
+    },
+    onNotification: (listener) => {
+      notificationListeners.add(listener);
+      return () => notificationListeners.delete(listener);
+    },
+    onServerRequest: (handler) => {
+      serverRequestHandlers.add(handler);
+      return () => {
+        serverRequestHandlers.delete(handler);
+      };
+    },
+    onJsonRpcMessage: (listener) => {
+      rawListeners.add(listener);
+      return () => rawListeners.delete(listener);
+    },
+    close: async () => {
+      closed = true;
+    },
+  };
+}
+
+beforeEach(() => {
+  mockInterrupts.length = 0;
+  installMockClientFactory();
+});
+
+afterEach(async () => {
+  await closePooledCodexAppServerClients();
+  codexAppServerClientInternal.setClientFactoryForTests(undefined);
   if (previousCommand === undefined) delete process.env.COWORK_CODEX_APP_SERVER_COMMAND;
   else process.env.COWORK_CODEX_APP_SERVER_COMMAND = previousCommand;
   if (previousArgs === undefined) delete process.env.COWORK_CODEX_APP_SERVER_ARGS;
@@ -115,42 +398,11 @@ afterEach(() => {
 });
 
 describe("codex app-server runtime", () => {
-  test("runs an explicit standalone app-server command without implicit args", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-standalone-"));
-    const script = path.join(dir, "standalone-codex-app-server.js");
-    const capturePath = path.join(dir, "argv.json");
-    await fs.writeFile(
-      script,
-      `#!${process.execPath}
-const readline = require("node:readline");
-const fs = require("node:fs");
-fs.writeFileSync(process.env.CODEX_APP_SERVER_CAPTURE_PATH, JSON.stringify(process.argv.slice(2)));
-const rl = readline.createInterface({ input: process.stdin });
-rl.on("line", (line) => {
-  const msg = JSON.parse(line);
-  if (msg.method === "initialize") {
-    process.stdout.write(JSON.stringify({ id: msg.id, result: { userAgent: "standalone-mock" } }) + "\\n");
-  }
-});
-`,
-      "utf-8",
-    );
-    await fs.chmod(script, 0o755);
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = script;
-    process.env.COWORK_CODEX_APP_SERVER_ARGS = "";
-    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
-
-    await withCodexAppServerClient(async () => {});
-
-    const argv = JSON.parse(await fs.readFile(capturePath, "utf-8"));
-    expect(argv).toEqual([]);
-  });
-
-  test("initializes app-server with the Cowork package version", async () => {
+  test.serial("initializes app-server with the Cowork package version", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-init-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -174,10 +426,10 @@ rl.on("line", (line) => {
     });
   });
 
-  test("drives a turn through codex app-server JSONL", async () => {
+  test.serial("drives a turn through codex app-server JSONL", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-runtime-"));
     const script = await writeMockAppServer(dir);
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
 
     const streamParts: unknown[] = [];
@@ -228,7 +480,7 @@ rl.on("line", (line) => {
             method: "turn/start",
             params: expect.objectContaining({
               threadId: "thread_1",
-              input: [{ type: "text", text: "Say hi", text_elements: [] }],
+              input: [{ type: "text", text: "User: Say hi", text_elements: [] }],
             }),
           }),
         }),
@@ -265,7 +517,7 @@ rl.on("line", (line) => {
     expect(rawDeltaIndex).toBeLessThanOrEqual(textDeltaIndex);
   });
 
-  test("uses app-server default model when stored Codex model is not available", async () => {
+  test.serial("uses app-server default model when stored Codex model is not available", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-model-"));
     const script = path.join(dir, "model-gated-codex-app-server.js");
     const capturePath = path.join(dir, "requests.jsonl");
@@ -275,6 +527,8 @@ rl.on("line", (line) => {
 const readline = require("node:readline");
 const fs = require("node:fs");
 const rl = readline.createInterface({ input: process.stdin });
+process.stdin.resume();
+setInterval(() => {}, 1000);
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
 function capture(msg) {
   if (!process.env.CODEX_APP_SERVER_CAPTURE_PATH) return;
@@ -316,7 +570,7 @@ rl.on("line", (line) => {
 `,
       "utf-8",
     );
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -348,11 +602,11 @@ rl.on("line", (line) => {
     );
   });
 
-  test("marks Codex app-server as owner of native tools, apps, and plugins", async () => {
+  test.serial("marks Codex app-server as owner of native tools, apps, and plugins", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-tools-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -386,11 +640,11 @@ rl.on("line", (line) => {
     );
   });
 
-  test("passes workspace-write sandbox and approval prompts for regular Codex turns", async () => {
+  test.serial("passes workspace-write sandbox and approval prompts for regular Codex turns", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-sandbox-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -423,11 +677,11 @@ rl.on("line", (line) => {
     });
   });
 
-  test("passes danger-full-access sandbox when the session is in yolo mode", async () => {
+  test.serial("passes danger-full-access sandbox when the session is in yolo mode", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-yolo-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -453,11 +707,11 @@ rl.on("line", (line) => {
     });
   });
 
-  test("passes read-only sandbox for read-only subagent shell policy", async () => {
+  test.serial("passes read-only sandbox for read-only subagent shell policy", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-readonly-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
@@ -483,11 +737,11 @@ rl.on("line", (line) => {
     });
   });
 
-  test("registers an active steer handler that sends turn/steer to app-server", async () => {
+  test.serial("registers an active steer handler that sends turn/steer to app-server", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-steer-"));
     const script = await writeMockAppServer(dir);
     const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
     process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
     process.env.CODEX_APP_SERVER_DELAY_COMPLETION = "1";
@@ -521,5 +775,145 @@ rl.on("line", (line) => {
       input: [{ type: "text", text: "also mention steering", text_elements: [] }],
     });
     expect(steerHandler).toBeUndefined();
+  });
+
+  test.serial("omits base instructions and only sends latest user input on resume", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-resume-"));
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      allMessages: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: "Newest question" },
+      ],
+      messages: [{ role: "user", content: "Newest question" }],
+      tools: {},
+      maxSteps: 1,
+      providerState: {
+        provider: "codex-cli",
+        model: "gpt-5.4",
+        threadId: "thread_1",
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "thread/resume")?.params).not.toHaveProperty(
+      "baseInstructions",
+    );
+    expect(requests.find((entry) => entry.method === "turn/start")?.params.input).toEqual([
+      { type: "text", text: "Newest question", text_elements: [] },
+    ]);
+  });
+
+  test.serial("preserves fresh conversation history and attachment order in text_elements", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-attachments-"));
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      allMessages: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Look at these" },
+            { type: "image", mimeType: "image/png", data: "abc", filename: "chart.png" },
+            { type: "file", mimeType: "text/plain", data: "inline", filename: "note.txt" },
+            { type: "file", path: "/tmp/uploaded.pdf", filename: "uploaded.pdf" },
+          ],
+        },
+      ],
+      messages: [{ role: "user", content: "Look at these" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    const requests = await readCapturedRequests(capturePath);
+    expect(requests.find((entry) => entry.method === "turn/start")?.params.input).toEqual([
+      { type: "text", text: "User: Earlier question", text_elements: [] },
+      { type: "text", text: "Assistant: Earlier answer", text_elements: [] },
+      {
+        type: "text",
+        text: "User: Look at these",
+        text_elements: [
+          { type: "image", mimeType: "image/png", data: "abc", filename: "chart.png" },
+          { type: "file", mimeType: "text/plain", data: "inline", filename: "note.txt" },
+          { type: "file", path: "/tmp/uploaded.pdf", filename: "uploaded.pdf" },
+        ],
+      },
+    ]);
+  });
+
+  test.serial("aborts active app-server turns through interruptTurn", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-abort-"));
+    process.env.CODEX_APP_SERVER_DELAY_COMPLETION = "1";
+    const controller = new AbortController();
+    const runtime = createRuntime(makeConfig(dir));
+
+    await expect(
+      runtime.runTurn({
+        config: makeConfig(dir),
+        system: "You are Codex.",
+        messages: [{ role: "user", content: "Wait" }],
+        tools: {},
+        maxSteps: 1,
+        abortSignal: controller.signal,
+        onModelRawEvent: (event) => {
+          const message = event.event.message as { method?: string } | undefined;
+          if (message?.method === "turn/start") setTimeout(() => controller.abort(), 0);
+        },
+      }),
+    ).rejects.toThrow("Cancelled by user");
+    expect(mockInterrupts).toEqual([{ threadId: "thread_1", turnId: "turn_1" }]);
+  });
+
+  test.serial("projects requestUserInput, todoList, and fileChange events", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-events-"));
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = "eventful";
+    const todos: unknown[] = [];
+    const streamParts: unknown[] = [];
+    const runtime = createRuntime(makeConfig(dir));
+
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Do work" }],
+      tools: {},
+      maxSteps: 1,
+      askUser: async () => "yes",
+      updateTodos: (nextTodos) => todos.push(nextTodos),
+      onModelStreamPart: (part) => streamParts.push(part),
+    });
+
+    expect(todos).toContainEqual([
+      {
+        content: "Wire app-server todos",
+        status: "completed",
+        activeForm: "Wire app-server todos",
+      },
+    ]);
+    expect(streamParts).toContainEqual(
+      expect.objectContaining({
+        type: "tool-call",
+        toolName: "fileChange",
+      }),
+    );
+    expect(streamParts).toContainEqual(
+      expect.objectContaining({
+        type: "tool-result",
+        toolName: "fileChange",
+        output: expect.stringContaining("src/example.ts"),
+      }),
+    );
   });
 });

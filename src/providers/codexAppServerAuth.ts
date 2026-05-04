@@ -1,6 +1,6 @@
 import { asRecord, asString } from "../runtime/piRuntimeOptions";
 import { openExternalUrl, type UrlOpener } from "../utils/browser";
-import { type CodexAppServerClient, withCodexAppServerClient } from "./codexAppServerClient";
+import { type CodexAppServerClient, getPooledCodexAppServerClient } from "./codexAppServerClient";
 
 export type CodexAppServerAccount = {
   type: "apiKey" | "chatgpt";
@@ -101,7 +101,7 @@ async function withClient<T>(
   fn: (client: CodexAppServerClient) => Promise<T>,
   log?: (line: string) => void,
 ): Promise<T> {
-  return await withCodexAppServerClient(fn, { log });
+  return await fn(await getPooledCodexAppServerClient({ log }));
 }
 
 function normalizeAccount(value: unknown): CodexAppServerAccount | null {

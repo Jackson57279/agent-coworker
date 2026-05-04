@@ -539,8 +539,8 @@ export class TurnExecutionManager {
     const activeSteerHandler = this.context.state.activeSteerHandler;
     if (activeSteerHandler) {
       try {
-        await activeSteerHandler({ text, expectedTurnId: currentTurnId });
         const content = await this.buildUserMessageContent(text, attachments, inputParts);
+        await activeSteerHandler({ text, expectedTurnId: currentTurnId, content });
         this.deps.historyManager.appendMessagesToHistory([{ role: "user", content }]);
         this.context.emit({
           type: "user_message",

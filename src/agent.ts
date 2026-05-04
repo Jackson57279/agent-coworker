@@ -516,7 +516,9 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
           ...(params.registerSteerHandler
             ? { registerSteerHandler: params.registerSteerHandler }
             : {}),
+          askUser,
           approveCommand,
+          updateTodos,
           onModelStreamPart: params.onModelStreamPart,
           onModelRawEvent: params.onModelRawEvent,
           onModelError: params.onModelError,

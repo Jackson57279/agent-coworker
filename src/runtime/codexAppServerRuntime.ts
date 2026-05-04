@@ -3,13 +3,12 @@ import {
   type CodexAppServerJsonRpcNotification,
   type CodexAppServerJsonRpcRawMessage,
   type CodexAppServerJsonRpcRequest,
-  codexAppServerInitializeParams,
-  startCodexAppServerClient,
+  getPooledCodexAppServerClient,
 } from "../providers/codexAppServerClient";
 import type { CodexAppServerCommand } from "../providers/codexAppServerResolver";
 import { getSupportedModel, listSupportedModels } from "../models/registry";
 import { isCodexAppServerContinuationState } from "../shared/providerContinuation";
-import type { ModelMessage } from "../types";
+import type { ModelMessage, TodoItem } from "../types";
 import { asRecord, asString } from "./piRuntimeOptions";
 import type { LlmRuntime, RuntimeRunTurnParams, RuntimeRunTurnResult, RuntimeUsage } from "./types";
 
@@ -22,6 +21,7 @@ type CodexAppServerModelListEntry = {
 type StartedCodexAppServer = {
   client: CodexAppServerClient;
   waitForRawEvents: () => Promise<void>;
+  dispose: () => void;
 };
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 type CodexApprovalPolicy = "on-request" | "never";
@@ -57,6 +57,13 @@ function normalizeModelListEntry(value: unknown): CodexAppServerModelListEntry |
   };
 }
 
+type CodexTextElement = Record<string, unknown>;
+type CodexTurnInputPart = {
+  type: "text";
+  text: string;
+  text_elements: CodexTextElement[];
+};
+
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -73,15 +80,76 @@ function extractTextContent(content: unknown): string {
   return asString(record?.text) ?? "";
 }
 
-function latestUserText(messages: readonly ModelMessage[]): string {
+function latestUserMessage(messages: readonly ModelMessage[]): ModelMessage | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role === "user") {
       const text = extractTextContent(message.content).trim();
-      if (text) return text;
+      const hasElements = extractTextElements(message.content).length > 0;
+      if (text || hasElements) return message;
     }
   }
-  return "";
+  return null;
+}
+
+function extractTextElements(content: unknown): CodexTextElement[] {
+  if (!Array.isArray(content)) return [];
+  const elements: CodexTextElement[] = [];
+  for (const part of content) {
+    const record = asRecord(part);
+    if (!record) continue;
+    const type = asString(record.type);
+    const mimeType = asString(record.mimeType);
+    const data = asString(record.data);
+    const path = asString(record.path);
+    const filename = asString(record.filename);
+    if (!type && !mimeType && !data && !path && !filename) continue;
+    if (type === "text" || type === "inputText" || type === "output_text") continue;
+    elements.push({
+      ...(type ? { type } : { type: "file" }),
+      ...(mimeType ? { mimeType } : {}),
+      ...(data ? { data } : {}),
+      ...(path ? { path } : {}),
+      ...(filename ? { filename } : {}),
+    });
+  }
+  return elements;
+}
+
+function codexInputTextForMessage(message: ModelMessage, opts: { includeRole: boolean }): string {
+  const text = extractTextContent(message.content).trim();
+  if (!opts.includeRole) return text;
+  const role = String(message.role || "message");
+  const label = role === "user" ? "User" : role === "assistant" ? "Assistant" : role;
+  return text ? `${label}: ${text}` : `${label}: [attachment]`;
+}
+
+function codexInputPartForMessage(
+  message: ModelMessage,
+  opts: { includeRole: boolean },
+): CodexTurnInputPart | null {
+  const textElements = extractTextElements(message.content);
+  const text = codexInputTextForMessage(message, opts);
+  if (!text && textElements.length === 0) return null;
+  return {
+    type: "text",
+    text: text || "[attachment]",
+    text_elements: textElements,
+  };
+}
+
+function buildCodexTurnInput(
+  messages: readonly ModelMessage[],
+  opts: { resumedThread: boolean },
+): CodexTurnInputPart[] {
+  if (opts.resumedThread) {
+    const latest = latestUserMessage(messages);
+    const part = latest ? codexInputPartForMessage(latest, { includeRole: false }) : null;
+    return part ? [part] : [];
+  }
+  return messages
+    .map((message) => codexInputPartForMessage(message, { includeRole: true }))
+    .filter((part): part is CodexTurnInputPart => part !== null);
 }
 
 function providerOptionString(
@@ -279,18 +347,25 @@ async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<Starte
       }),
     );
   };
-  const client = await startCodexAppServerClient({
+  const client = await getPooledCodexAppServerClient({
     cwd: params.config.workingDirectory,
     log: params.log,
     invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
-    onServerRequest: async (request) => await handleServerRequest(request, params),
-    onJsonRpcMessage: recordJsonRpcMessage,
   });
-  client.onNotification((notification) => {
+  const disposeServerRequest = client.onServerRequest(
+    async (request) => await handleServerRequest(request, params),
+  );
+  const disposeJsonRpcMessage = client.onJsonRpcMessage(recordJsonRpcMessage);
+  const disposeNotification = client.onNotification((notification) => {
     void handleNotification(notification, params);
   });
   return {
     client,
+    dispose: () => {
+      disposeNotification();
+      disposeJsonRpcMessage();
+      disposeServerRequest();
+    },
     waitForRawEvents: async () => {
       await Promise.all(rawEventPromises);
       if (rawEventErrors.length > 0) {
@@ -306,12 +381,30 @@ async function handleServerRequest(
   params: RuntimeRunTurnParams,
 ): Promise<unknown> {
   const method = request.method;
+  if (method === "item/tool/requestUserInput" || method === "requestUserInput") {
+    const requestParams = asRecord(request.params);
+    const question =
+      asString(requestParams?.question) ??
+      asString(requestParams?.prompt) ??
+      "Codex app-server needs input.";
+    const options = asArray(requestParams?.options)
+      .map((option) => asString(option))
+      .filter((option): option is string => typeof option === "string");
+    const answer = await params.askUser?.(question, options.length > 0 ? options : undefined);
+    return { answer: answer ?? "" };
+  }
   if (
     method === "item/commandExecution/requestApproval" ||
     method === "item/fileChange/requestApproval"
   ) {
+    const isReadOnlyFileApproval =
+      params.shellPolicy === "no_project_write" &&
+      params.yolo !== true &&
+      method === "item/fileChange/requestApproval";
     const approved =
-      params.yolo === true || (await params.approveCommand?.(approvalPromptForRequest(request)));
+      params.yolo === true ||
+      (!isReadOnlyFileApproval &&
+        (await params.approveCommand?.(approvalPromptForRequest(request))) === true);
     return { decision: approved ? "accept" : "decline" };
   }
   return {};
@@ -320,14 +413,78 @@ async function handleServerRequest(
 function approvalPromptForRequest(request: CodexAppServerJsonRpcRequest): string {
   const params = asRecord(request.params);
   if (request.method === "item/commandExecution/requestApproval") {
-    return asString(params?.command) ?? "Approve Codex command execution";
+    const command = asString(params?.command) ?? "Approve Codex command execution";
+    const cwd = asString(params?.cwd);
+    const reason = asString(params?.reason);
+    return [
+      command,
+      cwd ? `cwd: ${cwd}` : "",
+      reason ? `reason: ${reason}` : "",
+      params?.dangerous === true ? "dangerous: true" : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   const reason = asString(params?.reason);
+  const cwd = asString(params?.cwd);
   const grantRoot = asString(params?.grantRoot);
-  return (
+  const singlePath = asString(params?.path);
+  const pathList = [
+    ...asArray(params?.paths),
+    ...asArray(params?.files),
+    ...(singlePath ? [singlePath] : []),
+  ]
+    .map((value) => asString(value))
+    .filter((value): value is string => typeof value === "string");
+  const diff = asString(params?.diff) ?? asString(params?.summary);
+  return [
     reason ||
-    (grantRoot ? `Approve Codex file changes under ${grantRoot}` : "Approve Codex file changes")
-  );
+      (grantRoot ? `Approve Codex file changes under ${grantRoot}` : "Approve Codex file changes"),
+    cwd ? `cwd: ${cwd}` : "",
+    pathList.length > 0 ? `paths: ${pathList.join(", ")}` : "",
+    diff ? `diff: ${diff}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizeTodoItem(value: unknown): TodoItem | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const content =
+    asString(record.content) ??
+    asString(record.title) ??
+    asString(record.text) ??
+    asString(record.task);
+  if (!content) return null;
+  const rawStatus = asString(record.status);
+  const status =
+    rawStatus === "completed" || rawStatus === "in_progress" || rawStatus === "pending"
+      ? rawStatus
+      : rawStatus === "in-progress"
+        ? "in_progress"
+        : rawStatus === "done"
+          ? "completed"
+          : "pending";
+  return {
+    content,
+    status,
+    activeForm: asString(record.activeForm) ?? asString(record.active_form) ?? content,
+  };
+}
+
+function normalizeTodoList(value: unknown): TodoItem[] | null {
+  const payload = asRecord(value);
+  const candidates =
+    asArray(payload?.todos).length > 0
+      ? asArray(payload?.todos)
+      : asArray(payload?.items).length > 0
+        ? asArray(payload?.items)
+        : asArray(value);
+  const todos = candidates
+    .map((item) => normalizeTodoItem(item))
+    .filter((item): item is TodoItem => item !== null);
+  return todos.length > 0 || candidates.length === 0 ? todos : null;
 }
 
 async function handleNotification(
@@ -358,6 +515,18 @@ async function handleNotification(
           input: item.arguments ?? {},
           providerExecuted: true,
         });
+      } else if (item?.type === "fileChange") {
+        await params.onModelStreamPart?.({
+          type: "tool-call",
+          toolCallId: asString(item.id),
+          toolName: "fileChange",
+          input: {
+            cwd: item.cwd,
+            paths: item.paths ?? item.files ?? item.path,
+            summary: item.summary,
+          },
+          providerExecuted: true,
+        });
       }
       break;
     case "item/agentMessage/delta":
@@ -376,13 +545,25 @@ async function handleNotification(
       });
       break;
     case "item/commandExecution/outputDelta":
+    case "item/fileChange/delta":
+    case "item/fileChange/diffDelta":
       await params.onModelStreamPart?.({
         type: "tool-result",
         toolCallId: asString(payload?.itemId),
-        toolName: "commandExecution",
+        toolName:
+          notification.method === "item/commandExecution/outputDelta"
+            ? "commandExecution"
+            : "fileChange",
         output: asString(payload?.delta) ?? "",
         providerExecuted: true,
       });
+      break;
+    case "todoList/updated":
+    case "item/todoList/updated":
+      {
+        const todos = normalizeTodoList(payload);
+        if (todos) params.updateTodos?.(todos);
+      }
       break;
     case "item/completed":
       if (item?.type === "agentMessage") {
@@ -407,6 +588,18 @@ async function handleNotification(
           error: item.error ?? undefined,
           providerExecuted: true,
         });
+      } else if (item?.type === "fileChange") {
+        await params.onModelStreamPart?.({
+          type: item.status === "failed" ? "tool-error" : "tool-result",
+          toolCallId: asString(item.id),
+          toolName: "fileChange",
+          output: item.diff ?? item.summary ?? item.result ?? null,
+          error: item.status === "failed" ? (item.error ?? "file change failed") : undefined,
+          providerExecuted: true,
+        });
+      } else if (item?.type === "todoList") {
+        const todos = normalizeTodoList(item);
+        if (todos) params.updateTodos?.(todos);
       }
       break;
     case "error":
@@ -495,15 +688,14 @@ export function createCodexAppServerRuntime(): LlmRuntime {
   return {
     name: "codex-app-server",
     runTurn: async (params): Promise<RuntimeRunTurnResult> => {
-      const { client, waitForRawEvents } = await startCodexAppServer(params);
+      const { client, waitForRawEvents, dispose } = await startCodexAppServer(params);
       let threadId: string | undefined;
+      let startedTurnId: string | undefined;
       let usage: RuntimeUsage | undefined;
       let unregisterSteerHandler: (() => void) | undefined;
       const assistantTextCapture = createAssistantTextCapture(client);
       try {
         params.abortSignal?.throwIfAborted();
-        await client.request("initialize", codexAppServerInitializeParams());
-        client.notify("initialized");
 
         const effectiveModel = await resolveEffectiveCodexModel(
           client,
@@ -517,8 +709,9 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const sandboxMode = codexSandboxMode(params);
         const sandboxPolicy = codexSandboxPolicy(params);
         const threadConfig = codexThreadConfig(params);
+        const shouldResumeThread = currentState?.model === effectiveModel;
         const threadResult =
-          currentState?.model === effectiveModel
+          shouldResumeThread
             ? await client.request("thread/resume", {
                 threadId: currentState.threadId,
                 cwd: params.config.workingDirectory,
@@ -527,7 +720,6 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 approvalPolicy,
                 sandbox: sandboxMode,
                 ...(threadConfig ? { config: threadConfig } : {}),
-                baseInstructions: codexBaseInstructions(params.system),
               })
             : await client.request("thread/start", {
                 cwd: params.config.workingDirectory,
@@ -553,19 +745,30 @@ export function createCodexAppServerRuntime(): LlmRuntime {
           request: { model: effectiveModel, provider: params.config.provider },
         });
 
-        const userText = latestUserText(params.messages);
-        if (!userText) throw new Error("codex app-server runtime requires a user message.");
-        let startedTurnId: string | undefined;
+        const input = buildCodexTurnInput(params.allMessages ?? params.messages, {
+          resumedThread: shouldResumeThread,
+        });
+        if (input.length === 0) throw new Error("codex app-server runtime requires a user message.");
         const completion = waitForTurnCompletion(
           client,
           () => startedTurnId,
           (nextUsage) => {
             usage = nextUsage;
           },
+          {
+            abortSignal: params.abortSignal,
+            interrupt: async () => {
+              if (!threadId) return;
+              await client.interruptTurn({
+                threadId,
+                ...(startedTurnId ? { turnId: startedTurnId } : {}),
+              });
+            },
+          },
         );
         const turnResult = await client.request("turn/start", {
           threadId,
-          input: [{ type: "text", text: userText, text_elements: [] }],
+          input,
           cwd: params.config.workingDirectory,
           model: effectiveModel,
           approvalPolicy,
@@ -586,10 +789,17 @@ export function createCodexAppServerRuntime(): LlmRuntime {
             if (steer.expectedTurnId !== startedTurnId) {
               throw new Error("Codex app-server active turn mismatch.");
             }
+            const steerInput = buildCodexTurnInput(
+              [{ role: "user", content: steer.content ?? steer.text }],
+              { resumedThread: true },
+            );
             await client.request("turn/steer", {
               threadId,
               expectedTurnId: startedTurnId,
-              input: [{ type: "text", text: steer.text, text_elements: [] }],
+              input:
+                steerInput.length > 0
+                  ? steerInput
+                  : [{ type: "text", text: steer.text, text_elements: [] }],
             });
           });
         }
@@ -633,10 +843,11 @@ export function createCodexAppServerRuntime(): LlmRuntime {
       } finally {
         assistantTextCapture.dispose();
         unregisterSteerHandler?.();
+        dispose();
         try {
           await waitForRawEvents();
-        } finally {
-          await client.close();
+        } catch (error) {
+          params.log?.(`[codex-app-server] failed to persist raw events: ${String(error)}`);
         }
       }
     },
@@ -647,16 +858,46 @@ async function waitForTurnCompletion(
   client: CodexAppServerClient,
   turnId: string | (() => string | undefined),
   onUsage: (usage: RuntimeUsage | undefined) => void,
+  opts: {
+    abortSignal?: AbortSignal;
+    interrupt?: () => Promise<void>;
+  } = {},
 ): Promise<unknown> {
   return await new Promise<unknown>((resolve, reject) => {
+    let settled = false;
+    let dispose = () => {};
+    const settleReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      dispose();
+      opts.abortSignal?.removeEventListener("abort", onAbort);
+      reject(error);
+    };
+    const settleResolve = (value: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      dispose();
+      opts.abortSignal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
     const timeout = setTimeout(
       () => {
-        dispose();
-        reject(new Error("Timed out waiting for codex app-server turn completion."));
+        settleReject(new Error("Timed out waiting for codex app-server turn completion."));
       },
       30 * 60 * 1000,
     );
-    const dispose = client.onNotification((notification) => {
+    const onAbort = () => {
+      void opts.interrupt?.().catch(() => {});
+      settleReject(new Error("Cancelled by user"));
+    };
+    if (opts.abortSignal?.aborted) {
+      onAbort();
+      return;
+    }
+    opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
+    dispose = client.onNotification((notification) => {
       const params = asRecord(notification.params);
       if (notification.method === "thread/tokenUsage/updated") {
         onUsage(parseUsage(params?.tokenUsage));
@@ -666,14 +907,12 @@ async function waitForTurnCompletion(
       const turn = asRecord(params?.turn);
       const expectedTurnId = typeof turnId === "function" ? turnId() : turnId;
       if (expectedTurnId && asString(turn?.id) !== expectedTurnId) return;
-      clearTimeout(timeout);
-      dispose();
       if (turn?.status === "failed") {
         const error = asRecord(turn.error);
-        reject(new Error(asString(error?.message) ?? "codex app-server turn failed."));
+        settleReject(new Error(asString(error?.message) ?? "codex app-server turn failed."));
         return;
       }
-      resolve(turn);
+      settleResolve(turn);
     });
   });
 }

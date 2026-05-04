@@ -1,5 +1,5 @@
 import type { ProviderContinuationState } from "../shared/providerContinuation";
-import type { AgentConfig, ModelMessage } from "../types";
+import type { AgentConfig, ModelMessage, TodoItem } from "../types";
 
 export type RuntimeModelRawEvent = {
   format: "openai-responses-v1" | "google-interactions-v1" | "codex-app-server-v2";
@@ -37,6 +37,7 @@ export type RuntimePrepareStep = (step: {
 export type RuntimeSteerInput = {
   text: string;
   expectedTurnId: string;
+  content?: ModelMessage["content"];
 };
 
 export type RuntimeSteerHandler = (input: RuntimeSteerInput) => Promise<void>;
@@ -59,7 +60,9 @@ export interface RuntimeRunTurnParams {
   telemetry?: unknown;
   prepareStep?: RuntimePrepareStep;
   registerSteerHandler?: RuntimeRegisterSteerHandler;
+  askUser?: (question: string, options?: string[]) => Promise<string>;
   approveCommand?: (command: string) => Promise<boolean>;
+  updateTodos?: (todos: TodoItem[]) => void;
   onModelStreamPart?: (part: unknown) => void | Promise<void>;
   onModelRawEvent?: (event: RuntimeModelRawEvent) => void | Promise<void>;
   onModelError?: (error: unknown) => void | Promise<void>;

@@ -6,6 +6,7 @@ import { getKnownResolvedModelMetadata, isDynamicModelProvider } from "../../mod
 import { defaultSupportedModel } from "../../models/registry";
 import type { loadSystemPromptWithSkills } from "../../prompt";
 import type { getProviderStatuses } from "../../providerStatus";
+import { closePooledCodexAppServerClient } from "../../providers/codexAppServerClient";
 import type { getProviderCatalog } from "../../providers/connectionCatalog";
 import {
   SessionCostTracker,
@@ -1446,6 +1447,9 @@ export class AgentSession {
 
   async closeForHistory(): Promise<void> {
     this.state.persistenceStatus = "closed";
+    if (this.state.config.provider === "codex-cli") {
+      await closePooledCodexAppServerClient(this.state.config.workingDirectory);
+    }
     this.queuePersistSessionSnapshot("session.closed");
     await this.persistenceManager.waitForIdle();
   }
