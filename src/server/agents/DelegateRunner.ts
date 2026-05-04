@@ -39,6 +39,10 @@ const defaultDelegateRunnerDeps: DelegateRunnerDeps = {
   createTools,
 };
 
+function providerOwnsExecutableTools(config: AgentConfig): boolean {
+  return config.provider === "codex-cli";
+}
+
 export class DelegateRunner {
   constructor(private readonly deps: DelegateRunnerDeps = defaultDelegateRunnerDeps) {}
 
@@ -90,7 +94,9 @@ export class DelegateRunner {
       agentRole: opts.role,
       shellPolicy: getAgentRoleShellPolicy(opts.role),
     };
-    const tools = filterToolsForRole(this.deps.createTools(delegateContext), roleDefinition);
+    const tools = providerOwnsExecutableTools(routed.config)
+      ? {}
+      : filterToolsForRole(this.deps.createTools(delegateContext), roleDefinition);
     const googlePrepareStep =
       routed.config.provider === "google" && Object.keys(tools).length > 0
         ? this.deps.buildGooglePrepareStep(routed.config.providerOptions, delegateContext.log)
