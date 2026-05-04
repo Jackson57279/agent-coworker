@@ -131,20 +131,20 @@ function buildTitlePrompt(query: string): string {
 
 function providerOptionsForTitleRun(config: AgentConfig): AgentConfig["providerOptions"] {
   const options = config.providerOptions;
-  if (config.provider !== "codex-cli" || !options) return options;
+  if (config.provider !== "codex-cli" && config.provider !== "openai") return options;
 
-  const codexOptions = options["codex-cli"];
-  if (!codexOptions || typeof codexOptions !== "object" || Array.isArray(codexOptions)) {
-    return options;
+  const currentOptions = options?.[config.provider];
+  const titleOptions =
+    currentOptions && typeof currentOptions === "object" && !Array.isArray(currentOptions)
+      ? { ...(currentOptions as Record<string, unknown>) }
+      : {};
+  titleOptions.reasoningEffort = "low";
+  if (config.provider === "codex-cli") {
+    delete titleOptions.reasoningSummary;
   }
-
-  const { reasoningSummary: _reasoningSummary, ...titleCodexOptions } = codexOptions as Record<
-    string,
-    unknown
-  >;
   return {
     ...options,
-    "codex-cli": titleCodexOptions,
+    [config.provider]: titleOptions,
   };
 }
 

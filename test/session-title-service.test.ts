@@ -55,6 +55,13 @@ describe("sessionTitleService", () => {
     });
     expect(createRuntime).toHaveBeenCalledTimes(1);
     expect(runTurn).toHaveBeenCalledTimes(1);
+    expect(runTurn.mock.calls[0]?.[0]).toMatchObject({
+      providerOptions: {
+        openai: {
+          reasoningEffort: "low",
+        },
+      },
+    });
   });
 
   test("falls back to provider default model when primary model attempt fails", async () => {
@@ -151,7 +158,7 @@ describe("sessionTitleService", () => {
       maxSteps: 1,
       providerOptions: {
         "codex-cli": {
-          reasoningEffort: "high",
+          reasoningEffort: "low",
           textVerbosity: "medium",
         },
       },

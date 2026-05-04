@@ -157,23 +157,28 @@ function createMockClient(): CodexAppServerClient {
       );
     }
   };
-  const completeTurn = (turnId: string, text: string, extraItems: unknown[] = []) => {
+  const completeTurn = (
+    threadId: string,
+    turnId: string,
+    text: string,
+    extraItems: unknown[] = [],
+  ) => {
     sendNotification({
       method: "item/started",
       params: {
-        threadId: "thread_1",
+        threadId,
         turnId,
         item: { type: "agentMessage", id: "item_1", text: "", phase: null, memoryCitation: null },
       },
     });
     sendNotification({
       method: "item/agentMessage/delta",
-      params: { threadId: "thread_1", turnId, itemId: "item_1", delta: text },
+      params: { threadId, turnId, itemId: "item_1", delta: text },
     });
     sendNotification({
       method: "item/completed",
       params: {
-        threadId: "thread_1",
+        threadId,
         turnId,
         item: { type: "agentMessage", id: "item_1", text, phase: null, memoryCitation: null },
       },
@@ -181,7 +186,7 @@ function createMockClient(): CodexAppServerClient {
     sendNotification({
       method: "thread/tokenUsage/updated",
       params: {
-        threadId: "thread_1",
+        threadId,
         turnId,
         tokenUsage: {
           total: {
@@ -205,8 +210,10 @@ function createMockClient(): CodexAppServerClient {
     sendNotification({
       method: "turn/completed",
       params: {
+        threadId,
         turn: {
           id: turnId,
+          threadId,
           status: "completed",
           items: [
             ...extraItems,
@@ -278,7 +285,33 @@ function createMockClient(): CodexAppServerClient {
         reasoningEffort: "high",
       };
     } else if (method === "turn/start") {
+      const record = params as { threadId?: string };
+      const threadId = record.threadId ?? "thread_1";
       const turnId = `turn_${nextTurnId++}`;
+      if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("cross-thread-title-leak")) {
+        sendNotification({
+          method: "item/agentMessage/delta",
+          params: {
+            threadId: "thread_title",
+            turnId: "turn_title",
+            itemId: "item_title",
+            delta: "Leaked Generated Title",
+          },
+        });
+        sendNotification({
+          method: "turn/completed",
+          params: {
+            threadId: "thread_title",
+            turn: {
+              id: "turn_title",
+              threadId: "thread_title",
+              status: "completed",
+              items: [{ type: "agentMessage", id: "item_title", text: "Leaked Generated Title" }],
+              error: null,
+            },
+          },
+        });
+      }
       result = { turn: { id: turnId, status: "inProgress", items: [], error: null } };
       if (process.env.CODEX_APP_SERVER_DELAY_COMPLETION !== "1") {
         queueMicrotask(async () => {
@@ -357,6 +390,7 @@ function createMockClient(): CodexAppServerClient {
             });
           }
           completeTurn(
+            threadId,
             turnId,
             process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("model-gated")
               ? "fallback ok"
@@ -368,9 +402,12 @@ function createMockClient(): CodexAppServerClient {
       const record = params as { expectedTurnId?: string; input?: unknown };
       result = { turnId: record.expectedTurnId };
       queueMicrotask(() => {
-        completeTurn(record.expectedTurnId ?? "turn_1", "hello from app-server", [
-          { type: "userMessage", id: "steer_user_1", content: record.input },
-        ]);
+        completeTurn(
+          "thread_1",
+          record.expectedTurnId ?? "turn_1",
+          "hello from app-server",
+          [{ type: "userMessage", id: "steer_user_1", content: record.input }],
+        );
       });
     }
     emitRaw({ direction: "server_response", message: { id: requestId, result } });
@@ -546,6 +583,32 @@ describe("codex app-server runtime", () => {
     expect(rawDeltaIndex).toBeGreaterThanOrEqual(0);
     expect(textDeltaIndex).toBeGreaterThanOrEqual(0);
     expect(rawDeltaIndex).toBeLessThanOrEqual(textDeltaIndex);
+  });
+
+  test.serial("ignores pooled app-server title-generation events from other threads", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-title-leak-"));
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = "cross-thread-title-leak";
+
+    const streamParts: unknown[] = [];
+    const rawEvents: unknown[] = [];
+    const runtime = createRuntime(makeConfig(dir));
+    const result = await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+      onModelStreamPart: (part) => {
+        streamParts.push(part);
+      },
+      onModelRawEvent: (event) => {
+        rawEvents.push(event);
+      },
+    });
+
+    expect(result.text).toBe("hello from app-server");
+    expect(JSON.stringify(streamParts)).not.toContain("Leaked Generated Title");
+    expect(JSON.stringify(rawEvents)).not.toContain("Leaked Generated Title");
   });
 
   test.serial("forwards Codex verbosity and rich web search config to app-server threads", async () => {

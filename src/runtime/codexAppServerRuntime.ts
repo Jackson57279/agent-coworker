@@ -30,6 +30,10 @@ type StartedCodexAppServer = {
   waitForRawEvents: () => Promise<void>;
   dispose: () => void;
 };
+type ActiveCodexTurnTarget = {
+  threadId: () => string | undefined;
+  turnId: () => string | undefined;
+};
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 type CodexApprovalPolicy = "on-request" | "never";
 type CodexSandboxPolicy =
@@ -311,6 +315,32 @@ function dynamicToolResponse(success: boolean, text: string): CodexDynamicToolCa
   };
 }
 
+function codexPayloadTurnId(payload: Record<string, unknown> | null | undefined): string | undefined {
+  return asString(payload?.turnId) ?? asString(asRecord(payload?.turn)?.id);
+}
+
+function codexPayloadThreadId(
+  payload: Record<string, unknown> | null | undefined,
+): string | undefined {
+  return asString(payload?.threadId) ?? asString(asRecord(payload?.turn)?.threadId);
+}
+
+function targetsActiveCodexTurn(
+  payload: Record<string, unknown> | null | undefined,
+  target: ActiveCodexTurnTarget,
+): boolean {
+  const payloadThreadId = codexPayloadThreadId(payload);
+  const payloadTurnId = codexPayloadTurnId(payload);
+  if (!payloadThreadId && !payloadTurnId) return true;
+
+  const activeThreadId = target.threadId();
+  const activeTurnId = target.turnId();
+  if (payloadThreadId && (!activeThreadId || payloadThreadId !== activeThreadId)) return false;
+  if (payloadTurnId && activeTurnId && payloadTurnId !== activeTurnId) return false;
+  if (payloadTurnId && !activeTurnId && !payloadThreadId) return false;
+  return true;
+}
+
 function formatCommandForDiagnostics(command: CodexAppServerCommand): string {
   return [
     `source=${command.source}`,
@@ -447,10 +477,19 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
   };
 }
 
-async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<StartedCodexAppServer> {
+async function startCodexAppServer(
+  params: RuntimeRunTurnParams,
+  target: ActiveCodexTurnTarget,
+): Promise<StartedCodexAppServer> {
   const rawEventPromises: Promise<void>[] = [];
   const rawEventErrors: unknown[] = [];
   const recordJsonRpcMessage = (message: CodexAppServerJsonRpcRawMessage) => {
+    if (
+      message.direction === "server_notification" &&
+      !targetsActiveCodexTurn(asRecord(message.message.params), target)
+    ) {
+      return;
+    }
     const persist = params.onModelRawEvent?.({
       format: "codex-app-server-v2",
       event: message,
@@ -472,7 +511,7 @@ async function startCodexAppServer(params: RuntimeRunTurnParams): Promise<Starte
   );
   const disposeJsonRpcMessage = client.onJsonRpcMessage(recordJsonRpcMessage);
   const disposeNotification = client.onNotification((notification) => {
-    void handleNotification(notification, params);
+    void handleNotification(notification, params, target);
   });
   return {
     client,
@@ -641,8 +680,10 @@ function normalizeTodoList(value: unknown): TodoItem[] | null {
 async function handleNotification(
   notification: CodexAppServerJsonRpcNotification,
   params: RuntimeRunTurnParams,
+  target: ActiveCodexTurnTarget,
 ) {
   const payload = asRecord(notification.params);
+  if (!targetsActiveCodexTurn(payload, target)) return;
   const item = asRecord(payload?.item);
   switch (notification.method) {
     case "item/started":
@@ -787,7 +828,10 @@ function assistantTextFromTurn(turn: unknown): string {
     .join("\n");
 }
 
-function createAssistantTextCapture(client: CodexAppServerClient): {
+function createAssistantTextCapture(
+  client: CodexAppServerClient,
+  target: ActiveCodexTurnTarget,
+): {
   dispose: () => void;
   text: () => string;
 } {
@@ -805,6 +849,7 @@ function createAssistantTextCapture(client: CodexAppServerClient): {
 
   const dispose = client.onNotification((notification) => {
     const payload = asRecord(notification.params);
+    if (!targetsActiveCodexTurn(payload, target)) return;
     const item = asRecord(payload?.item);
 
     if (notification.method === "item/started" && item?.type === "agentMessage") {
@@ -855,12 +900,16 @@ export function createCodexAppServerRuntime(): LlmRuntime {
   return {
     name: "codex-app-server",
     runTurn: async (params): Promise<RuntimeRunTurnResult> => {
-      const { client, waitForRawEvents, dispose } = await startCodexAppServer(params);
       let threadId: string | undefined;
       let startedTurnId: string | undefined;
+      const activeTarget: ActiveCodexTurnTarget = {
+        threadId: () => threadId,
+        turnId: () => startedTurnId,
+      };
+      const { client, waitForRawEvents, dispose } = await startCodexAppServer(params, activeTarget);
       let usage: RuntimeUsage | undefined;
       let unregisterSteerHandler: (() => void) | undefined;
-      const assistantTextCapture = createAssistantTextCapture(client);
+      const assistantTextCapture = createAssistantTextCapture(client, activeTarget);
       try {
         params.abortSignal?.throwIfAborted();
 
@@ -920,6 +969,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         if (input.length === 0) throw new Error("codex app-server runtime requires a user message.");
         const completion = waitForTurnCompletion(
           client,
+          () => threadId,
           () => startedTurnId,
           (nextUsage) => {
             usage = nextUsage;
@@ -1025,6 +1075,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
 
 async function waitForTurnCompletion(
   client: CodexAppServerClient,
+  threadId: string | (() => string | undefined),
   turnId: string | (() => string | undefined),
   onUsage: (usage: RuntimeUsage | undefined) => void,
   opts: {
@@ -1068,13 +1119,18 @@ async function waitForTurnCompletion(
     opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
     dispose = client.onNotification((notification) => {
       const params = asRecord(notification.params);
+      const expectedThreadId = typeof threadId === "function" ? threadId() : threadId;
+      const expectedTurnId = typeof turnId === "function" ? turnId() : turnId;
+      const payloadThreadId = codexPayloadThreadId(params);
+      if (payloadThreadId && expectedThreadId && payloadThreadId !== expectedThreadId) return;
       if (notification.method === "thread/tokenUsage/updated") {
+        const payloadTurnId = codexPayloadTurnId(params);
+        if (expectedTurnId && payloadTurnId && payloadTurnId !== expectedTurnId) return;
         onUsage(parseUsage(params?.tokenUsage));
         return;
       }
       if (notification.method !== "turn/completed") return;
       const turn = asRecord(params?.turn);
-      const expectedTurnId = typeof turnId === "function" ? turnId() : turnId;
       if (expectedTurnId && asString(turn?.id) !== expectedTurnId) return;
       if (turn?.status === "failed") {
         const error = asRecord(turn.error);
