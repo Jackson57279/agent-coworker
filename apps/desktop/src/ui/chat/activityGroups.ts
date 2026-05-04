@@ -208,6 +208,10 @@ function shouldMergeToolTraceItems(
 
 function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntry[] {
   const entries: ActivityTraceEntry[] = [];
+  const firstBlankReasoning = items.find(
+    (item): item is Extract<FeedItem, { kind: "reasoning" }> =>
+      item.kind === "reasoning" && !hasRenderableReasoningText(item),
+  );
 
   for (const item of items) {
     const previous = entries[entries.length - 1];
@@ -243,6 +247,10 @@ function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntr
     }
 
     entries.push({ kind: "tool", item: { ...item, sourceIds: [item.id] } });
+  }
+
+  if (entries.length === 0 && firstBlankReasoning) {
+    entries.push({ kind: "reasoning", item: firstBlankReasoning });
   }
 
   return entries;
@@ -308,9 +316,6 @@ export function buildChatRenderItems(feed: FeedItem[]): ChatRenderItem[] {
       continue;
     }
     if (item.kind === "reasoning") {
-      if (!hasRenderableReasoningText(item)) {
-        continue;
-      }
       currentGroup.push(item);
       continue;
     }
@@ -331,6 +336,10 @@ export function buildChatRenderItems(feed: FeedItem[]): ChatRenderItem[] {
 
 export function summarizeActivityGroup(items: ActivityFeedItem[]): ActivityGroupSummary {
   const entries = buildActivityTraceEntries(items);
+  const hasPendingReasoning =
+    entries.length === 1 &&
+    entries[0]?.kind === "reasoning" &&
+    !hasRenderableReasoningText(entries[0].item);
   const reasoningItems = entries
     .filter(
       (entry): entry is Extract<ActivityTraceEntry, { kind: "reasoning" }> =>
@@ -346,13 +355,15 @@ export function summarizeActivityGroup(items: ActivityFeedItem[]): ActivityGroup
     [...reasoningItems].reverse().find((item) => item.mode === "summary") ??
     reasoningItems[reasoningItems.length - 1];
   const latestTool = toolItems[toolItems.length - 1];
-  const preview = primaryReasoning?.text
-    ? buildMarkdownPreviewText(primaryReasoning.text, 2)
-    : latestTool
-      ? formatToolCard(latestTool.name, latestTool.args, latestTool.result, latestTool.state)
-          .subtitle
-      : "Reasoning and tool activity";
-  const status = deriveStatus(toolItems);
+  const preview = hasPendingReasoning
+    ? "Thinking..."
+    : primaryReasoning?.text
+      ? buildMarkdownPreviewText(primaryReasoning.text, 2)
+      : latestTool
+        ? formatToolCard(latestTool.name, latestTool.args, latestTool.result, latestTool.state)
+            .subtitle
+        : "Reasoning and tool activity";
+  const status = hasPendingReasoning ? "running" : deriveStatus(toolItems);
 
   return {
     entries,

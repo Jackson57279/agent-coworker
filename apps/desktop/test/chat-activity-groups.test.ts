@@ -86,6 +86,53 @@ describe("desktop chat activity groups", () => {
     ]);
   });
 
+  test("keeps a pending reasoning placeholder before summary text streams", () => {
+    const feed: FeedItem[] = [
+      {
+        id: "m1",
+        kind: "message",
+        role: "user",
+        ts: "2024-01-01T00:00:00.000Z",
+        text: "start",
+      },
+      {
+        id: "r-pending",
+        kind: "reasoning",
+        mode: "summary",
+        ts: "2024-01-01T00:00:01.000Z",
+        text: "",
+      },
+    ];
+
+    expect(buildChatRenderItems(feed)).toEqual([
+      { kind: "feed-item", item: feed[0] },
+      { kind: "activity-group", id: "activity-r-pending", items: [feed[1]] },
+    ]);
+  });
+
+  test("pending reasoning placeholders do not add trace rows once real activity arrives", () => {
+    const summary = summarizeActivityGroup([
+      {
+        id: "r-pending",
+        kind: "reasoning",
+        mode: "summary",
+        ts: "2024-01-01T00:00:01.000Z",
+        text: "",
+      },
+      {
+        id: "r-summary",
+        kind: "reasoning",
+        mode: "summary",
+        ts: "2024-01-01T00:00:02.000Z",
+        text: "Checking the source list.",
+      },
+    ]);
+
+    expect(summary.entries).toHaveLength(1);
+    expect(summary.reasoningCount).toBe(1);
+    expect(summary.preview).toContain("Checking the source list.");
+  });
+
   test("summary prefers reasoning preview and counts tools", () => {
     const summary = summarizeActivityGroup([
       {

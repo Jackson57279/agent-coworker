@@ -427,6 +427,55 @@ function assistantTextFromTurn(turn: unknown): string {
     .join("\n");
 }
 
+function createAssistantTextCapture(client: CodexAppServerClient): {
+  dispose: () => void;
+  text: () => string;
+} {
+  const textByItemId = new Map<string, string>();
+  const itemOrder: string[] = [];
+
+  const ensureItem = (id: string | undefined, initialText = ""): string | null => {
+    if (!id) return null;
+    if (!textByItemId.has(id)) {
+      textByItemId.set(id, initialText);
+      itemOrder.push(id);
+    }
+    return id;
+  };
+
+  const dispose = client.onNotification((notification) => {
+    const payload = asRecord(notification.params);
+    const item = asRecord(payload?.item);
+
+    if (notification.method === "item/started" && item?.type === "agentMessage") {
+      ensureItem(asString(item.id), asString(item.text) ?? "");
+      return;
+    }
+
+    if (notification.method === "item/agentMessage/delta") {
+      const id = ensureItem(asString(payload?.itemId));
+      if (!id) return;
+      textByItemId.set(id, `${textByItemId.get(id) ?? ""}${asString(payload?.delta) ?? ""}`);
+      return;
+    }
+
+    if (notification.method === "item/completed" && item?.type === "agentMessage") {
+      const id = ensureItem(asString(item.id));
+      const text = asString(item.text);
+      if (id && text) textByItemId.set(id, text);
+    }
+  });
+
+  return {
+    dispose,
+    text: () =>
+      itemOrder
+        .map((id) => textByItemId.get(id)?.trim() ?? "")
+        .filter(Boolean)
+        .join("\n"),
+  };
+}
+
 function reasoningTextFromTurn(turn: unknown): string | undefined {
   const items = asArray(asRecord(turn)?.items);
   const text = items
@@ -450,6 +499,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
       let threadId: string | undefined;
       let usage: RuntimeUsage | undefined;
       let unregisterSteerHandler: (() => void) | undefined;
+      const assistantTextCapture = createAssistantTextCapture(client);
       try {
         params.abortSignal?.throwIfAborted();
         await client.request("initialize", codexAppServerInitializeParams());
@@ -545,7 +595,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         }
         const finalTurn = await completion;
 
-        const text = assistantTextFromTurn(finalTurn);
+        const text = assistantTextFromTurn(finalTurn) || assistantTextCapture.text();
         const reasoningText = reasoningTextFromTurn(finalTurn);
         await params.onModelStreamPart?.({
           type: "finish-step",
@@ -581,6 +631,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         }
         throw contextualError;
       } finally {
+        assistantTextCapture.dispose();
         unregisterSteerHandler?.();
         try {
           await waitForRawEvents();
