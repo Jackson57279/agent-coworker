@@ -129,6 +129,25 @@ function buildTitlePrompt(query: string): string {
   ].join("\n");
 }
 
+function providerOptionsForTitleRun(config: AgentConfig): AgentConfig["providerOptions"] {
+  const options = config.providerOptions;
+  if (config.provider !== "codex-cli" || !options) return options;
+
+  const codexOptions = options["codex-cli"];
+  if (!codexOptions || typeof codexOptions !== "object" || Array.isArray(codexOptions)) {
+    return options;
+  }
+
+  const { reasoningSummary: _reasoningSummary, ...titleCodexOptions } = codexOptions as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...options,
+    "codex-cli": titleCodexOptions,
+  };
+}
+
 export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps> = {}) {
   let lazyDepsPromise: Promise<SessionTitleDeps> | null = null;
 
@@ -187,7 +206,7 @@ export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps>
           messages: [{ role: "user", content: buildTitlePrompt(query) }],
           tools: {},
           maxSteps: 1,
-          providerOptions: runtimeConfig.providerOptions,
+          providerOptions: providerOptionsForTitleRun(runtimeConfig),
         });
 
         const title = sanitizeModelTitle(result.text);

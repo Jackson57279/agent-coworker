@@ -149,7 +149,12 @@ describe("sessionTitleService", () => {
       },
       tools: {},
       maxSteps: 1,
-      providerOptions: config.providerOptions,
+      providerOptions: {
+        "codex-cli": {
+          reasoningEffort: "high",
+          textVerbosity: "medium",
+        },
+      },
     });
   });
 

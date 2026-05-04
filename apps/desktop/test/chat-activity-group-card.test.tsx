@@ -178,8 +178,38 @@ describe("desktop activity group card", () => {
       }),
     );
 
-    expect(html).toContain("I need to be careful not to make assumptions.");
+    expect(html).toContain("Worked");
+    expect(html).not.toContain("activity-thinking-shimmer");
+    expect(html).not.toContain("I need to be careful not to make assumptions.");
     expect(html).not.toContain("Planning search strategy");
+  });
+
+  test("renders completed activity as a compact worked-for row", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActivityGroupCard, {
+        items: [
+          {
+            id: "r1",
+            kind: "reasoning",
+            mode: "summary",
+            ts: "2024-01-01T00:00:00.000Z",
+            text: "Checking the current leadership context.",
+          },
+          {
+            id: "t1",
+            kind: "tool",
+            ts: "2024-01-01T00:02:49.000Z",
+            name: "nativeWebSearch",
+            state: "output-available",
+            result: { status: "completed" },
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain("Worked for 2m 49s");
+    expect(html).not.toContain("rounded-xl border border-border/32");
+    expect(html).not.toContain("Checking the current leadership context.");
   });
 
   test("skips blank reasoning placeholders and keeps Codex native web search visible", () => {
@@ -236,8 +266,29 @@ describe("desktop activity group card", () => {
     expect(html).toContain("Memory");
     expect(html).toContain("Web Search");
     expect(html).toContain("Search: LGA crash 2026");
-    expect(reasoningRows[0]?.textContent).toContain("Summary");
+    expect(reasoningRows[0]?.textContent).not.toContain("Summary");
     expect(reasoningRows[0]?.textContent).toContain("Checking local sources first.");
+  });
+
+  test("renders a pending reasoning placeholder before summary text arrives", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActivityGroupCard, {
+        items: [
+          {
+            id: "r-pending",
+            kind: "reasoning",
+            mode: "summary",
+            ts: "2024-01-01T00:00:00.000Z",
+            text: "",
+          },
+        ],
+      }),
+    );
+    const doc = new JSDOM(html).window.document;
+    expect(doc.body.textContent).toContain("Thinking");
+    expect(html).toContain("activity-thinking-shimmer");
+    expect(doc.body.textContent).not.toContain("Working");
+    expect(doc.body.textContent).not.toContain("Summary");
   });
 
   test("auto-expands approval tools in trace mode", () => {

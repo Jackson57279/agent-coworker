@@ -16,6 +16,7 @@ export type ChatRenderItem =
 export type ActivityGroupStatus = "approval" | "issue" | "running" | "done";
 
 export type ActivityGroupSummary = {
+  elapsedLabel: string | null;
   entries: ActivityTraceEntry[];
   preview: string;
   reasoningCount: number;
@@ -208,6 +209,10 @@ function shouldMergeToolTraceItems(
 
 function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntry[] {
   const entries: ActivityTraceEntry[] = [];
+  const firstBlankReasoning = items.find(
+    (item): item is Extract<FeedItem, { kind: "reasoning" }> =>
+      item.kind === "reasoning" && !hasRenderableReasoningText(item),
+  );
 
   for (const item of items) {
     const previous = entries[entries.length - 1];
@@ -245,6 +250,10 @@ function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntr
     entries.push({ kind: "tool", item: { ...item, sourceIds: [item.id] } });
   }
 
+  if (entries.length === 0 && firstBlankReasoning) {
+    entries.push({ kind: "reasoning", item: firstBlankReasoning });
+  }
+
   return entries;
 }
 
@@ -262,6 +271,30 @@ function statusLabel(status: ActivityGroupStatus, toolCount: number): string {
   if (status === "running") return "Working";
   if (toolCount > 0) return "Done";
   return "Summary";
+}
+
+function timestampMs(value: string): number | null {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function formatElapsedMs(durationMs: number): string {
+  const totalSeconds = durationMs > 0 ? Math.max(1, Math.floor(durationMs / 1000)) : 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function activityElapsedLabel(items: ActivityFeedItem[]): string | null {
+  const timestamps = items.map((item) => timestampMs(item.ts)).filter((ms) => ms !== null);
+  if (timestamps.length < 2) return null;
+  const startedAt = Math.min(...timestamps);
+  const endedAt = Math.max(...timestamps);
+  return formatElapsedMs(endedAt - startedAt);
 }
 
 type UiSurfaceFeed = Extract<FeedItem, { kind: "ui_surface" }>;
@@ -308,9 +341,6 @@ export function buildChatRenderItems(feed: FeedItem[]): ChatRenderItem[] {
       continue;
     }
     if (item.kind === "reasoning") {
-      if (!hasRenderableReasoningText(item)) {
-        continue;
-      }
       currentGroup.push(item);
       continue;
     }
@@ -331,6 +361,10 @@ export function buildChatRenderItems(feed: FeedItem[]): ChatRenderItem[] {
 
 export function summarizeActivityGroup(items: ActivityFeedItem[]): ActivityGroupSummary {
   const entries = buildActivityTraceEntries(items);
+  const hasPendingReasoning =
+    entries.length === 1 &&
+    entries[0]?.kind === "reasoning" &&
+    !hasRenderableReasoningText(entries[0].item);
   const reasoningItems = entries
     .filter(
       (entry): entry is Extract<ActivityTraceEntry, { kind: "reasoning" }> =>
@@ -346,15 +380,18 @@ export function summarizeActivityGroup(items: ActivityFeedItem[]): ActivityGroup
     [...reasoningItems].reverse().find((item) => item.mode === "summary") ??
     reasoningItems[reasoningItems.length - 1];
   const latestTool = toolItems[toolItems.length - 1];
-  const preview = primaryReasoning?.text
-    ? buildMarkdownPreviewText(primaryReasoning.text, 2)
-    : latestTool
-      ? formatToolCard(latestTool.name, latestTool.args, latestTool.result, latestTool.state)
-          .subtitle
-      : "Reasoning and tool activity";
-  const status = deriveStatus(toolItems);
+  const preview = hasPendingReasoning
+    ? "Thinking..."
+    : primaryReasoning?.text
+      ? buildMarkdownPreviewText(primaryReasoning.text, 2)
+      : latestTool
+        ? formatToolCard(latestTool.name, latestTool.args, latestTool.result, latestTool.state)
+            .subtitle
+        : "Reasoning and tool activity";
+  const status = hasPendingReasoning ? "running" : deriveStatus(toolItems);
 
   return {
+    elapsedLabel: activityElapsedLabel(items),
     entries,
     preview,
     reasoningCount: reasoningItems.length,
