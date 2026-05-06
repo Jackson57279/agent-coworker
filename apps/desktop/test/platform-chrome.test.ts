@@ -26,7 +26,7 @@ describe("getPlatformChrome", () => {
     expect(chrome.titlebarHeight).toBe(48);
     expect(chrome.dragStripHeight).toBe(10);
     expect(chrome.trafficLightPosition).toBeUndefined();
-    expect(chrome.windowMaterial).toBe("mica");
+    expect(chrome.windowMaterial).toBe("tabbed");
     expect(chrome.sidebarTitlebandMode).toBe("native");
     expect(chrome.topbarControlPlacement).toBe("left-rail");
     expect(chrome.captionButtonReserve).toBe(136);
