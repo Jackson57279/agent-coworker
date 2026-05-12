@@ -203,63 +203,68 @@ describe("desktop sidebar", () => {
     useAppStore.setState(defaultStoreState);
   });
 
-  test.serial("expands the selected workspace and caps the visible thread list", async () => {
-    const harness = setupSidebarJsdom();
-    let root: ReturnType<typeof createRoot> | null = null;
+  test.serial(
+    "expands the selected workspace and caps the compact visible thread list",
+    async () => {
+      const harness = setupSidebarJsdom();
+      let root: ReturnType<typeof createRoot> | null = null;
 
-    try {
-      const container = harness.dom.window.document.getElementById("root");
-      if (!container) throw new Error("missing root");
-      root = createRoot(container);
+      try {
+        const container = harness.dom.window.document.getElementById("root");
+        if (!container) throw new Error("missing root");
+        root = createRoot(container);
 
-      await act(async () => {
-        resetAppStore({
-          workspaces: [makeWorkspace()],
-          threads: makeThreads(12),
-          selectedWorkspaceId: "ws-1",
-          selectedThreadId: "thread-12",
-        });
-        root.render(createElement(Sidebar));
-      });
-
-      const visibleThreadRows = Array.from(container.querySelectorAll(".sidebar-thread-item"));
-      const visibleThreadTitles = visibleThreadRows.map((row) => {
-        const title = row.querySelector(".block.truncate");
-        return title?.textContent?.trim() ?? "";
-      });
-
-      expect(container.textContent).toContain("Agent Coworker");
-      expect(visibleThreadRows).toHaveLength(10);
-      expect(visibleThreadTitles.includes("Thread 12")).toBe(true);
-      expect(visibleThreadTitles.includes("Thread 3")).toBe(true);
-      expect(visibleThreadTitles.includes("Thread 2")).toBe(false);
-      expect(visibleThreadTitles.includes("Thread 1")).toBe(false);
-      expect(container.textContent).toContain("Show 2 more");
-
-      const collapseButton = container.querySelector('[aria-label="Collapse Agent Coworker"]');
-      if (!(collapseButton instanceof harness.dom.window.HTMLButtonElement)) {
-        throw new Error("missing collapse button");
-      }
-
-      await act(async () => {
-        collapseButton.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
-      });
-
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-      });
-
-      expect(container.textContent).not.toContain("Thread 12");
-      expect(container.querySelector('[aria-label="Expand Agent Coworker"]')).not.toBeNull();
-    } finally {
-      if (root) {
         await act(async () => {
-          root?.unmount();
+          resetAppStore({
+            workspaces: [makeWorkspace()],
+            threads: makeThreads(12),
+            selectedWorkspaceId: "ws-1",
+            selectedThreadId: "thread-12",
+          });
+          root.render(createElement(Sidebar));
         });
+
+        const visibleThreadRows = Array.from(container.querySelectorAll(".sidebar-thread-item"));
+        const visibleThreadTitles = visibleThreadRows.map((row) => {
+          const title = row.querySelector(".block.truncate");
+          return title?.textContent?.trim() ?? "";
+        });
+
+        expect(container.textContent).toContain("Agent Coworker");
+        expect(visibleThreadRows).toHaveLength(5);
+        expect(visibleThreadTitles.includes("Thread 12")).toBe(true);
+        expect(visibleThreadTitles.includes("Thread 8")).toBe(true);
+        expect(visibleThreadTitles.includes("Thread 7")).toBe(false);
+        expect(visibleThreadTitles.includes("Thread 1")).toBe(false);
+        expect(container.textContent).toContain("Show 7 more");
+
+        const collapseButton = container.querySelector('[aria-label="Collapse Agent Coworker"]');
+        if (!(collapseButton instanceof harness.dom.window.HTMLButtonElement)) {
+          throw new Error("missing collapse button");
+        }
+
+        await act(async () => {
+          collapseButton.dispatchEvent(
+            new harness.dom.window.MouseEvent("click", { bubbles: true }),
+          );
+        });
+
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        });
+
+        expect(container.textContent).not.toContain("Thread 12");
+        expect(container.querySelector('[aria-label="Expand Agent Coworker"]')).not.toBeNull();
+      } finally {
+        if (root) {
+          await act(async () => {
+            root?.unmount();
+          });
+        }
+        harness.restore();
       }
-      harness.restore();
-    }
-  });
+    },
+  );
 
   test.serial(
     "switches a thread row into inline rename mode with a focused shared input",
