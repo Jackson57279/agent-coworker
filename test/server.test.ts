@@ -350,6 +350,29 @@ describe("HTTP Handler", () => {
     }
   });
 
+  test("rejects local HTTP route requests from non-loopback browser origins", async () => {
+    const tmpDir = await makeTmpProject();
+    const targetPath = path.join(tmpDir, "csrf-target.txt");
+    await fs.writeFile(targetPath, "keep me", "utf-8");
+    const { server } = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const httpUrl = `http://127.0.0.1:${server.port}/cowork/fs/trash`;
+      const res = await fetch(httpUrl, {
+        method: "POST",
+        headers: {
+          Origin: "https://evil.example",
+          "Content-Type": "text/plain;charset=UTF-8",
+        },
+        body: JSON.stringify({ path: targetPath }),
+      });
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe("Forbidden origin");
+      expect(await fs.readFile(targetPath, "utf-8")).toBe("keep me");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   test("web desktop service enablement follows merged opts.env", async () => {
     const tmpDir = await makeTmpProject();
     const previous = process.env.COWORK_WEB_DESKTOP_SERVICE;

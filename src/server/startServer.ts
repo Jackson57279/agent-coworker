@@ -7,19 +7,31 @@ import { resolveWsProtocol, splitWebSocketSubprotocolHeader } from "./wsProtocol
 
 export type { StartAgentServerOptions } from "./runtime/ServerRuntime";
 
-function pickLoopbackOrigin(req: Request): string | null {
-  const origin = req.headers.get("origin");
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "::1"
+  );
+}
+
+function pickLoopbackOrigin(origin: string | null): string | null {
   if (!origin) return null;
   try {
     const u = new URL(origin);
-    const host = u.hostname;
-    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1") {
+    if (isLoopbackHostname(u.hostname)) {
       return origin;
     }
   } catch {
     // fall through
   }
   return null;
+}
+
+function hasUntrustedBrowserOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  return Boolean(origin && !pickLoopbackOrigin(origin));
 }
 
 function parseBearerToken(header: string | null): string | null {
@@ -54,13 +66,16 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
       port,
       async fetch(req, srv) {
         const url = new URL(req.url);
-        const allowedOrigin = pickLoopbackOrigin(req);
+        const allowedOrigin = pickLoopbackOrigin(req.headers.get("origin"));
         const corsHeaders: Record<string, string> = allowedOrigin
           ? {
               "Access-Control-Allow-Origin": allowedOrigin,
               Vary: "Origin",
             }
           : {};
+        if (hasUntrustedBrowserOrigin(req)) {
+          return new Response("Forbidden origin", { status: 403, headers: corsHeaders });
+        }
         if (req.method === "OPTIONS") {
           return new Response(null, {
             status: 204,
