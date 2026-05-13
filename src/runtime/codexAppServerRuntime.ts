@@ -87,6 +87,22 @@ type CodexDynamicToolCallResponse = {
   contentItems: Array<{ type: "inputText"; text: string }>;
 };
 
+const CODEX_DYNAMIC_MCP_TOOL_PREFIX = "cowork_mcp__";
+
+function codexDynamicToolName(name: string): string {
+  if (name.startsWith("mcp__")) {
+    return `${CODEX_DYNAMIC_MCP_TOOL_PREFIX}${name.slice("mcp__".length)}`;
+  }
+  return name;
+}
+
+function coworkToolNameFromCodexDynamicName(name: string): string {
+  if (name.startsWith(CODEX_DYNAMIC_MCP_TOOL_PREFIX)) {
+    return `mcp__${name.slice(CODEX_DYNAMIC_MCP_TOOL_PREFIX.length)}`;
+  }
+  return name;
+}
+
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -264,7 +280,9 @@ function codexBaseInstructions(system: string): string {
       "",
       "Codex app-server handles shell, filesystem, sandboxing, approvals, and native web search/fetch for this turn.",
       "Cowork exposes coordination tools and Cowork MCP as dynamic tools.",
-      "Use Codex-native tools for local files, commands, and web access. Use Cowork dynamic tools for subagents, memory, skills, todos, usage, A2UI, and `mcp__...` tools.",
+      "Use Codex-native tools for local files, commands, and web access.",
+      "Use Cowork dynamic tools for subagents, memory, skills, todos, usage, and A2UI.",
+      "Cowork MCP tools are exposed with `cowork_mcp__{serverName}__{toolName}` names and routed back to the original `mcp__{serverName}__{toolName}` harness tools.",
     ].join("\n"),
     system,
   ].join("\n\n");
@@ -277,7 +295,7 @@ function codexDynamicToolSpecs(tools: RuntimeRunTurnParams["tools"]): CodexDynam
       const record = asRecord(tool);
       if (!record) return null;
       return {
-        name,
+        name: codexDynamicToolName(name),
         description: asString(record.description) ?? name,
         inputSchema: toPiJsonSchema(record.inputSchema, CODEX_APP_SERVER_PROVIDER),
       };
@@ -581,14 +599,15 @@ async function handleDynamicToolCall(
   if (!toolName) {
     return dynamicToolResponse(false, "Dynamic tool call is missing a tool name.");
   }
-  if (!isCodexDynamicCoworkToolName(toolName)) {
+  const coworkToolName = coworkToolNameFromCodexDynamicName(toolName);
+  if (!isCodexDynamicCoworkToolName(coworkToolName)) {
     return dynamicToolResponse(
       false,
       `Dynamic tool ${JSON.stringify(toolName)} is owned by Codex app-server natively.`,
     );
   }
 
-  const tool = params.tools[toolName];
+  const tool = params.tools[coworkToolName];
   if (!tool) {
     return dynamicToolResponse(false, `Dynamic tool ${JSON.stringify(toolName)} is not available.`);
   }
@@ -713,10 +732,11 @@ async function handleNotification(
           providerExecuted: true,
         });
       } else if (item?.type === "dynamicToolCall") {
+        const toolName = asString(item.tool);
         await params.onModelStreamPart?.({
           type: "tool-call",
           toolCallId: asString(item.id) ?? asString(item.callId),
-          toolName: asString(item.tool) ?? "dynamicTool",
+          toolName: toolName ? coworkToolNameFromCodexDynamicName(toolName) : "dynamicTool",
           input: item.arguments ?? {},
         });
       } else if (item?.type === "fileChange") {
@@ -794,10 +814,11 @@ async function handleNotification(
         });
       } else if (item?.type === "dynamicToolCall") {
         const statusFailed = item.status === "failed" || item.success === false;
+        const toolName = asString(item.tool);
         await params.onModelStreamPart?.({
           type: statusFailed ? "tool-error" : "tool-result",
           toolCallId: asString(item.id) ?? asString(item.callId),
-          toolName: asString(item.tool) ?? "dynamicTool",
+          toolName: toolName ? coworkToolNameFromCodexDynamicName(toolName) : "dynamicTool",
           output: item.result ?? item.contentItems ?? null,
           error: statusFailed ? (item.error ?? "dynamic tool failed") : undefined,
         });

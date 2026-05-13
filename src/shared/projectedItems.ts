@@ -252,6 +252,9 @@ export function applyProjectedItemCompleted(
   item: ProjectedItem,
   ts: string,
 ): SessionFeedItem[] {
+  if (item.type === "reasoning" && item.text.trim().length === 0) {
+    return feed.filter((entry) => entry.id !== item.id);
+  }
   return upsertFeedItem(feed, item, ts);
 }
 

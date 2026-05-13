@@ -326,6 +326,13 @@ function createMockClient(): CodexAppServerClient {
             await sendServerRequest("item/tool/call", {
               threadId: "thread_1",
               turnId,
+              callId: "call_mcp",
+              tool: "cowork_mcp__srv__custom",
+              arguments: { query: "ok" },
+            });
+            await sendServerRequest("item/tool/call", {
+              threadId: "thread_1",
+              turnId,
               callId: "call_unknown",
               tool: "unknownTool",
               arguments: {},
@@ -835,7 +842,7 @@ rl.on("line", (line) => {
           inputSchema: expect.objectContaining({ type: "object" }),
         }),
         expect.objectContaining({
-          name: "mcp__srv__custom",
+          name: "cowork_mcp__srv__custom",
           description: "A Cowork-managed MCP tool.",
           inputSchema: expect.objectContaining({ type: "object" }),
         }),
@@ -869,6 +876,11 @@ rl.on("line", (line) => {
           inputSchema: z.object({ value: z.string() }),
           execute: (input) => ({ ok: true, input }),
         },
+        mcp__srv__custom: {
+          description: "A Cowork-managed MCP tool.",
+          inputSchema: z.object({ query: z.string() }),
+          execute: (input) => ({ mcp: true, input }),
+        },
         validatedTool: {
           description: "Validate input.",
           inputSchema: z.object({ count: z.number() }),
@@ -897,22 +909,26 @@ rl.on("line", (line) => {
         return Array.isArray(record?.contentItems);
       }) as Array<{ success: boolean; contentItems: Array<{ text: string }> }>;
 
-    expect(dynamicResponses).toHaveLength(4);
+    expect(dynamicResponses).toHaveLength(5);
     const structuredText = dynamicResponses[0]?.contentItems[0]?.text;
     expect(dynamicResponses[0]).toMatchObject({
       success: true,
       contentItems: [{ type: "inputText", text: expect.stringContaining('"ok": true') }],
     });
     expect(structuredText).toContain('"value": "ok"');
-    expect(dynamicResponses[1]).toMatchObject({
+    const mcpText = dynamicResponses[1]?.contentItems[0]?.text;
+    expect(dynamicResponses[1]?.success).toBe(true);
+    expect(mcpText).toContain('"mcp": true');
+    expect(mcpText).toContain('"query": "ok"');
+    expect(dynamicResponses[2]).toMatchObject({
       success: false,
       contentItems: [{ text: expect.stringContaining("unknownTool") }],
     });
-    expect(dynamicResponses[2]).toMatchObject({
+    expect(dynamicResponses[3]).toMatchObject({
       success: false,
       contentItems: [{ text: expect.stringContaining("validatedTool") }],
     });
-    expect(dynamicResponses[3]).toMatchObject({
+    expect(dynamicResponses[4]).toMatchObject({
       success: false,
       contentItems: [{ text: expect.stringContaining("boom") }],
     });
@@ -1106,7 +1122,7 @@ rl.on("line", (line) => {
           inputSchema: expect.objectContaining({ type: "object" }),
         }),
         expect.objectContaining({
-          name: "mcp__srv__custom",
+          name: "cowork_mcp__srv__custom",
           description: "A Cowork-managed MCP tool.",
           inputSchema: expect.objectContaining({ type: "object" }),
         }),

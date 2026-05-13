@@ -231,6 +231,64 @@ describe("JSON-RPC projectors", () => {
     expect(reasoningCompletedIndex).toBeLessThan(assistantDeltaIndex);
   });
 
+  test("notification projector closes blank reasoning placeholders when a turn completes", () => {
+    const outbound: Array<{ method: string; params?: any }> = [];
+    const projector = createJsonRpcNotificationProjector({
+      threadId: sessionId,
+      send: (message) => outbound.push(message as { method: string; params?: any }),
+    });
+
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: true,
+      turnId,
+      cause: "user_message",
+    });
+    projector.handle(streamChunk("reasoning_start", { id: "reasoning-1", mode: "summary" }));
+    projector.handle(streamChunk("text_delta", { id: "text-1", text: "Final answer" }));
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: false,
+      turnId,
+      outcome: "completed",
+    });
+
+    const reasoningStarted = outbound.find(
+      (message) =>
+        message.method === "item/started" && message.params?.item?.type === "reasoning",
+    );
+    const reasoningCompleted = outbound.find(
+      (message) =>
+        message.method === "item/completed" && message.params?.item?.type === "reasoning",
+    );
+    const assistantCompleted = outbound.find(
+      (message) =>
+        message.method === "item/completed" && message.params?.item?.type === "agentMessage",
+    );
+    const turnCompleted = outbound.find((message) => message.method === "turn/completed");
+
+    expect(reasoningStarted?.params?.item).toMatchObject({
+      type: "reasoning",
+      mode: "summary",
+      text: "",
+    });
+    expect(reasoningCompleted?.params?.item).toMatchObject({
+      id: reasoningStarted?.params?.item?.id,
+      type: "reasoning",
+      mode: "summary",
+      text: "",
+    });
+    expect(assistantCompleted?.params?.item).toMatchObject({
+      type: "agentMessage",
+      text: "Final answer",
+    });
+    expect(outbound.findIndex((message) => message === reasoningCompleted)).toBeLessThan(
+      outbound.findIndex((message) => message === turnCompleted),
+    );
+  });
+
   test("journal projector suppresses commentary deltas and records streamed reasoning events from live chunks", () => {
     const emissions: Array<{ eventType: string; payload: any }> = [];
     const projector = createThreadJournalNotificationProjector({

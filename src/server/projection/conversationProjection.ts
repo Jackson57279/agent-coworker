@@ -507,6 +507,30 @@ export function createConversationProjection(opts: CreateConversationProjectionO
     }
   };
 
+  const completeReasoningStateForTurn = (turnId: string) => {
+    for (const [key, state] of [...reasoningByKey.entries()]) {
+      if (!key.startsWith(`${turnId}:`)) continue;
+      reasoningByKey.delete(key);
+      if (state.text.trim()) {
+        startBufferedReasoning(turnId, state);
+        opts.sink.emitItemCompleted(turnId, {
+          id: state.itemId,
+          type: "reasoning",
+          mode: state.mode,
+          text: state.text,
+        });
+        rememberStreamedReasoningText(state.text);
+      } else if (state.started) {
+        opts.sink.emitItemCompleted(turnId, {
+          id: state.itemId,
+          type: "reasoning",
+          mode: state.mode,
+          text: "",
+        });
+      }
+    }
+  };
+
   const clearToolStateForTurn = (turnId: string) => {
     for (const key of toolByKey.keys()) {
       if (key.startsWith(`${turnId}:`)) {
@@ -893,6 +917,7 @@ export function createConversationProjection(opts: CreateConversationProjectionO
 
           if (event.turnId) {
             completeAssistantStateBeforeStep(event.turnId);
+            completeReasoningStateForTurn(event.turnId);
             clearTurnProjectionState(event.turnId);
             opts.sink.emitTurnCompleted(
               event.turnId,
