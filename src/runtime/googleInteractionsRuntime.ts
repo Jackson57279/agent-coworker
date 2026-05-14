@@ -2,6 +2,7 @@ import { normalizeGoogleThinkingLevelForModel } from "../shared/googleThinking";
 import { getGoogleNativeWebSearchFromProviderOptions } from "../shared/openaiCompatibleOptions";
 import {
   type GoogleContinuationState,
+  isInvalidGoogleContinuationError,
   isGoogleContinuationState,
 } from "../shared/providerContinuation";
 import type { ModelMessage } from "../types";
@@ -252,8 +253,38 @@ export function createGoogleInteractionsRuntime(
             interactionId = result.interactionId;
             markModelCallSpanSuccess(span, telemetry, assistantRecord);
           } catch (error) {
-            markModelCallSpanError(span, error);
-            throw error;
+            if (previousInteractionId && isInvalidGoogleContinuationError(error)) {
+              params.log?.("google-interactions: Stateful request failed. Retrying with clean state.");
+              previousInteractionId = undefined;
+              const cleanStateMessages = activeProviderState
+                ? [...(params.allMessages ?? params.messages)]
+                : stepMessages;
+              const result = await runStepImpl({
+                model: resolved.model,
+                apiKey: asNonEmptyString(mergedStreamOptions.apiKey as unknown) ?? resolved.apiKey,
+                systemPrompt: params.system,
+                messages: cleanStateMessages,
+                tools: piTools,
+                streamOptions: mergedStreamOptions as any,
+                previousInteractionId: undefined,
+                onEvent: async (event) => {
+                  if (!includeUnknownRawParts && event.type === "unknown") return;
+                  await emitPart(event);
+                },
+                onRawEvent: async (event) => {
+                  await params.onModelRawEvent?.({
+                    format: "google-interactions-v1",
+                    event,
+                  });
+                },
+              });
+              assistantRecord = asRecord(result.assistant) ?? {};
+              interactionId = result.interactionId;
+              markModelCallSpanSuccess(span, telemetry, assistantRecord);
+            } else {
+              markModelCallSpanError(span, error);
+              throw error;
+            }
           }
 
           turnMessages.push(assistantRecord);

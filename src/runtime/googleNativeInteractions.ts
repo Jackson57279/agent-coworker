@@ -639,6 +639,19 @@ function extractSingletonOrNestedResultEntries(value: unknown): Array<Record<str
   return [record];
 }
 
+function extractCodeExecutionOutput(value: unknown): string {
+  const direct = asString(value);
+  if (direct !== undefined) return direct;
+
+  const record = asRecord(value);
+  return (
+    asString(record?.output) ??
+    asString(record?.stdout) ??
+    asString(record?.stderr) ??
+    ""
+  );
+}
+
 function buildNativeGoogleToolResultOutput(
   name: NativeGoogleToolName,
   callId: string,
@@ -676,7 +689,7 @@ function buildNativeGoogleToolResultOutput(
       callId,
       code: asString(callArguments.code) ?? "",
       language: asString(callArguments.language) ?? "python",
-      output: asString(result) ?? "",
+      output: extractCodeExecutionOutput(result),
       raw: result,
     };
   }

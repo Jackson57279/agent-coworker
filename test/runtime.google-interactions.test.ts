@@ -9,6 +9,7 @@ import {
   type GoogleNativeStepResult,
   __internal as googleNativeInternal,
 } from "../src/runtime/googleNativeInteractions";
+import { isInvalidGoogleContinuationError } from "../src/shared/providerContinuation";
 import type { RuntimeRunTurnParams } from "../src/runtime/types";
 import { __internal as citationMetadataInternal } from "../src/server/citationMetadata";
 import type { AgentConfig, ModelMessage } from "../src/types";
@@ -437,6 +438,94 @@ describe("google interactions runtime", () => {
     });
   });
 
+  test("retries stale Google continuation with full transcript history", async () => {
+    const homeDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "google-interactions-continuation-fallback-"),
+    );
+    const seenRequests: GoogleNativeStepRequest[] = [];
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async (opts) => {
+        seenRequests.push(opts);
+        if (seenRequests.length === 1) {
+          throw new Error("Invalid previous_interaction_id: interaction_id not found");
+        }
+        return {
+          assistant: {
+            role: "assistant",
+            api: "google-interactions",
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            content: [{ type: "text", text: "Recovered with full history" }],
+            usage: { input: 12, output: 7, totalTokens: 19 },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+          interactionId: "interaction_recovered",
+        };
+      },
+    });
+    const fullHistory = [
+      { role: "user", content: "Find the latest pricing" },
+      { role: "assistant", content: [{ type: "text", text: "Here are the latest prices." }] },
+      { role: "user", content: "Open the second result" },
+    ] as ModelMessage[];
+
+    const result = await runtime.runTurn(
+      makeParams(makeConfig(homeDir), {
+        messages: fullHistory,
+        allMessages: fullHistory,
+        providerState: {
+          provider: "google",
+          model: "gemini-3-flash-preview",
+          interactionId: "interaction_stale",
+          updatedAt: "2026-03-18T12:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(seenRequests).toHaveLength(2);
+    expect(seenRequests[0]?.previousInteractionId).toBe("interaction_stale");
+    expect(seenRequests[0]?.messages).toEqual([
+      { role: "user", content: "Open the second result" },
+    ]);
+    expect(seenRequests[1]?.previousInteractionId).toBeUndefined();
+    expect(seenRequests[1]?.messages).toEqual(fullHistory);
+    expect(result.text).toBe("Recovered with full history");
+  });
+
+  test("does not retry generic Google invalid request errors as stale continuation", async () => {
+    const homeDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "google-interactions-generic-invalid-"),
+    );
+    const seenRequests: GoogleNativeStepRequest[] = [];
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async (opts) => {
+        seenRequests.push(opts);
+        throw new Error("INVALID_ARGUMENT: bad attachment content");
+      },
+    });
+
+    await expect(
+      runtime.runTurn(
+        makeParams(makeConfig(homeDir), {
+          messages: [
+            { role: "user", content: "Find the latest pricing" },
+            { role: "assistant", content: [{ type: "text", text: "Here are the latest prices." }] },
+            { role: "user", content: "Open the second result" },
+          ] as ModelMessage[],
+          providerState: {
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            interactionId: "interaction_valid",
+            updatedAt: "2026-03-18T12:00:00.000Z",
+          },
+        }),
+      ),
+    ).rejects.toThrow("INVALID_ARGUMENT: bad attachment content");
+
+    expect(seenRequests).toHaveLength(1);
+  });
+
   test("prepareStep providerOptions overrides control thought summaries for the step", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-step-opts-"));
     const seenStreamOptions: Array<Record<string, unknown>> = [];
@@ -751,6 +840,22 @@ describe("google interactions runtime", () => {
       }),
     });
     expect(runtime.name).toBe("google-interactions");
+  });
+});
+
+describe("google continuation error detection", () => {
+  test("requires an interaction-id-specific Google error before retrying continuation", () => {
+    expect(
+      isInvalidGoogleContinuationError(
+        new Error("INVALID_ARGUMENT: previous_interaction_id interaction_id not found"),
+      ),
+    ).toBe(true);
+    expect(isInvalidGoogleContinuationError(new Error("invalid_request: tool schema failed"))).toBe(
+      false,
+    );
+    expect(isInvalidGoogleContinuationError(new Error("INVALID_ARGUMENT: bad attachment"))).toBe(
+      false,
+    );
   });
 });
 
@@ -1939,6 +2044,80 @@ describe("google native interactions request building", () => {
           queries: ["latest Gemini announcements"],
           results: [{ search_suggestions: "Latest Gemini announcements" }],
           raw: [{ search_suggestions: "Latest Gemini announcements" }],
+        },
+        providerExecuted: true,
+      },
+    ]);
+  });
+
+  test("mapGoogleEventToStreamParts treats native code execution as provider executed", () => {
+    const blocks = new Map();
+    const providerToolCallsById = new Map();
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "content.start",
+        index: 0,
+        content: {
+          type: "code_execution_call",
+          id: "ce_1",
+          arguments: { code: "print('sum=5117')", language: "python" },
+        },
+      },
+      blocks,
+      providerToolCallsById,
+    );
+
+    expect(blocks.get(0)?.type).toBe("providerToolCall");
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        {
+          event_type: "content.stop",
+          index: 0,
+        },
+        blocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      { type: "tool-input-end", id: "ce_1", toolName: "codeExecution", providerExecuted: true },
+    ]);
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "content.start",
+        index: 1,
+        content: {
+          type: "code_execution_result",
+          call_id: "ce_1",
+          result: { outcome: "OUTCOME_OK", output: "sum=5117\n" },
+        },
+      },
+      blocks,
+      providerToolCallsById,
+    );
+
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        {
+          event_type: "content.stop",
+          index: 1,
+        },
+        blocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "ce_1",
+        toolName: "codeExecution",
+        output: {
+          provider: "google",
+          status: "completed",
+          callId: "ce_1",
+          code: "print('sum=5117')",
+          language: "python",
+          output: "sum=5117\n",
+          raw: { outcome: "OUTCOME_OK", output: "sum=5117\n" },
         },
         providerExecuted: true,
       },

@@ -16,7 +16,10 @@ import {
   MAX_TURN_ATTACHMENT_TOTAL_BASE64_SIZE,
 } from "../../shared/attachments";
 import { supportsOpenAiContinuation } from "../../shared/openaiContinuation";
-import { supportsProviderManagedContinuationProvider } from "../../shared/providerContinuation";
+import {
+  isInvalidGoogleContinuationError as isInvalidGoogleContinuationHandleError,
+  supportsProviderManagedContinuationProvider,
+} from "../../shared/providerContinuation";
 import {
   type ModelMessage,
   SERVER_ERROR_CODES,
@@ -371,22 +374,7 @@ function isInvalidOpenAiContinuationError(error: unknown): boolean {
 }
 
 function isInvalidGoogleContinuationError(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : String(error);
-  const normalized = text.toLowerCase();
-  const mentionsInteractionId =
-    normalized.includes("interaction_id") ||
-    normalized.includes("interaction id") ||
-    normalized.includes("previous_interaction_id") ||
-    normalized.includes("previous interaction");
-  if (!mentionsInteractionId) return false;
-
-  return (
-    normalized.includes("not found") ||
-    normalized.includes("invalid") ||
-    normalized.includes("expired") ||
-    normalized.includes("unknown") ||
-    normalized.includes("does not exist")
-  );
+  return isInvalidGoogleContinuationHandleError(error);
 }
 
 function isInvalidCodexAppServerContinuationError(error: unknown): boolean {

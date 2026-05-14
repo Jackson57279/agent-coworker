@@ -4705,6 +4705,35 @@ describe("AgentSession", () => {
       expect((session as any).state.providerState).toEqual(freshGoogleProviderState);
     });
 
+    test("does not clear Google continuation state for generic invalid request errors", async () => {
+      mockRunTurn.mockImplementationOnce(async () => {
+        throw new Error("INVALID_ARGUMENT: bad attachment content");
+      });
+
+      const dir = "/tmp/test-session";
+      const config = makeConfig(dir, {
+        provider: "google",
+        model: "gemini-3-flash-preview",
+        preferredChildModel: "gemini-3-flash-preview",
+      });
+      const { session } = makeSession({ config });
+      const googleProviderState = {
+        provider: "google" as const,
+        model: "gemini-3-flash-preview",
+        interactionId: "interaction_valid",
+        updatedAt: "2026-03-19T18:00:00.000Z",
+      };
+      (session as any).state.providerState = googleProviderState;
+
+      await session.sendUserMessage("hello");
+
+      expect(mockRunTurn).toHaveBeenCalledTimes(1);
+      expect((mockRunTurn.mock.calls[0][0] as any).providerState?.interactionId).toBe(
+        "interaction_valid",
+      );
+      expect((session as any).state.providerState).toEqual(googleProviderState);
+    });
+
     test("persists full session context including response history", async () => {
       mockRunTurn.mockResolvedValueOnce({
         text: "assistant reply",

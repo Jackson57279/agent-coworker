@@ -70,6 +70,28 @@ export function isGoogleContinuationState(
   return state?.provider === "google";
 }
 
+export function isInvalidGoogleContinuationError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  const normalized = text.toLowerCase();
+  const mentionsInteractionId =
+    normalized.includes("interaction_id") ||
+    normalized.includes("interaction id") ||
+    normalized.includes("previous_interaction_id") ||
+    normalized.includes("previous interaction");
+  if (!mentionsInteractionId) return false;
+
+  return (
+    normalized.includes("not found") ||
+    normalized.includes("invalid") ||
+    normalized.includes("invalid_argument") ||
+    normalized.includes("invalid argument") ||
+    normalized.includes("invalid_request") ||
+    normalized.includes("expired") ||
+    normalized.includes("unknown") ||
+    normalized.includes("does not exist")
+  );
+}
+
 export function isCodexAppServerContinuationState(
   state: ProviderContinuationState | null | undefined,
 ): state is CodexAppServerContinuationState {
