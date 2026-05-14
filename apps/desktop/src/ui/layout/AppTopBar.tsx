@@ -279,7 +279,7 @@ export function AppTopBar({
             style={collapsedThreadAnchorStyle}
           >
             {suppressThreadDetails ? (
-              <span className="app-topbar__thread-title truncate text-sm font-medium">{title}</span>
+              <span className="app-topbar__thread-title truncate text-[15px] font-semibold">{title}</span>
             ) : (
               <button
                 type="button"
@@ -291,21 +291,21 @@ export function AppTopBar({
                 data-open={detailsOpen ? "true" : "false"}
                 onClick={() => setDetailsOpen((open) => !open)}
               >
-                <span className="app-topbar__thread-title truncate">{title}</span>
+                <span className="app-topbar__thread-title truncate text-[15px] font-semibold">{title}</span>
                 {subtitle ? (
                   <>
                     <span
-                      className="app-topbar__thread-separator text-muted-foreground/52"
+                      className="app-topbar__thread-separator text-muted-foreground/40"
                       aria-hidden="true"
                     >
                       |
                     </span>
-                    <span className="app-topbar__thread-subtitle truncate">{subtitle}</span>
+                    <span className="app-topbar__thread-subtitle truncate text-sm text-muted-foreground/80">{subtitle}</span>
                   </>
                 ) : null}
                 <ChevronDownIcon
                   className={cn(
-                    "app-topbar__thread-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground/68 transition-transform duration-150 ease-out",
+                    "app-topbar__thread-chevron h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 ease-out",
                     detailsOpen && "rotate-180",
                   )}
                 />

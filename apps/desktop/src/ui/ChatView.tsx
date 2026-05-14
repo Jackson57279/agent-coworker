@@ -1407,7 +1407,7 @@ export function ChatView() {
         ) : null}
 
         <div
-          className="relative flex shrink-0 flex-col bg-panel px-4 pb-3 pt-2"
+          className="relative flex shrink-0 flex-col bg-panel px-4 pb-4 pt-3"
           // The stored messageBarHeight is the minimum floor; busy guidance and attachments can grow past it.
           style={{ minHeight: messageBarHeight }}
         >
@@ -1449,8 +1449,8 @@ export function ChatView() {
                   aria-label="Message input"
                 />
               </PromptInputBody>
-              <PromptInputFooter>
-                <PromptInputTools>
+              <PromptInputFooter className="gap-3 pt-1">
+                <PromptInputTools className="gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"

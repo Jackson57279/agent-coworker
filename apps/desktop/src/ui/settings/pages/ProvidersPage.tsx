@@ -619,11 +619,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             onOpenChange={(nextOpen) => setExpandedSectionId(nextOpen ? sectionId : null)}
           >
             <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-auto w-full justify-between gap-3 rounded-none px-4 py-3 text-left hover:bg-transparent"
-              >
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-between gap-3 rounded-none px-3 py-2.5 text-left hover:bg-transparent"
+            >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-foreground">
                     {providerDisplayName}
@@ -646,10 +646,10 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             </CollapsibleTrigger>
 
             <CollapsibleContent>
-              <CardContent
-                id={`provider-panel-${provider}`}
-                className="space-y-4 border-t border-border/70 px-4 py-3.5"
-              >
+            <CardContent
+              id={`provider-panel-${provider}`}
+              className="space-y-4 border-t border-border/70 px-3 py-3"
+            >
                 <div className="text-sm text-muted-foreground">
                   LM Studio runs on a local server. Connect it once to make its models available in
                   Cowork, then choose which discovered models should appear in the main chat UI.
@@ -795,7 +795,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
           <CollapsibleContent>
             <CardContent
               id={`provider-panel-${provider}`}
-              className="space-y-3.5 border-t border-border/70 px-4 py-3.5"
+              className="space-y-3.5 border-t border-border/70 px-3 py-3"
             >
               {methods.map((method) =>
                 renderAuthMethod({
@@ -1072,7 +1072,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
           <CollapsibleContent>
             <CardContent
               id={opts.panelId}
-              className="space-y-4 border-t border-border/70 px-5 py-4"
+              className="space-y-4 border-t border-border/70 px-3 py-3"
             >
               <div className="text-sm text-muted-foreground">{opts.description}</div>
               {renderAuthMethod({

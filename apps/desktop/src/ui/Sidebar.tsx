@@ -331,6 +331,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
                           onThreadContextMenu(event, thread.id, displayTitle)
                         }
                         onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
+                        title={displayTitle}
                         type="button"
                         variant="ghost"
                       >

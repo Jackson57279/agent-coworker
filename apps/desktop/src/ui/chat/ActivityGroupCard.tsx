@@ -220,10 +220,12 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
   if (useCompactElapsedHeader) {
     return (
       <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <CollapsibleTrigger className="group flex w-full max-w-3xl items-center gap-2 border-b border-border/35 px-1 pb-3 pt-1 text-left outline-none transition-colors hover:border-border/55 focus-visible:ring-1 focus-visible:ring-border/45 focus-visible:ring-inset">
+        <CollapsibleTrigger className="group flex w-full max-w-3xl items-center gap-2 rounded-md border-b border-border/35 px-2 pb-3 pt-1 text-left outline-none transition-colors hover:border-border/55 hover:bg-muted/[0.06] focus-visible:ring-1 focus-visible:ring-border/45 focus-visible:ring-inset">
           {props.live ? (
             <ClockIcon className="size-4 shrink-0 text-primary/70 animate-pulse" />
-          ) : null}
+          ) : (
+            <ClockIcon className="size-4 shrink-0 text-muted-foreground/40" />
+          )}
           <span className="text-[15px] font-medium leading-6 text-muted-foreground/90">
             {props.live
               ? displayElapsedLabel
@@ -233,7 +235,7 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
                 ? `Worked for ${displayElapsedLabel}`
                 : "Worked"}
           </span>
-          <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/55 transition-transform group-data-[state=open]:rotate-90" />
+          <ChevronRightIcon className="ml-auto size-4 shrink-0 text-muted-foreground/65 transition-transform duration-200 group-data-[state=open]:rotate-90" />
         </CollapsibleTrigger>
 
         <CollapsibleContent className="max-w-3xl overflow-hidden">
