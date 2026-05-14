@@ -65,11 +65,16 @@ export function ConversationEmptyState({
 }
 
 export type ConversationScrollButtonProps = {
+  bottomOffset?: number;
   visible: boolean;
   onClick: () => void;
 };
 
-export function ConversationScrollButton({ visible, onClick }: ConversationScrollButtonProps) {
+export function ConversationScrollButton({
+  bottomOffset,
+  visible,
+  onClick,
+}: ConversationScrollButtonProps) {
   if (!visible) {
     return null;
   }
@@ -79,7 +84,11 @@ export function ConversationScrollButton({ visible, onClick }: ConversationScrol
       type="button"
       size="icon"
       variant="outline"
-      className="absolute bottom-3.5 left-1/2 -translate-x-1/2 rounded-lg bg-card/88 backdrop-blur-sm"
+      className={cn(
+        "absolute left-1/2 z-30 -translate-x-1/2 rounded-lg bg-card/88 backdrop-blur-sm",
+        bottomOffset === undefined && "bottom-3.5",
+      )}
+      style={bottomOffset === undefined ? undefined : { bottom: bottomOffset }}
       onClick={onClick}
       aria-label="Scroll to bottom"
     >

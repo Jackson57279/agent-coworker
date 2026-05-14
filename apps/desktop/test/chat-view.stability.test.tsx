@@ -468,6 +468,12 @@ describe("desktop chat view stability", () => {
 
       const separator = container.querySelector('[aria-label="Resize minimum message bar height"]');
       const composerShell = separator?.parentElement;
+      const reservedSpace = container.querySelector(
+        '[data-slot="message-bar-reserved-space"]',
+      ) as HTMLElement | null;
+      const overlay = container.querySelector(
+        '[data-slot="message-bar-overlay"]',
+      ) as HTMLElement | null;
 
       expect(separator).not.toBeNull();
       expect(separator?.className).toContain("-top-1");
@@ -477,6 +483,150 @@ describe("desktop chat view stability", () => {
       expect(separator?.getAttribute("aria-valuenow")).toBe("144");
       expect(separator?.getAttribute("aria-valuetext")).toBe("Minimum height 144 pixels");
       expect(composerShell?.className).not.toContain("border-t");
+      expect(reservedSpace?.style.height).toBe("168px");
+      expect(overlay?.style.minHeight).toBe("168px");
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test("keeps the scroll-to-bottom affordance above the absolute composer", async () => {
+    useAppStore.setState({
+      ready: true,
+      startupError: null,
+      view: "chat",
+      selectedWorkspaceId: "ws-1",
+      selectedThreadId: "thread-1",
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace 1",
+          path: "/tmp/workspace-1",
+          createdAt: "2026-03-12T00:00:00.000Z",
+          lastOpenedAt: "2026-03-12T00:00:00.000Z",
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      threads: [
+        {
+          id: "thread-1",
+          workspaceId: "ws-1",
+          title: "Thread 1",
+          createdAt: "2026-03-12T00:00:00.000Z",
+          lastMessageAt: "2026-03-12T00:00:30.000Z",
+          status: "active",
+          sessionId: "session-1",
+          lastEventSeq: 1,
+        },
+      ],
+      threadRuntimeById: {
+        "thread-1": {
+          wsUrl: null,
+          connected: true,
+          sessionId: "session-1",
+          config: {
+            provider: "openai",
+            model: "gpt-5.4",
+          },
+          sessionConfig: null,
+          sessionUsage: null,
+          lastTurnUsage: null,
+          enableMcp: true,
+          busy: false,
+          busySince: null,
+          feed: [
+            {
+              id: "msg-1",
+              kind: "message",
+              role: "assistant",
+              ts: "2026-03-12T00:00:30.000Z",
+              text: "Existing reply",
+            },
+          ],
+          pendingSteer: null,
+          transcriptOnly: false,
+        },
+      },
+      composerText: "",
+      messageBarHeight: 120,
+    });
+
+    const harness = setupChatViewJsdom();
+    const originalGetBoundingClientRect =
+      harness.dom.window.HTMLElement.prototype.getBoundingClientRect;
+    harness.dom.window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect(
+      this: HTMLElement,
+    ) {
+      if (this.getAttribute("data-slot") === "message-bar-overlay") {
+        return {
+          bottom: 220,
+          height: 220,
+          left: 0,
+          right: 600,
+          toJSON: () => ({}),
+          top: 0,
+          width: 600,
+          x: 0,
+          y: 0,
+        } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(createElement(StrictMode, null, createElement(ChatView)));
+      });
+
+      const feed = container.querySelector('[role="log"]') as HTMLElement | null;
+      const reservedSpace = container.querySelector(
+        '[data-slot="message-bar-reserved-space"]',
+      ) as HTMLElement | null;
+      if (!feed) throw new Error("missing feed");
+      expect(reservedSpace?.style.height).toBe("220px");
+
+      Object.defineProperty(feed, "clientHeight", {
+        configurable: true,
+        value: 400,
+      });
+      Object.defineProperty(feed, "scrollHeight", {
+        configurable: true,
+        value: 1000,
+      });
+      Object.defineProperty(feed, "scrollTop", {
+        configurable: true,
+        value: 100,
+        writable: true,
+      });
+
+      await act(async () => {
+        feed.dispatchEvent(new harness.dom.window.Event("scroll", { bubbles: true }));
+      });
+
+      const scrollButton = container.querySelector(
+        '[aria-label="Scroll to bottom"]',
+      ) as HTMLButtonElement | null;
+      expect(scrollButton).not.toBeNull();
+      expect(scrollButton?.style.bottom).toBe("234px");
+
+      await act(async () => {
+        scrollButton?.click();
+      });
+
+      expect(feed.scrollTop).toBe(1000);
+      expect(container.querySelector('[aria-label="Scroll to bottom"]')).toBeNull();
     } finally {
       if (root) {
         await act(async () => {

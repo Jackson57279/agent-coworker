@@ -14,6 +14,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -55,6 +56,7 @@ import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
+  ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "../components/ai-elements/message";
 import {
@@ -107,6 +109,10 @@ import { MessageBarResizer } from "./layout/MessageBarResizer";
 type ChatViewContextValue = {
   developerMode: boolean;
 };
+
+const COMPOSER_OVERLAY_EXTRA_HEIGHT_PX = 24;
+const SCROLL_BUTTON_BOTTOM_GAP_PX = 14;
+const FEED_BOTTOM_STICKY_THRESHOLD_PX = 220;
 
 const ChatViewContext = createContext<ChatViewContextValue | null>(null);
 
@@ -805,6 +811,7 @@ export function ChatView() {
   const developerMode = useAppStore((s) => s.developerMode);
   const desktopA2uiEnabled = useAppStore((s) => s.desktopFeatureFlags.a2ui);
   const messageBarHeight = useAppStore((s) => s.messageBarHeight);
+  const composerOverlayMinHeight = messageBarHeight + COMPOSER_OVERLAY_EXTRA_HEIGHT_PX;
   const [overflowCitationUrlsByMessageId, setOverflowCitationUrlsByMessageId] = useState<
     Map<string, Map<number, string>>
   >(() => new Map());
@@ -815,6 +822,8 @@ export function ChatView() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingComposerAttachment[]>([]);
   const [attachmentPickerError, setAttachmentPickerError] = useState<string | null>(null);
   const [preparingAttachments, setPreparingAttachments] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(composerOverlayMinHeight);
   const [submittedAttachmentSignature, setSubmittedAttachmentSignature] = useState<string | null>(
     null,
   );
@@ -828,13 +837,57 @@ export function ChatView() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messageBarOverlayRef = useRef<HTMLDivElement | null>(null);
   const lastCountRef = useRef<number>(0);
   const autoScrolledThreadIdRef = useRef<string | null>(null);
   const pendingAttachmentsRef = useRef<PendingComposerAttachment[]>([]);
+  const scrollButtonBottomOffset = composerOverlayHeight + SCROLL_BUTTON_BOTTOM_GAP_PX;
+
+  const updateScrollButtonVisibility = useCallback(() => {
+    const el = feedRef.current;
+    if (!el) {
+      setShowScrollButton(false);
+      return;
+    }
+
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nextVisible = distanceFromBottom > FEED_BOTTOM_STICKY_THRESHOLD_PX;
+    setShowScrollButton((current) => (current === nextVisible ? current : nextVisible));
+  }, []);
+
+  const scrollFeedToBottom = useCallback(() => {
+    const el = feedRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setShowScrollButton(false);
+  }, []);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
   }, [pendingAttachments]);
+
+  useLayoutEffect(() => {
+    const el = messageBarOverlayRef.current;
+    if (!el) {
+      setComposerOverlayHeight(composerOverlayMinHeight);
+      return;
+    }
+
+    const updateHeight = () => {
+      const measuredHeight = Math.ceil(el.getBoundingClientRect().height);
+      const nextHeight = Math.max(composerOverlayMinHeight, measuredHeight);
+      setComposerOverlayHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    updateHeight();
+
+    const ResizeObserverCtor = globalThis.ResizeObserver;
+    if (!ResizeObserverCtor) return;
+
+    const observer = new ResizeObserverCtor(updateHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [composerOverlayMinHeight]);
 
   useEffect(() => {
     return () => {
@@ -1071,6 +1124,7 @@ export function ChatView() {
           nextEl.scrollTop = nextEl.scrollHeight;
         }
       });
+      setShowScrollButton(false);
       return;
     }
 
@@ -1086,14 +1140,22 @@ export function ChatView() {
           nextEl.scrollTop = nextEl.scrollHeight;
         }
       });
+      setShowScrollButton(false);
       return;
     }
 
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom < 220) {
+    if (distFromBottom < FEED_BOTTOM_STICKY_THRESHOLD_PX) {
       el.scrollTop = el.scrollHeight;
+      setShowScrollButton(false);
+    } else {
+      setShowScrollButton(true);
     }
   }, [selectedThreadId, visibleFeed.length]);
+
+  useEffect(() => {
+    updateScrollButtonVisibility();
+  }, [composerOverlayHeight, updateScrollButtonVisibility]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1325,7 +1387,7 @@ export function ChatView() {
   return (
     <ChatViewContext.Provider value={contextValue}>
       <div className="relative flex h-full min-h-0 flex-col bg-panel">
-        <Conversation className="min-h-0" ref={feedRef}>
+        <Conversation className="min-h-0" ref={feedRef} onScroll={updateScrollButtonVisibility}>
           <ConversationContent className="pt-6">
             {transcriptOnly ? (
               <Card className="max-w-3xl border-border/70 bg-muted/30">
@@ -1399,6 +1461,11 @@ export function ChatView() {
             )}
           </ConversationContent>
         </Conversation>
+        <ConversationScrollButton
+          bottomOffset={scrollButtonBottomOffset}
+          visible={showScrollButton}
+          onClick={scrollFeedToBottom}
+        />
 
         {selectedThreadId && a2uiEnabled ? (
           <div className="shrink-0 bg-panel px-4">
@@ -1407,101 +1474,111 @@ export function ChatView() {
         ) : null}
 
         <div
-          className="relative flex shrink-0 flex-col bg-panel px-4 pb-4 pt-3"
+          aria-hidden="true"
+          className="shrink-0"
+          data-slot="message-bar-reserved-space"
+          style={{ height: composerOverlayHeight }}
+        />
+        <div
+          ref={messageBarOverlayRef}
+          data-slot="message-bar-overlay"
+          className="absolute bottom-0 left-0 right-0 z-20 flex flex-col bg-gradient-to-t from-panel via-panel/95 to-transparent px-4 pb-4 pt-10 pointer-events-none"
           // The stored messageBarHeight is the minimum floor; busy guidance and attachments can grow past it.
-          style={{ minHeight: messageBarHeight }}
+          style={{ minHeight: composerOverlayMinHeight }}
         >
-          <MessageBarResizer />
-          <PromptInputRoot
-            className="max-w-[70rem]"
-            fileDrop={
-              inputDisabled || transcriptOnly
-                ? undefined
-                : { onFiles: (files) => void ingestAttachmentFiles(files) }
-            }
-          >
-            <PromptInputAttachmentPreviews
-              attachments={pendingAttachments}
-              onRemove={removeAttachment}
-              className="px-0"
-            />
-            <PromptInputForm
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitComposer(resolveComposerBusyPolicy(busy));
-              }}
+          <div className="relative mx-auto w-full max-w-[56rem] pointer-events-auto">
+            <MessageBarResizer />
+            <PromptInputRoot
+              className="w-full max-w-full rounded-[20px] border border-border/50 bg-background/90 app-shadow-overlay backdrop-blur-md"
+              fileDrop={
+                inputDisabled || transcriptOnly
+                  ? undefined
+                  : { onFiles: (files) => void ingestAttachmentFiles(files) }
+              }
             >
-              <PromptInputStatusRow>{composerHint}</PromptInputStatusRow>
-              <PromptInputBody>
-                {attachmentPickerError ? (
-                  <div className="flex items-center gap-1.5 px-1 pb-1 text-xs text-destructive">
-                    <AlertTriangleIcon className="size-3.5 shrink-0" />
-                    <span>{attachmentPickerError}</span>
-                  </div>
-                ) : null}
-                <PromptInputTextarea
-                  ref={textareaRef}
-                  value={composerText}
-                  disabled={inputDisabled}
-                  placeholder={placeholder}
-                  onChange={(event) => setComposerText(event.currentTarget.value)}
-                  onKeyDown={onComposerKeyDown}
-                  aria-label="Message input"
-                />
-              </PromptInputBody>
-              <PromptInputFooter className="gap-3 pt-1">
-                <PromptInputTools className="gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={inputDisabled}
-                    className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:opacity-50"
-                    aria-label="Attach files"
-                    title="Attach files"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                  </button>
-                  {threadModelConfig ? (
-                    thread.draft ? (
-                      <DraftThreadModelSelector
-                        threadId={selectedThreadId}
-                        provider={threadModelConfig.provider}
-                        model={threadModelConfig.model}
-                        modelDisplayNames={modelDisplayNames}
-                        disabled={inputDisabled}
-                      />
-                    ) : (
-                      <ThreadModelIndicator
-                        provider={threadModelConfig.provider}
-                        model={threadModelConfig.model}
-                        modelDisplayNames={modelDisplayNames}
-                      />
-                    )
+              <PromptInputAttachmentPreviews
+                attachments={pendingAttachments}
+                onRemove={removeAttachment}
+                className="px-0"
+              />
+              <PromptInputForm
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitComposer(resolveComposerBusyPolicy(busy));
+                }}
+              >
+                <PromptInputStatusRow>{composerHint}</PromptInputStatusRow>
+                <PromptInputBody>
+                  {attachmentPickerError ? (
+                    <div className="flex items-center gap-1.5 px-1 pb-1 text-xs text-destructive">
+                      <AlertTriangleIcon className="size-3.5 shrink-0" />
+                      <span>{attachmentPickerError}</span>
+                    </div>
                   ) : null}
-                </PromptInputTools>
-                <div
-                  className={cn(
-                    "flex shrink-0 items-center gap-2",
-                    busy ? "opacity-100" : "opacity-80",
-                  )}
-                >
-                  <PromptInputSubmit
-                    mode={composerSubmitState.mode}
-                    status={composerSubmitState.status}
-                    disabled={composerSubmitState.disabled || preparingAttachments}
-                    onStop={selectedThreadId ? handleStop : undefined}
+                  <PromptInputTextarea
+                    ref={textareaRef}
+                    value={composerText}
+                    disabled={inputDisabled}
+                    placeholder={placeholder}
+                    onChange={(event) => setComposerText(event.currentTarget.value)}
+                    onKeyDown={onComposerKeyDown}
+                    aria-label="Message input"
                   />
-                </div>
-              </PromptInputFooter>
-            </PromptInputForm>
-          </PromptInputRoot>
+                </PromptInputBody>
+                <PromptInputFooter className="gap-3 pt-1">
+                  <PromptInputTools className="gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={inputDisabled}
+                      className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:opacity-50"
+                      aria-label="Attach files"
+                      title="Attach files"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                    </button>
+                    {threadModelConfig ? (
+                      thread.draft ? (
+                        <DraftThreadModelSelector
+                          threadId={selectedThreadId}
+                          provider={threadModelConfig.provider}
+                          model={threadModelConfig.model}
+                          modelDisplayNames={modelDisplayNames}
+                          disabled={inputDisabled}
+                        />
+                      ) : (
+                        <ThreadModelIndicator
+                          provider={threadModelConfig.provider}
+                          model={threadModelConfig.model}
+                          modelDisplayNames={modelDisplayNames}
+                        />
+                      )
+                    ) : null}
+                  </PromptInputTools>
+                  <div
+                    className={cn(
+                      "flex shrink-0 items-center gap-2",
+                      busy ? "opacity-100" : "opacity-80",
+                    )}
+                  >
+                    <PromptInputSubmit
+                      mode={composerSubmitState.mode}
+                      status={composerSubmitState.status}
+                      disabled={composerSubmitState.disabled || preparingAttachments}
+                      onStop={selectedThreadId ? handleStop : undefined}
+                    />
+                  </div>
+                </PromptInputFooter>
+              </PromptInputForm>
+            </PromptInputRoot>
+          </div>
         </div>
         <Dialog open={cancelScopeDialogOpen} onOpenChange={setCancelScopeDialogOpen}>
           <DialogContent showCloseButton className="max-w-md">
