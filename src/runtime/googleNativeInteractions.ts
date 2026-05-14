@@ -107,6 +107,10 @@ function asNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 function getGoogleThoughtSignature(record: Record<string, unknown>): string | undefined {
   const directSignature =
     asNonEmptyString(record.thoughtSignature) ?? asNonEmptyString(record.thinkingSignature);
@@ -283,17 +287,10 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       if (!toolCallId || !toolName) continue;
       const nativeToolName =
         nativeToolNameFromContentType(toolName) ?? (toolName as NativeGoogleToolName);
-      const nativeToolCallType =
-        nativeToolName === "nativeWebSearch"
-          ? "google_search_call"
-          : nativeToolName === "nativeUrlContext"
-            ? "url_context_call"
-            : null;
-      if (!nativeToolCallType) continue;
       const args = asRecord(record.arguments) ?? asRecord(record.input) ?? {};
       const signature = getGoogleThoughtSignature(record);
       parts.push({
-        type: nativeToolCallType,
+        type: nativeGoogleToolCallContentType(nativeToolName),
         id: convertToolCallId(toolCallId),
         arguments: args,
         ...(signature ? { signature } : {}),
@@ -310,16 +307,9 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       if (!toolCallId || !toolName) continue;
       const nativeToolName =
         nativeToolNameFromContentType(toolName) ?? (toolName as NativeGoogleToolName);
-      const nativeToolResultType =
-        nativeToolName === "nativeWebSearch"
-          ? "google_search_result"
-          : nativeToolName === "nativeUrlContext"
-            ? "url_context_result"
-            : null;
-      if (!nativeToolResultType) continue;
       const signature = getGoogleThoughtSignature(record);
       parts.push({
-        type: nativeToolResultType,
+        type: nativeGoogleToolResultContentType(nativeToolName),
         call_id: convertToolCallId(toolCallId),
         result: record.result,
         ...(record.isError === true ? { is_error: true } : {}),
@@ -541,7 +531,7 @@ function _extractTextFromContent(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
-type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext";
+type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext" | "codeExecution";
 
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
@@ -576,15 +566,38 @@ function nativeToolNameFromContentType(contentType: string): NativeGoogleToolNam
   if (contentType === "url_context_call" || contentType === "url_context_result") {
     return "nativeUrlContext";
   }
+  if (contentType === "code_execution_call" || contentType === "code_execution_result") {
+    return "codeExecution";
+  }
   return null;
 }
 
+function nativeGoogleToolCallContentType(name: NativeGoogleToolName): string {
+  if (name === "nativeWebSearch") return "google_search_call";
+  if (name === "nativeUrlContext") return "url_context_call";
+  return "code_execution_call";
+}
+
+function nativeGoogleToolResultContentType(name: NativeGoogleToolName): string {
+  if (name === "nativeWebSearch") return "google_search_result";
+  if (name === "nativeUrlContext") return "url_context_result";
+  return "code_execution_result";
+}
+
 function isNativeGoogleToolCallContentType(contentType: string): boolean {
-  return contentType === "google_search_call" || contentType === "url_context_call";
+  return (
+    contentType === "google_search_call" ||
+    contentType === "url_context_call" ||
+    contentType === "code_execution_call"
+  );
 }
 
 function isNativeGoogleToolResultContentType(contentType: string): boolean {
-  return contentType === "google_search_result" || contentType === "url_context_result";
+  return (
+    contentType === "google_search_result" ||
+    contentType === "url_context_result" ||
+    contentType === "code_execution_result"
+  );
 }
 
 function extractStringArray(value: unknown): string[] {
@@ -652,6 +665,18 @@ function buildNativeGoogleToolResultOutput(
       callId,
       urls: extractStringArray(callArguments.urls),
       results: extractSingletonOrNestedResultEntries(result),
+      raw: result,
+    };
+  }
+
+  if (name === "codeExecution") {
+    return {
+      provider: "google",
+      status: "completed",
+      callId,
+      code: asString(callArguments.code) ?? "",
+      language: asString(callArguments.language) ?? "python",
+      output: asString(result) ?? "",
       raw: result,
     };
   }
@@ -833,7 +858,7 @@ function queueEventDelivery(
 }
 
 function rememberProviderToolCall(
-  providerToolCallsById: Map<string, ProviderToolCallState>,
+  providerToolCallsById: Map<string, ProviderToolCallState> | undefined,
   ids: readonly string[],
   emittedId: string,
   name: NativeGoogleToolName,
@@ -845,14 +870,14 @@ function rememberProviderToolCall(
     arguments: { ...argumentsRecord },
   };
   for (const id of new Set(ids)) {
-    providerToolCallsById.set(id, state);
+    providerToolCallsById?.set(id, state);
   }
 }
 
 function processStreamEvent(
   event: Record<string, unknown>,
   contentBlocks: Map<number, AssistantContentBlock>,
-  providerToolCallsById: Map<string, ProviderToolCallState>,
+  providerToolCallsById?: Map<string, ProviderToolCallState>,
 ): void {
   const eventType = event.event_type as string;
 
@@ -905,7 +930,7 @@ function processStreamEvent(
       rememberProviderToolCall(providerToolCallsById, [id], id, name, argumentsRecord);
     } else if (isNativeGoogleToolResultContentType(contentType)) {
       const callId = asNonEmptyString(content.call_id);
-      const providerToolCall = providerToolCallsById.get(callId ?? "");
+      const providerToolCall = providerToolCallsById?.get(callId ?? "");
       const name = providerToolCall?.name ?? nativeToolNameFromContentType(contentType);
       const emittedCallId = providerToolCall?.emittedId ?? callId;
       if (!name || !callId || !emittedCallId) return;
@@ -1005,7 +1030,7 @@ function processStreamEvent(
       }
     } else if (isNativeGoogleToolResultContentType(deltaType)) {
       const callId = asNonEmptyString(delta.call_id);
-      const providerToolCall = callId ? providerToolCallsById.get(callId) : undefined;
+      const providerToolCall = callId ? providerToolCallsById?.get(callId) : undefined;
       const name = providerToolCall?.name ?? nativeToolNameFromContentType(deltaType);
       const emittedCallId = providerToolCall?.emittedId ?? callId;
       if (!name || !callId || !emittedCallId) return;
@@ -1052,7 +1077,7 @@ function processStreamEvent(
 function mapGoogleEventToStreamParts(
   event: Record<string, unknown>,
   contentBlocks: Map<number, AssistantContentBlock>,
-  providerToolCallsById: Map<string, ProviderToolCallState>,
+  providerToolCallsById?: Map<string, ProviderToolCallState>,
 ): Array<Record<string, unknown>> {
   const eventType = event.event_type as string;
   if (
@@ -1188,7 +1213,7 @@ function mapGoogleEventToStreamParts(
     return [{ type: "tool-input-end", id: block.id, toolName: block.name, providerExecuted: true }];
   }
   if (block?.type === "providerToolResult") {
-    const call = providerToolCallsById.get(block.callId);
+    const call = providerToolCallsById?.get(block.callId);
     const output = buildNativeGoogleToolResultOutput(
       block.name,
       block.callId,

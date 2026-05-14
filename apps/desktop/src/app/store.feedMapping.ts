@@ -465,7 +465,7 @@ function rememberLatestToolKey(
 }
 
 function shouldReuseLatestToolItemByName(name: string): boolean {
-  return name !== "nativeWebSearch" && name !== "nativeUrlContext";
+  return name !== "nativeWebSearch" && name !== "nativeUrlContext" && name !== "codeExecution";
 }
 
 function resolveToolItem(

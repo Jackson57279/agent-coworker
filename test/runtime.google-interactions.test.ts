@@ -198,6 +198,80 @@ describe("google interactions runtime", () => {
     ]);
   });
 
+  test("provider-native code execution blocks do not trigger client tool execution", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-code-exec-"));
+    let stepCount = 0;
+    let clientToolExecuted = false;
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async () => {
+        stepCount += 1;
+        return {
+          assistant: {
+            role: "assistant",
+            content: [
+              {
+                type: "providerToolCall",
+                id: "code_1",
+                name: "codeExecution",
+                arguments: { code: "print(6 * 7)", language: "python" },
+              },
+              {
+                type: "providerToolResult",
+                callId: "code_1",
+                name: "codeExecution",
+                result: "42\n",
+              },
+              { type: "text", text: "The answer is 42." },
+            ],
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+          interactionId: "interaction_code_exec",
+        };
+      },
+    });
+
+    const result = await runtime.runTurn(
+      makeParams(makeConfig(homeDir), {
+        maxSteps: 5,
+        tools: {
+          codeExecution: {
+            description: "A client tool that must not run for provider-native code execution",
+            inputSchema: undefined,
+            execute: async () => {
+              clientToolExecuted = true;
+              return "client code execution";
+            },
+          },
+        },
+      }),
+    );
+
+    expect(stepCount).toBe(1);
+    expect(clientToolExecuted).toBe(false);
+    expect(result.text).toBe("The answer is 42.");
+    expect(result.responseMessages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "providerToolCall",
+            id: "code_1",
+            name: "codeExecution",
+            arguments: { code: "print(6 * 7)", language: "python" },
+          },
+          {
+            type: "providerToolResult",
+            callId: "code_1",
+            name: "codeExecution",
+            result: "42\n",
+          },
+          { type: "text", text: "The answer is 42." },
+        ],
+      },
+    ]);
+  });
+
   test("tool calls trigger tool execution and multi-step loop", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-tools-"));
     let stepCount = 0;
@@ -967,6 +1041,18 @@ describe("google native interactions request building", () => {
             name: "nativeUrlContext",
             result: { url: "https://example.com", status: "ok" },
           },
+          {
+            type: "providerToolCall",
+            id: "code_1",
+            name: "codeExecution",
+            arguments: { code: "print(6 * 7)", language: "python" },
+          },
+          {
+            type: "providerToolResult",
+            callId: "code_1",
+            name: "codeExecution",
+            result: "42\n",
+          },
         ],
       },
     ] as ModelMessage[]);
@@ -996,6 +1082,61 @@ describe("google native interactions request building", () => {
             type: "url_context_result",
             call_id: "uc_1",
             result: { url: "https://example.com", status: "ok" },
+          },
+          {
+            type: "code_execution_call",
+            id: "code_1",
+            arguments: { code: "print(6 * 7)", language: "python" },
+          },
+          {
+            type: "code_execution_result",
+            call_id: "code_1",
+            result: "42\n",
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("convertMessagesToInteractionsInput round-trips native code execution history", () => {
+    const result = { outcome: "OUTCOME_OK", output: "sum=5117\n" };
+    const input = googleNativeInternal.convertMessagesToInteractionsInput([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "providerToolCall",
+            id: "ce_1",
+            name: "codeExecution",
+            arguments: { code: "print('sum=5117')", language: "python" },
+            providerOptions: { google: { thoughtSignature: "sig_code_call" } },
+          },
+          {
+            type: "providerToolResult",
+            callId: "ce_1",
+            name: "codeExecution",
+            result,
+            providerOptions: { google: { thoughtSignature: "sig_code_result" } },
+          },
+        ],
+      },
+    ] as ModelMessage[]);
+
+    expect(input).toEqual([
+      {
+        role: "model",
+        content: [
+          {
+            type: "code_execution_call",
+            id: "ce_1",
+            arguments: { code: "print('sum=5117')", language: "python" },
+            signature: "sig_code_call",
+          },
+          {
+            type: "code_execution_result",
+            call_id: "ce_1",
+            result,
+            signature: "sig_code_result",
           },
         ],
       },
@@ -1460,6 +1601,102 @@ describe("google native interactions request building", () => {
           queries: ["latest Gemini announcements"],
           results: [{ search_suggestions: "Latest Gemini announcements" }],
           raw: [{ search_suggestions: "Latest Gemini announcements" }],
+        },
+        providerExecuted: true,
+      },
+    ]);
+  });
+
+  test("processStreamEvent treats code_execution_call as provider-native", () => {
+    const blocks = new Map();
+    const providerToolCallsById = new Map();
+
+    const startEvent = {
+      event_type: "content.start",
+      index: 0,
+      content: {
+        type: "code_execution_call",
+      },
+    };
+    googleNativeInternal.processStreamEvent(startEvent, blocks, providerToolCallsById);
+
+    const startBlock = blocks.get(0);
+    expect(startBlock).toBeDefined();
+    expect(startBlock.type).toBe("providerToolCall");
+    const fallbackId = startBlock.id;
+
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(startEvent, blocks, providerToolCallsById),
+    ).toEqual([
+      {
+        type: "tool-input-start",
+        id: fallbackId,
+        toolName: "codeExecution",
+        providerExecuted: true,
+      },
+    ]);
+
+    const deltaEvent = {
+      event_type: "content.delta",
+      index: 0,
+      delta: {
+        type: "code_execution_call",
+        id: "code_real",
+        arguments: { code: "print(6 * 7)", language: "python" },
+      },
+    };
+    googleNativeInternal.processStreamEvent(deltaEvent, blocks, providerToolCallsById);
+
+    const block = blocks.get(0);
+    expect(block).toBeDefined();
+    expect(block.type).toBe("providerToolCall");
+    expect(block.id).toBe(fallbackId);
+    expect(block.name).toBe("codeExecution");
+    expect(block.arguments).toEqual({ code: "print(6 * 7)", language: "python" });
+
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(deltaEvent, blocks, providerToolCallsById),
+    ).toEqual([
+      {
+        type: "tool-input-delta",
+        id: fallbackId,
+        delta: '{"code":"print(6 * 7)","language":"python"}',
+      },
+    ]);
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "content.start",
+        index: 1,
+        content: {
+          type: "code_execution_result",
+          call_id: "code_real",
+          result: "42\n",
+        },
+      },
+      blocks,
+      providerToolCallsById,
+    );
+
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        { event_type: "content.stop", index: 1 },
+        blocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: fallbackId,
+        toolName: "codeExecution",
+        output: {
+          provider: "google",
+          status: "completed",
+          callId: fallbackId,
+          code: "print(6 * 7)",
+          language: "python",
+          output: "42\n",
+          raw: "42\n",
         },
         providerExecuted: true,
       },

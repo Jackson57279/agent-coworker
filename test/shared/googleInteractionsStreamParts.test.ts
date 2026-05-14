@@ -195,6 +195,95 @@ describe("googleInteractionsStreamParts", () => {
     ]);
   });
 
+  test("replays native code execution as provider-executed tool activity", () => {
+    const contentBlocks = new Map();
+    const providerToolCallsById = new Map();
+
+    const startEvent = {
+      event_type: "content.start",
+      index: 0,
+      content: {
+        type: "code_execution_call",
+      },
+    };
+    processGoogleInteractionsStreamEvent(startEvent, contentBlocks, providerToolCallsById);
+
+    const startBlock = contentBlocks.get(0);
+    expect(startBlock).toBeDefined();
+    expect(startBlock.type).toBe("providerToolCall");
+    const fallbackId = startBlock.id;
+
+    expect(
+      mapGoogleInteractionsEventToStreamParts(startEvent, contentBlocks, providerToolCallsById),
+    ).toEqual([
+      {
+        type: "tool-input-start",
+        id: fallbackId,
+        toolName: "codeExecution",
+        providerExecuted: true,
+      },
+    ]);
+
+    const deltaEvent = {
+      event_type: "content.delta",
+      index: 0,
+      delta: {
+        type: "code_execution_call",
+        id: "code_real",
+        arguments: { code: "print(6 * 7)", language: "python" },
+      },
+    };
+    processGoogleInteractionsStreamEvent(deltaEvent, contentBlocks, providerToolCallsById);
+
+    expect(
+      mapGoogleInteractionsEventToStreamParts(deltaEvent, contentBlocks, providerToolCallsById),
+    ).toEqual([
+      {
+        type: "tool-input-delta",
+        id: fallbackId,
+        delta: '{"code":"print(6 * 7)","language":"python"}',
+      },
+    ]);
+
+    processGoogleInteractionsStreamEvent(
+      {
+        event_type: "content.start",
+        index: 1,
+        content: {
+          type: "code_execution_result",
+          call_id: "code_real",
+          result: "42\n",
+        },
+      },
+      contentBlocks,
+      providerToolCallsById,
+    );
+
+    expect(
+      mapGoogleInteractionsEventToStreamParts(
+        { event_type: "content.stop", index: 1 },
+        contentBlocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: fallbackId,
+        toolName: "codeExecution",
+        output: {
+          provider: "google",
+          status: "completed",
+          callId: fallbackId,
+          code: "print(6 * 7)",
+          language: "python",
+          output: "42\n",
+          raw: "42\n",
+        },
+        providerExecuted: true,
+      },
+    ]);
+  });
+
   test("preserves singleton native URL context result objects", () => {
     const contentBlocks = new Map();
     const providerToolCallsById = new Map();
