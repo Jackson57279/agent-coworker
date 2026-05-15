@@ -199,8 +199,8 @@ describe("google interactions runtime", () => {
     ]);
   });
 
-  test("provider-native code execution blocks do not trigger client tool execution", async () => {
-    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-code-exec-"));
+  test("provider-native web search blocks do not trigger client tool execution", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-web-search-"));
     let stepCount = 0;
     let clientToolExecuted = false;
     const runtime = createGoogleInteractionsRuntime({
@@ -212,22 +212,22 @@ describe("google interactions runtime", () => {
             content: [
               {
                 type: "providerToolCall",
-                id: "code_1",
-                name: "codeExecution",
-                arguments: { code: "print(6 * 7)", language: "python" },
+                id: "search_1",
+                name: "nativeWebSearch",
+                arguments: { queries: ["Gemini announcements"] },
               },
               {
                 type: "providerToolResult",
-                callId: "code_1",
-                name: "codeExecution",
-                result: "42\n",
+                callId: "search_1",
+                name: "nativeWebSearch",
+                result: [{ search_suggestions: "Gemini announcements" }],
               },
-              { type: "text", text: "The answer is 42." },
+              { type: "text", text: "Here is the latest." },
             ],
             stopReason: "stop",
             timestamp: Date.now(),
           },
-          interactionId: "interaction_code_exec",
+          interactionId: "interaction_web_search",
         };
       },
     });
@@ -236,12 +236,12 @@ describe("google interactions runtime", () => {
       makeParams(makeConfig(homeDir), {
         maxSteps: 5,
         tools: {
-          codeExecution: {
-            description: "A client tool that must not run for provider-native code execution",
+          nativeWebSearch: {
+            description: "A client tool that must not run for provider-native web search",
             inputSchema: undefined,
             execute: async () => {
               clientToolExecuted = true;
-              return "client code execution";
+              return "client web search";
             },
           },
         },
@@ -250,24 +250,24 @@ describe("google interactions runtime", () => {
 
     expect(stepCount).toBe(1);
     expect(clientToolExecuted).toBe(false);
-    expect(result.text).toBe("The answer is 42.");
+    expect(result.text).toBe("Here is the latest.");
     expect(result.responseMessages).toEqual([
       {
         role: "assistant",
         content: [
           {
             type: "providerToolCall",
-            id: "code_1",
-            name: "codeExecution",
-            arguments: { code: "print(6 * 7)", language: "python" },
+            id: "search_1",
+            name: "nativeWebSearch",
+            arguments: { queries: ["Gemini announcements"] },
           },
           {
             type: "providerToolResult",
-            callId: "code_1",
-            name: "codeExecution",
-            result: "42\n",
+            callId: "search_1",
+            name: "nativeWebSearch",
+            result: [{ search_suggestions: "Gemini announcements" }],
           },
-          { type: "text", text: "The answer is 42." },
+          { type: "text", text: "Here is the latest." },
         ],
       },
     ]);
@@ -436,6 +436,63 @@ describe("google interactions runtime", () => {
       interactionId: "interaction_next",
       updatedAt: expect.any(String),
     });
+  });
+
+  test("does not reuse Google continuation after disabled native code execution", async () => {
+    const homeDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "google-interactions-code-exec-continuation-"),
+    );
+    const seenRequests: GoogleNativeStepRequest[] = [];
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async (opts) => {
+        seenRequests.push(opts);
+        return {
+          assistant: {
+            role: "assistant",
+            api: "google-interactions",
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            content: [{ type: "text", text: "Use bash instead." }],
+            usage: { input: 5, output: 7, totalTokens: 12 },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+          interactionId: "interaction_after_reset",
+        };
+      },
+    });
+    const history = [
+      { role: "user", content: "make a pdf" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "providerToolCall",
+            id: "code_1",
+            name: "codeExecution",
+            arguments: {},
+          },
+        ],
+      },
+      { role: "user", content: "continue" },
+    ] as ModelMessage[];
+
+    await runtime.runTurn(
+      makeParams(makeConfig(homeDir), {
+        messages: history,
+        allMessages: history,
+        providerState: {
+          provider: "google",
+          model: "gemini-3-flash-preview",
+          interactionId: "interaction_requires_code_execution",
+          updatedAt: "2026-03-18T12:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(seenRequests).toHaveLength(1);
+    expect(seenRequests[0]?.previousInteractionId).toBeUndefined();
+    expect(seenRequests[0]?.messages).toEqual(history);
   });
 
   test("retries stale Google continuation with full transcript history", async () => {
@@ -1146,18 +1203,6 @@ describe("google native interactions request building", () => {
             name: "nativeUrlContext",
             result: { url: "https://example.com", status: "ok" },
           },
-          {
-            type: "providerToolCall",
-            id: "code_1",
-            name: "codeExecution",
-            arguments: { code: "print(6 * 7)", language: "python" },
-          },
-          {
-            type: "providerToolResult",
-            callId: "code_1",
-            name: "codeExecution",
-            result: "42\n",
-          },
         ],
       },
     ] as ModelMessage[]);
@@ -1188,22 +1233,12 @@ describe("google native interactions request building", () => {
             call_id: "uc_1",
             result: { url: "https://example.com", status: "ok" },
           },
-          {
-            type: "code_execution_call",
-            id: "code_1",
-            arguments: { code: "print(6 * 7)", language: "python" },
-          },
-          {
-            type: "code_execution_result",
-            call_id: "code_1",
-            result: "42\n",
-          },
         ],
       },
     ]);
   });
 
-  test("convertMessagesToInteractionsInput round-trips native code execution history", () => {
+  test("convertMessagesToInteractionsInput drops native code execution history", () => {
     const result = { outcome: "OUTCOME_OK", output: "sum=5117\n" };
     const input = googleNativeInternal.convertMessagesToInteractionsInput([
       {
@@ -1227,25 +1262,7 @@ describe("google native interactions request building", () => {
       },
     ] as ModelMessage[]);
 
-    expect(input).toEqual([
-      {
-        role: "model",
-        content: [
-          {
-            type: "code_execution_call",
-            id: "ce_1",
-            arguments: { code: "print('sum=5117')", language: "python" },
-            signature: "sig_code_call",
-          },
-          {
-            type: "code_execution_result",
-            call_id: "ce_1",
-            result,
-            signature: "sig_code_result",
-          },
-        ],
-      },
-    ]);
+    expect(input).toEqual([]);
   });
 
   test("convertMessagesToInteractionsInput handles rich tool results", () => {
@@ -1712,7 +1729,13 @@ describe("google native interactions request building", () => {
     ]);
   });
 
-  test("processStreamEvent treats code_execution_call as provider-native", () => {
+  test("identifies native code execution stream content as disabled", () => {
+    expect(googleNativeInternal.isGoogleCodeExecutionContentType("code_execution_call")).toBe(true);
+    expect(googleNativeInternal.isGoogleCodeExecutionContentType("code_execution_result")).toBe(true);
+    expect(googleNativeInternal.isGoogleCodeExecutionContentType("google_search_call")).toBe(false);
+  });
+
+  test("processStreamEvent ignores native code execution blocks", () => {
     const blocks = new Map();
     const providerToolCallsById = new Map();
 
@@ -1725,21 +1748,10 @@ describe("google native interactions request building", () => {
     };
     googleNativeInternal.processStreamEvent(startEvent, blocks, providerToolCallsById);
 
-    const startBlock = blocks.get(0);
-    expect(startBlock).toBeDefined();
-    expect(startBlock.type).toBe("providerToolCall");
-    const fallbackId = startBlock.id;
-
+    expect(blocks.get(0)).toBeUndefined();
     expect(
       googleNativeInternal.mapGoogleEventToStreamParts(startEvent, blocks, providerToolCallsById),
-    ).toEqual([
-      {
-        type: "tool-input-start",
-        id: fallbackId,
-        toolName: "codeExecution",
-        providerExecuted: true,
-      },
-    ]);
+    ).toEqual([]);
 
     const deltaEvent = {
       event_type: "content.delta",
@@ -1752,22 +1764,10 @@ describe("google native interactions request building", () => {
     };
     googleNativeInternal.processStreamEvent(deltaEvent, blocks, providerToolCallsById);
 
-    const block = blocks.get(0);
-    expect(block).toBeDefined();
-    expect(block.type).toBe("providerToolCall");
-    expect(block.id).toBe(fallbackId);
-    expect(block.name).toBe("codeExecution");
-    expect(block.arguments).toEqual({ code: "print(6 * 7)", language: "python" });
-
+    expect(blocks.get(0)).toBeUndefined();
     expect(
       googleNativeInternal.mapGoogleEventToStreamParts(deltaEvent, blocks, providerToolCallsById),
-    ).toEqual([
-      {
-        type: "tool-input-delta",
-        id: fallbackId,
-        delta: '{"code":"print(6 * 7)","language":"python"}',
-      },
-    ]);
+    ).toEqual([]);
 
     googleNativeInternal.processStreamEvent(
       {
@@ -1789,23 +1789,7 @@ describe("google native interactions request building", () => {
         blocks,
         providerToolCallsById,
       ),
-    ).toEqual([
-      {
-        type: "tool-result",
-        toolCallId: fallbackId,
-        toolName: "codeExecution",
-        output: {
-          provider: "google",
-          status: "completed",
-          callId: fallbackId,
-          code: "print(6 * 7)",
-          language: "python",
-          output: "42\n",
-          raw: "42\n",
-        },
-        providerExecuted: true,
-      },
-    ]);
+    ).toEqual([]);
   });
 
   test("processStreamEvent handles thought content with signature", () => {
@@ -2050,79 +2034,6 @@ describe("google native interactions request building", () => {
     ]);
   });
 
-  test("mapGoogleEventToStreamParts treats native code execution as provider executed", () => {
-    const blocks = new Map();
-    const providerToolCallsById = new Map();
-
-    googleNativeInternal.processStreamEvent(
-      {
-        event_type: "content.start",
-        index: 0,
-        content: {
-          type: "code_execution_call",
-          id: "ce_1",
-          arguments: { code: "print('sum=5117')", language: "python" },
-        },
-      },
-      blocks,
-      providerToolCallsById,
-    );
-
-    expect(blocks.get(0)?.type).toBe("providerToolCall");
-    expect(
-      googleNativeInternal.mapGoogleEventToStreamParts(
-        {
-          event_type: "content.stop",
-          index: 0,
-        },
-        blocks,
-        providerToolCallsById,
-      ),
-    ).toEqual([
-      { type: "tool-input-end", id: "ce_1", toolName: "codeExecution", providerExecuted: true },
-    ]);
-
-    googleNativeInternal.processStreamEvent(
-      {
-        event_type: "content.start",
-        index: 1,
-        content: {
-          type: "code_execution_result",
-          call_id: "ce_1",
-          result: { outcome: "OUTCOME_OK", output: "sum=5117\n" },
-        },
-      },
-      blocks,
-      providerToolCallsById,
-    );
-
-    expect(
-      googleNativeInternal.mapGoogleEventToStreamParts(
-        {
-          event_type: "content.stop",
-          index: 1,
-        },
-        blocks,
-        providerToolCallsById,
-      ),
-    ).toEqual([
-      {
-        type: "tool-result",
-        toolCallId: "ce_1",
-        toolName: "codeExecution",
-        output: {
-          provider: "google",
-          status: "completed",
-          callId: "ce_1",
-          code: "print('sum=5117')",
-          language: "python",
-          output: "sum=5117\n",
-          raw: { outcome: "OUTCOME_OK", output: "sum=5117\n" },
-        },
-        providerExecuted: true,
-      },
-    ]);
-  });
 
   test("mapGoogleEventToStreamParts preserves native Google search sources for citation fallbacks", () => {
     const blocks = new Map();

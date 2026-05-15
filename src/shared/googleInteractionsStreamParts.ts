@@ -1,4 +1,4 @@
-type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext" | "codeExecution";
+type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext";
 
 export type GoogleInteractionsContentBlock =
   | { type: "thinking"; thinking: string; thinkingSignature?: string }
@@ -43,10 +43,6 @@ function asNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
 function safeJsonStringify(value: unknown): string {
   try {
     return JSON.stringify(value);
@@ -88,26 +84,15 @@ function nativeToolNameFromContentType(contentType: string): NativeGoogleToolNam
   if (contentType === "url_context_call" || contentType === "url_context_result") {
     return "nativeUrlContext";
   }
-  if (contentType === "code_execution_call" || contentType === "code_execution_result") {
-    return "codeExecution";
-  }
   return null;
 }
 
 function isNativeGoogleToolCallContentType(contentType: string): boolean {
-  return (
-    contentType === "google_search_call" ||
-    contentType === "url_context_call" ||
-    contentType === "code_execution_call"
-  );
+  return contentType === "google_search_call" || contentType === "url_context_call";
 }
 
 function isNativeGoogleToolResultContentType(contentType: string): boolean {
-  return (
-    contentType === "google_search_result" ||
-    contentType === "url_context_result" ||
-    contentType === "code_execution_result"
-  );
+  return contentType === "google_search_result" || contentType === "url_context_result";
 }
 
 function extractStringArray(value: unknown): string[] {
@@ -149,19 +134,6 @@ function extractSingletonOrNestedResultEntries(value: unknown): Array<Record<str
   return [record];
 }
 
-function extractCodeExecutionOutput(value: unknown): string {
-  const direct = asString(value);
-  if (direct !== undefined) return direct;
-
-  const record = asRecord(value);
-  return (
-    asString(record?.output) ??
-    asString(record?.stdout) ??
-    asString(record?.stderr) ??
-    ""
-  );
-}
-
 function buildNativeGoogleToolResultOutput(
   name: NativeGoogleToolName,
   callId: string,
@@ -177,18 +149,6 @@ function buildNativeGoogleToolResultOutput(
       queries: extractStringArray(callArguments.queries),
       results: extractResultEntries(result),
       ...(sources ? { sources } : {}),
-      raw: result,
-    };
-  }
-
-  if (name === "codeExecution") {
-    return {
-      provider: "google",
-      status: "completed",
-      callId,
-      code: asString(callArguments.code) ?? "",
-      language: asString(callArguments.language) ?? "python",
-      output: extractCodeExecutionOutput(result),
       raw: result,
     };
   }

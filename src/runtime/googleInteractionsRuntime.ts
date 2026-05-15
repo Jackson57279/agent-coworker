@@ -78,6 +78,24 @@ function nextGoogleProviderState(
   };
 }
 
+function isDisabledGoogleCodeExecutionPart(part: unknown): boolean {
+  const record = asRecord(part);
+  if (!record) return false;
+  const type = asString(record.type);
+  if (type === "code_execution_call" || type === "code_execution_result") return true;
+  if (type !== "providerToolCall" && type !== "providerToolResult") return false;
+  const name = asString(record.name) ?? asString(record.toolName);
+  return name === "codeExecution";
+}
+
+function messageHasDisabledGoogleCodeExecution(message: ModelMessage): boolean {
+  return Array.isArray(message.content) && message.content.some(isDisabledGoogleCodeExecutionPart);
+}
+
+function messagesHaveDisabledGoogleCodeExecution(messages: readonly ModelMessage[]): boolean {
+  return messages.some(messageHasDisabledGoogleCodeExecution);
+}
+
 function buildGoogleStreamOptions(
   modelId: string,
   providerOptions: Record<string, unknown> | undefined,
@@ -139,7 +157,11 @@ export function createGoogleInteractionsRuntime(
         const turnMessages: Array<Record<string, unknown>> = [];
         let usage = undefined as RuntimeRunTurnResult["usage"];
         let finalStopReason: string | undefined;
-        const activeProviderState = matchingGoogleProviderState(params, resolved.model.id);
+        const activeProviderState = messagesHaveDisabledGoogleCodeExecution(
+          params.allMessages ?? params.messages,
+        )
+          ? null
+          : matchingGoogleProviderState(params, resolved.model.id);
         let finalProviderState = undefined as GoogleContinuationState | undefined;
         let previousInteractionId: string | undefined = activeProviderState?.interactionId;
         let stepMessages: ModelMessage[] = activeProviderState

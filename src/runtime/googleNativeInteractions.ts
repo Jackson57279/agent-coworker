@@ -107,10 +107,6 @@ function asNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
 function getGoogleThoughtSignature(record: Record<string, unknown>): string | undefined {
   const directSignature =
     asNonEmptyString(record.thoughtSignature) ?? asNonEmptyString(record.thinkingSignature);
@@ -285,8 +281,8 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       const toolCallId = asNonEmptyString(record.id) ?? asNonEmptyString(record.toolCallId);
       const toolName = asNonEmptyString(record.name) ?? asNonEmptyString(record.toolName);
       if (!toolCallId || !toolName) continue;
-      const nativeToolName =
-        nativeToolNameFromContentType(toolName) ?? (toolName as NativeGoogleToolName);
+      const nativeToolName = nativeToolNameFromWireName(toolName);
+      if (!nativeToolName) continue;
       const args = asRecord(record.arguments) ?? asRecord(record.input) ?? {};
       const signature = getGoogleThoughtSignature(record);
       parts.push({
@@ -305,8 +301,8 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
         asNonEmptyString(record.id);
       const toolName = asNonEmptyString(record.name) ?? asNonEmptyString(record.toolName);
       if (!toolCallId || !toolName) continue;
-      const nativeToolName =
-        nativeToolNameFromContentType(toolName) ?? (toolName as NativeGoogleToolName);
+      const nativeToolName = nativeToolNameFromWireName(toolName);
+      if (!nativeToolName) continue;
       const signature = getGoogleThoughtSignature(record);
       parts.push({
         type: nativeGoogleToolResultContentType(nativeToolName),
@@ -531,7 +527,7 @@ function _extractTextFromContent(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
-type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext" | "codeExecution";
+type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext";
 
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
@@ -566,37 +562,42 @@ function nativeToolNameFromContentType(contentType: string): NativeGoogleToolNam
   if (contentType === "url_context_call" || contentType === "url_context_result") {
     return "nativeUrlContext";
   }
-  if (contentType === "code_execution_call" || contentType === "code_execution_result") {
-    return "codeExecution";
-  }
   return null;
+}
+
+function nativeToolNameFromWireName(name: string): NativeGoogleToolName | null {
+  return (
+    nativeToolNameFromContentType(name) ??
+    (name === "nativeWebSearch" || name === "nativeUrlContext" ? name : null)
+  );
 }
 
 function nativeGoogleToolCallContentType(name: NativeGoogleToolName): string {
   if (name === "nativeWebSearch") return "google_search_call";
-  if (name === "nativeUrlContext") return "url_context_call";
-  return "code_execution_call";
+  return "url_context_call";
 }
 
 function nativeGoogleToolResultContentType(name: NativeGoogleToolName): string {
   if (name === "nativeWebSearch") return "google_search_result";
-  if (name === "nativeUrlContext") return "url_context_result";
-  return "code_execution_result";
+  return "url_context_result";
 }
 
 function isNativeGoogleToolCallContentType(contentType: string): boolean {
-  return (
-    contentType === "google_search_call" ||
-    contentType === "url_context_call" ||
-    contentType === "code_execution_call"
-  );
+  return contentType === "google_search_call" || contentType === "url_context_call";
 }
 
 function isNativeGoogleToolResultContentType(contentType: string): boolean {
+  return contentType === "google_search_result" || contentType === "url_context_result";
+}
+
+function isGoogleCodeExecutionContentType(contentType: unknown): boolean {
+  return contentType === "code_execution_call" || contentType === "code_execution_result";
+}
+
+function googleStreamEventContentType(event: Record<string, unknown>): string | undefined {
   return (
-    contentType === "google_search_result" ||
-    contentType === "url_context_result" ||
-    contentType === "code_execution_result"
+    asNonEmptyString(asRecord(event.content)?.type) ??
+    asNonEmptyString(asRecord(event.delta)?.type)
   );
 }
 
@@ -639,19 +640,6 @@ function extractSingletonOrNestedResultEntries(value: unknown): Array<Record<str
   return [record];
 }
 
-function extractCodeExecutionOutput(value: unknown): string {
-  const direct = asString(value);
-  if (direct !== undefined) return direct;
-
-  const record = asRecord(value);
-  return (
-    asString(record?.output) ??
-    asString(record?.stdout) ??
-    asString(record?.stderr) ??
-    ""
-  );
-}
-
 function buildNativeGoogleToolResultOutput(
   name: NativeGoogleToolName,
   callId: string,
@@ -678,18 +666,6 @@ function buildNativeGoogleToolResultOutput(
       callId,
       urls: extractStringArray(callArguments.urls),
       results: extractSingletonOrNestedResultEntries(result),
-      raw: result,
-    };
-  }
-
-  if (name === "codeExecution") {
-    return {
-      provider: "google",
-      status: "completed",
-      callId,
-      code: asString(callArguments.code) ?? "",
-      language: asString(callArguments.language) ?? "python",
-      output: extractCodeExecutionOutput(result),
       raw: result,
     };
   }
@@ -1304,6 +1280,12 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
       // Emit raw event for observability
       pendingEventDelivery = pendingEventDelivery.then(() => emitRawEvent(eventRecord));
 
+      if (isGoogleCodeExecutionContentType(googleStreamEventContentType(eventRecord))) {
+        throw new Error(
+          "Google native code execution is disabled. Use the harness bash tool for code execution.",
+        );
+      }
+
       if (eventType === "interaction.start") {
         const interaction = eventRecord.interaction as Record<string, unknown> | undefined;
         interactionId = interaction?.id as string | undefined;
@@ -1407,6 +1389,7 @@ export const __internal = {
   processStreamEvent,
   queueTextBlockAnnotationEnrichment,
   resolveGoogleApiKey,
+  isGoogleCodeExecutionContentType,
   __testResetGoogleInteractionsClientCache: () => {
     googleInteractionsClientCache.clear();
   },

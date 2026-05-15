@@ -195,7 +195,7 @@ describe("googleInteractionsStreamParts", () => {
     ]);
   });
 
-  test("replays native code execution as provider-executed tool activity", () => {
+  test("replay ignores native code execution blocks", () => {
     const contentBlocks = new Map();
     const providerToolCallsById = new Map();
 
@@ -208,21 +208,10 @@ describe("googleInteractionsStreamParts", () => {
     };
     processGoogleInteractionsStreamEvent(startEvent, contentBlocks, providerToolCallsById);
 
-    const startBlock = contentBlocks.get(0);
-    expect(startBlock).toBeDefined();
-    expect(startBlock.type).toBe("providerToolCall");
-    const fallbackId = startBlock.id;
-
+    expect(contentBlocks.get(0)).toBeUndefined();
     expect(
       mapGoogleInteractionsEventToStreamParts(startEvent, contentBlocks, providerToolCallsById),
-    ).toEqual([
-      {
-        type: "tool-input-start",
-        id: fallbackId,
-        toolName: "codeExecution",
-        providerExecuted: true,
-      },
-    ]);
+    ).toEqual([]);
 
     const deltaEvent = {
       event_type: "content.delta",
@@ -235,15 +224,10 @@ describe("googleInteractionsStreamParts", () => {
     };
     processGoogleInteractionsStreamEvent(deltaEvent, contentBlocks, providerToolCallsById);
 
+    expect(contentBlocks.get(0)).toBeUndefined();
     expect(
       mapGoogleInteractionsEventToStreamParts(deltaEvent, contentBlocks, providerToolCallsById),
-    ).toEqual([
-      {
-        type: "tool-input-delta",
-        id: fallbackId,
-        delta: '{"code":"print(6 * 7)","language":"python"}',
-      },
-    ]);
+    ).toEqual([]);
 
     processGoogleInteractionsStreamEvent(
       {
@@ -265,23 +249,7 @@ describe("googleInteractionsStreamParts", () => {
         contentBlocks,
         providerToolCallsById,
       ),
-    ).toEqual([
-      {
-        type: "tool-result",
-        toolCallId: fallbackId,
-        toolName: "codeExecution",
-        output: {
-          provider: "google",
-          status: "completed",
-          callId: fallbackId,
-          code: "print(6 * 7)",
-          language: "python",
-          output: "42\n",
-          raw: "42\n",
-        },
-        providerExecuted: true,
-      },
-    ]);
+    ).toEqual([]);
   });
 
   test("preserves singleton native URL context result objects", () => {

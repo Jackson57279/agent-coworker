@@ -135,7 +135,7 @@ function toolArgsFromApproval(toolCall: unknown): unknown {
 }
 
 function shouldReuseLatestToolItemByName(name: string): boolean {
-  return name !== "nativeWebSearch" && name !== "nativeUrlContext" && name !== "codeExecution";
+  return name !== "nativeWebSearch" && name !== "nativeUrlContext";
 }
 
 function isTerminalToolState(state: ProjectedToolState): boolean {
