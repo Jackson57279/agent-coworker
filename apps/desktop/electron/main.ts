@@ -8,6 +8,7 @@ import type { PersistedState } from "../src/app/types";
 import {
   DESKTOP_EVENT_CHANNELS,
   type DesktopMenuCommand,
+  type ShowCanvasWindowInput,
   type ShowQuickChatWindowInput,
   type UpdaterState,
 } from "../src/lib/desktopApi";
@@ -305,7 +306,7 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
 
 async function loadRendererWindow(
   win: BrowserWindow,
-  windowMode: "main" | "quick-chat" | "utility",
+  windowMode: "main" | "quick-chat" | "utility" | "canvas",
   query: Record<string, string> = {},
 ): Promise<void> {
   if (!app.isPackaged) {
@@ -489,6 +490,46 @@ function quickChatWindowQuery(opts?: ShowQuickChatWindowInput): Record<string, s
   };
 }
 
+async function createCanvasWindow(opts: ShowCanvasWindowInput): Promise<BrowserWindow> {
+  const useMacosNativeGlass = shouldUseMacosNativeGlass(process.platform, process.env, {
+    prefersReducedTransparency: getSystemAppearanceSnapshot().prefersReducedTransparency,
+  });
+  const useDarkColors = getSystemAppearanceSnapshot().shouldUseDarkColors;
+
+  const win = new BrowserWindow({
+    title: "Cowork Canvas",
+    width: 800,
+    height: 600,
+    minWidth: 400,
+    minHeight: 400,
+    ...getInitialWindowAppearanceOptions({ useDarkColors, useMacosNativeGlass }),
+    ...getPlatformBrowserWindowOptions(process.platform, { useDarkColors, useMacosNativeGlass }),
+    webPreferences: {
+      preload: path.join(__dirname, "../preload/preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      safeDialogs: true,
+      devTools: !app.isPackaged,
+    },
+  });
+
+  applyPlatformWindowCreated(win, process.platform);
+  applyWindowSecurity(win);
+  syncWindowAppearance(win, {
+    platform: process.platform,
+    useDarkColors,
+    useMacosNativeGlass,
+  });
+
+  win.show();
+  await loadRendererWindow(win, "canvas", { path: opts.path });
+  return win;
+}
+
 async function createUtilityWindow(): Promise<BrowserWindow> {
   const useMacosNativeGlass = shouldUseMacosNativeGlass(process.platform, process.env, {
     prefersReducedTransparency: getSystemAppearanceSnapshot().prefersReducedTransparency,
@@ -596,6 +637,9 @@ if (!gotSingleInstanceLock) {
       showMainWindow: () => quickChatController?.showMainWindow(),
       consumePendingMenuCommands: () => menuCommandDispatcher.drainPending(),
       showQuickChatWindow: (opts) => quickChatController?.showQuickChatWindow(opts),
+      showCanvasWindow: (opts) => {
+        void createCanvasWindow(opts);
+      },
       shouldKeepPopupWindowsAlive: () =>
         quickChatController?.shouldKeepPopupWindowsAlive() === true,
       applyPersistedState: (state) => {

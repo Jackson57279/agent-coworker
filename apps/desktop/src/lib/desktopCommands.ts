@@ -163,6 +163,11 @@ export async function showMainWindow(): Promise<void> {
   await requireDesktopApi().showMainWindow();
 }
 
+export async function showCanvasWindow(opts: { path: string }): Promise<void> {
+  await requireDesktopApi().showCanvasWindow(opts);
+}
+
+
 export async function showQuickChatWindow(opts?: ShowQuickChatWindowInput): Promise<void> {
   await requireDesktopApi().showQuickChatWindow(opts);
 }
@@ -185,6 +190,10 @@ export async function listDirectory(opts: {
 export async function readFile(opts: { path: string }): Promise<string> {
   const result = await requireDesktopApi().readFile(opts);
   return result.content;
+}
+
+export async function writeFile(opts: { path: string; content: string }): Promise<void> {
+  await requireDesktopApi().writeFile(opts);
 }
 
 export async function readFileForPreview(opts: {

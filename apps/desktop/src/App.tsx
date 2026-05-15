@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
 
 import { resolvePluginCatalogWorkspaceSelection } from "./app/pluginManagement";
 import { useAppStore } from "./app/store";
@@ -19,9 +20,11 @@ import { applyPlatformChromeToDocument } from "./lib/platformChromeDom";
 import { canPopOutQuickChatThread } from "./lib/quickChatPopout";
 import { getDesktopWindowMode } from "./lib/windowMode";
 import { ASK_SKIP_TOKEN } from "./lib/wsProtocol";
+import { getFilePreviewKind, isCanvasSupportedFile } from "./lib/filePreviewKind";
 import { ContextSidebar } from "./ui/ContextSidebar";
 import { FilePreviewModal } from "./ui/FilePreviewModal";
 import { AppTopBar } from "./ui/layout/AppTopBar";
+import { Canvas } from "./ui/Canvas";
 import { ContextSidebarResizer } from "./ui/layout/ContextSidebarResizer";
 import { PrimaryContent } from "./ui/layout/PrimaryContent";
 import { SettingsContent } from "./ui/layout/SettingsContent";
@@ -50,15 +53,26 @@ const LeftSidebarPane = memo(function LeftSidebarPane({ collapsed }: { collapsed
 
 const RightSidebarPane = memo(function RightSidebarPane({ collapsed }: { collapsed: boolean }) {
   const contextSidebarWidth = useAppStore((s) => s.contextSidebarWidth);
+  const canvasSidebarWidth = useAppStore((s) => s.canvasSidebarWidth);
+  const filePreview = useAppStore((s) => s.filePreview);
+  const canvasEnabled = useAppStore((s) => s.desktopFeatureFlags?.canvas === true);
+
+  const isCanvasSupported = filePreview?.path && isCanvasSupportedFile(filePreview.path);
+  const showCanvas = canvasEnabled && isCanvasSupported;
+  const activeWidth = showCanvas ? canvasSidebarWidth : contextSidebarWidth;
 
   return (
     <div
       className="app-right-sidebar-pane relative shrink-0 overflow-hidden"
-      style={{ width: collapsed ? 0 : contextSidebarWidth }}
+      style={{ width: collapsed ? 0 : activeWidth }}
     >
       {!collapsed ? <ContextSidebarResizer /> : null}
-      <div className="absolute top-0 bottom-0 left-0 flex" style={{ width: contextSidebarWidth }}>
-        <ContextSidebar />
+      <div className="absolute top-0 bottom-0 left-0 flex" style={{ width: activeWidth }}>
+        {showCanvas && filePreview?.path ? (
+          <Canvas path={filePreview.path} />
+        ) : (
+          <ContextSidebar />
+        )}
       </div>
     </div>
   );
@@ -451,6 +465,18 @@ export default function App() {
         <QuickChatShell init={init} ready={ready} startupError={startupError} />
       ) : windowMode === "utility" ? (
         <MenuBarUtilityShell init={init} ready={ready} startupError={startupError} />
+      ) : windowMode === "canvas" ? (
+        <div
+          className="flex h-full w-full bg-[var(--surface-sidebar-pane)] relative flex-col"
+          style={{
+            backdropFilter: "blur(var(--sidebar-blur, 0px))",
+            WebkitBackdropFilter: "blur(var(--sidebar-blur, 0px))",
+          } as CSSProperties}
+        >
+          <div className="flex-1 min-h-0 min-w-0">
+            <Canvas path={new URLSearchParams(window.location.search).get("path") || ""} />
+          </div>
+        </div>
       ) : view === "settings" ? (
         <div className="app-shell app-shell--settings flex h-full min-h-0 flex-col text-foreground">
           <div className="app-window-drag-strip" aria-hidden="true" />

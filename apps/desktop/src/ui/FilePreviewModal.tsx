@@ -30,6 +30,7 @@ import {
   type FilePreviewKind,
   getExtensionLower,
   getFilePreviewKind,
+  isCanvasSupportedFile,
   mimeForPreviewKind,
 } from "../lib/filePreviewKind";
 import { cn } from "../lib/utils";
@@ -150,6 +151,7 @@ function visitLinks(node: HastNode, fn: (n: HastNode) => void): void {
 export function FilePreviewModal() {
   const filePreview = useAppStore((s) => s.filePreview);
   const closeFilePreview = useAppStore((s) => s.closeFilePreview);
+  const canvasEnabled = useAppStore((s) => s.desktopFeatureFlags?.canvas === true);
 
   const path = filePreview?.path ?? null;
   const kind = path ? getFilePreviewKind(path) : "unknown";
@@ -347,7 +349,8 @@ export function FilePreviewModal() {
     ];
   }, [path]);
 
-  const isOpen = path !== null;
+  const isCanvasFile = path && isCanvasSupportedFile(path) && canvasEnabled;
+  const isOpen = path !== null && !isCanvasFile;
 
   const showFallback =
     !loading &&

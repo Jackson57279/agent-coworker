@@ -91,3 +91,8 @@ export function mimeForPreviewKind(kind: FilePreviewKind, ext: string): string {
   }
   return "application/octet-stream";
 }
+
+export function isCanvasSupportedFile(filePath: string): boolean {
+  const kind = getFilePreviewKind(filePath);
+  return kind === "markdown" || kind === "text";
+}

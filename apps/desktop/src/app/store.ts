@@ -65,6 +65,7 @@ const initialState: AppStoreDataState = {
     workspaceLifecycle: true,
     a2ui: false,
     openAiNativeConnectors: false,
+    canvas: false,
   },
   desktopFeatureFlagOverrides: {},
   updateState: createDefaultUpdaterState(),
@@ -86,6 +87,7 @@ const initialState: AppStoreDataState = {
   sidebarCollapsed: false,
   contextSidebarCollapsed: false,
   contextSidebarWidth: 300,
+  canvasSidebarWidth: 500,
   messageBarHeight: 96,
   sidebarWidth: 248,
 };

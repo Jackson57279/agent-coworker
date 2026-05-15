@@ -7,6 +7,7 @@ import {
   revealPath,
   trashPath,
 } from "../../lib/desktopCommands";
+import { getFilePreviewKind, isCanvasSupportedFile } from "../../lib/filePreviewKind";
 
 import type { AppStoreActions, StoreGet, StoreSet } from "../store.helpers";
 
@@ -39,7 +40,18 @@ export function createExplorerActions(
 
   return {
     openFilePreview: (opts: { path: string }) => {
-      set({ filePreview: { path: opts.path } });
+      const state = get();
+      const canvasEnabled = state.desktopFeatureFlags?.canvas === true;
+      const isCanvasSupported = isCanvasSupportedFile(opts.path);
+      if (canvasEnabled && isCanvasSupported) {
+        set({
+          filePreview: { path: opts.path },
+          contextSidebarCollapsed: false,
+          canvasSidebarWidth: Math.max(state.canvasSidebarWidth, 500),
+        });
+      } else {
+        set({ filePreview: { path: opts.path } });
+      }
     },
 
     closeFilePreview: () => {

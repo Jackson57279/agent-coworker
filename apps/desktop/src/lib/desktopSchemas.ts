@@ -34,6 +34,7 @@ import type {
   SetWindowAppearanceInput,
   ShowContextMenuInput,
   ShowQuickChatWindowInput,
+  ShowCanvasWindowInput,
   StartWorkspaceServerInput,
   StopWorkspaceServerInput,
   SystemAppearance,
@@ -43,6 +44,7 @@ import type {
   UpdaterReleaseInfo,
   UpdaterState,
   WindowDragPointInput,
+  WriteFileInput,
 } from "./desktopApi";
 import { normalizeQuickChatShortcutAccelerator } from "./quickChatShortcut";
 
@@ -206,6 +208,10 @@ export const windowDragPointInputSchema: z.ZodType<WindowDragPointInput> = z.obj
   screenY: z.number().finite(),
 });
 
+export const showCanvasWindowInputSchema: z.ZodType<ShowCanvasWindowInput> = z.object({
+  path: nonEmptyStringSchema,
+});
+
 export const showQuickChatWindowInputSchema: z.ZodType<ShowQuickChatWindowInput> = z.object({
   threadId: safeIdSchema.optional(),
   newThread: z.boolean().optional(),
@@ -236,6 +242,10 @@ export const openExternalUrlInputSchema: z.ZodType<OpenExternalUrlInput> = z.obj
 });
 export const previewOSFileInputSchema: z.ZodType<PreviewOSFileInput> = sharedPathSchema;
 export const readFileInputSchema: z.ZodType<ReadFileInput> = sharedPathSchema;
+export const writeFileInputSchema: z.ZodType<WriteFileInput> = z.object({
+  path: nonEmptyStringSchema,
+  content: z.string(),
+});
 
 export const readFileForPreviewInputSchema: z.ZodType<ReadFileForPreviewInput> = z.object({
   path: nonEmptyStringSchema,

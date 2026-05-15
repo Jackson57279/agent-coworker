@@ -510,6 +510,44 @@ export function ChatThreadHeader(props: {
   );
 }
 
+function parseCanvasEditMessage(text: string) {
+  if (!text.startsWith("[Open Canvas Collaborative Edit]")) return null;
+  
+  const instMarker = "**Instructions:**\n";
+  const instIdx = text.indexOf(instMarker);
+  if (instIdx === -1) return null;
+  
+  const rest = text.slice(instIdx + instMarker.length);
+  
+  const targetMarker = "\n\n**Target Section / Selection:**\n> ";
+  const targetIdx = rest.indexOf(targetMarker);
+  
+  let instructions = rest;
+  let selection: string | null = null;
+  
+  if (targetIdx !== -1) {
+    instructions = rest.slice(0, targetIdx);
+    selection = rest.slice(targetIdx + targetMarker.length);
+  } else {
+    const targetMarkerAlt = "\n\n**Target Section / Selection:**";
+    const targetIdxAlt = rest.indexOf(targetMarkerAlt);
+    if (targetIdxAlt !== -1) {
+      instructions = rest.slice(0, targetIdxAlt);
+      const selPart = rest.slice(targetIdxAlt + targetMarkerAlt.length).trim();
+      if (selPart.startsWith(">")) {
+        selection = selPart.slice(1).trim();
+      } else {
+        selection = selPart;
+      }
+    }
+  }
+  
+  return {
+    instructions: instructions.trim(),
+    selection: selection ? selection.trim() : null,
+  };
+}
+
 const FeedRow = memo(function FeedRow(props: {
   item: FeedItem;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
@@ -568,7 +606,24 @@ const FeedRow = memo(function FeedRow(props: {
               {item.text}
             </MessageResponse>
           ) : (
-            <div className="whitespace-pre-wrap">{item.text}</div>
+            <div className="whitespace-pre-wrap">
+              {(() => {
+                const parsed = parseCanvasEditMessage(item.text);
+                if (parsed) {
+                  return (
+                    <div className="flex flex-col gap-1.5">
+                      {parsed.selection && (
+                        <div className="text-[10px] font-semibold text-primary/70 uppercase tracking-wider flex items-center gap-1 select-none">
+                          <span>Selected Text</span>
+                        </div>
+                      )}
+                      <div>{parsed.instructions}</div>
+                    </div>
+                  );
+                }
+                return item.text;
+              })()}
+            </div>
           )}
         </MessageContent>
         {hasSources && !hasInlineCitationChip && props.citationSources ? (

@@ -32,6 +32,7 @@ import {
   type SetWindowAppearanceInput,
   type ShowContextMenuInput,
   type ShowQuickChatWindowInput,
+  ShowCanvasWindowInput,
   type StartWorkspaceServerInput,
   type StopWorkspaceServerInput,
   type SystemAppearance,
@@ -39,6 +40,7 @@ import {
   type TrashPathInput,
   type UpdaterState,
   type WindowDragPointInput,
+  type WriteFileInput,
 } from "../src/lib/desktopApi";
 import {
   confirmActionInputSchema,
@@ -64,6 +66,7 @@ import {
   setWindowAppearanceInputSchema,
   showContextMenuInputSchema,
   showQuickChatWindowInputSchema,
+  showCanvasWindowInputSchema,
   startWorkspaceServerInputSchema,
   stopWorkspaceServerInputSchema,
   systemAppearanceSchema,
@@ -71,6 +74,7 @@ import {
   trashPathInputSchema,
   updaterStateSchema,
   windowDragPointInputSchema,
+  writeFileInputSchema,
 } from "../src/lib/desktopSchemas";
 
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
@@ -117,6 +121,10 @@ function assertListDirectoryInput(opts: ListDirectoryInput): void {
 
 function assertReadFileInput(opts: ReadFileInput): void {
   parseWithSchema(readFileInputSchema, opts, "readFile options");
+}
+
+function assertWriteFileInput(opts: WriteFileInput): void {
+  parseWithSchema(writeFileInputSchema, opts, "writeFile options");
 }
 
 function assertReadFileForPreviewInput(opts: ReadFileForPreviewInput): void {
@@ -316,6 +324,11 @@ const desktopApi = Object.freeze<DesktopApi>({
 
   showMainWindow: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.showMainWindow),
 
+  showCanvasWindow: (opts: ShowCanvasWindowInput) => {
+    parseWithSchema(showCanvasWindowInputSchema, opts, "showCanvasWindow options");
+    return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.showCanvasWindow, opts);
+  },
+
   showQuickChatWindow: (opts?: ShowQuickChatWindowInput) => {
     if (opts !== undefined) {
       parseWithSchema(showQuickChatWindowInputSchema, opts, "showQuickChatWindow options");
@@ -331,6 +344,11 @@ const desktopApi = Object.freeze<DesktopApi>({
   readFile: (opts: ReadFileInput) => {
     assertReadFileInput(opts);
     return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.readFile, opts);
+  },
+
+  writeFile: (opts: WriteFileInput) => {
+    assertWriteFileInput(opts);
+    return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.writeFile, opts);
   },
 
   readFileForPreview: (opts: ReadFileForPreviewInput) => {

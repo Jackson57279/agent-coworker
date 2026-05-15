@@ -18,6 +18,7 @@ import { normalizeQuickChatShortcutAccelerator } from "../../lib/quickChatShortc
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
 import { type ProviderName, safeParseSessionEvent } from "../../lib/wsProtocol";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
+import { getFilePreviewKind, isCanvasSupportedFile } from "../../lib/filePreviewKind";
 import {
   deriveConnectedProviders,
   normalizePersistedProviderState,
@@ -309,6 +310,7 @@ const persistedUiSchema = z
       .preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean())
       .optional(),
     contextSidebarWidth: normalizedUiWidthSchema(200, 600, 300).optional(),
+    canvasSidebarWidth: normalizedUiWidthSchema(200, 900, 500).optional(),
     messageBarHeight: normalizedUiWidthSchema(80, 500, 96).optional(),
   })
   .passthrough()
@@ -325,6 +327,7 @@ const persistedUiSchema = z
       sidebarWidth: ui.sidebarWidth ?? 248,
       contextSidebarCollapsed: ui.contextSidebarCollapsed ?? false,
       contextSidebarWidth: ui.contextSidebarWidth ?? 300,
+      canvasSidebarWidth: ui.canvasSidebarWidth ?? 500,
       messageBarHeight: ui.messageBarHeight ?? 96,
     }),
   );
@@ -521,6 +524,7 @@ function buildResolvedDesktopUiState(
     sidebarWidth: normalizedUi.sidebarWidth ?? 248,
     contextSidebarCollapsed: normalizedUi.contextSidebarCollapsed ?? false,
     contextSidebarWidth: normalizedUi.contextSidebarWidth ?? 300,
+    canvasSidebarWidth: normalizedUi.canvasSidebarWidth ?? 500,
     messageBarHeight: normalizedUi.messageBarHeight ?? 96,
   };
 }
@@ -669,6 +673,7 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
       sidebarWidth: ui.sidebarWidth,
       contextSidebarCollapsed: ui.contextSidebarCollapsed,
       contextSidebarWidth: ui.contextSidebarWidth,
+      canvasSidebarWidth: ui.canvasSidebarWidth,
       messageBarHeight: ui.messageBarHeight,
     };
   } catch {
@@ -729,6 +734,7 @@ export function createBootstrapActions(
             sidebarWidth: get().sidebarWidth,
             contextSidebarCollapsed: get().contextSidebarCollapsed,
             contextSidebarWidth: get().contextSidebarWidth,
+            canvasSidebarWidth: get().canvasSidebarWidth,
             messageBarHeight: get().messageBarHeight,
           },
         );
@@ -781,6 +787,7 @@ export function createBootstrapActions(
           sidebarWidth: ui.sidebarWidth,
           contextSidebarCollapsed: ui.contextSidebarCollapsed,
           contextSidebarWidth: ui.contextSidebarWidth,
+          canvasSidebarWidth: ui.canvasSidebarWidth,
           messageBarHeight: ui.messageBarHeight,
         });
 
@@ -1164,7 +1171,16 @@ export function createBootstrapActions(
     },
 
     setContextSidebarWidth: (width: number) => {
-      set({ contextSidebarWidth: Math.max(200, Math.min(600, width)) });
+      const state = get();
+      const canvasEnabled = state.desktopFeatureFlags.canvas === true;
+      const isCanvasSupported = state.filePreview?.path && isCanvasSupportedFile(state.filePreview.path);
+      const isCanvasOpen = canvasEnabled && isCanvasSupported;
+
+      if (isCanvasOpen) {
+        set({ canvasSidebarWidth: Math.max(200, Math.min(900, width)) });
+      } else {
+        set({ contextSidebarWidth: Math.max(200, Math.min(600, width)) });
+      }
       syncDesktopStateCache(get);
     },
 

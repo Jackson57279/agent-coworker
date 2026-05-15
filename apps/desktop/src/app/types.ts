@@ -204,6 +204,7 @@ export type CachedDesktopUiState = {
   sidebarWidth?: number;
   contextSidebarCollapsed?: boolean;
   contextSidebarWidth?: number;
+  canvasSidebarWidth?: number;
   messageBarHeight?: number;
 };
 

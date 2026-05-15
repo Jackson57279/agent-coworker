@@ -21,6 +21,7 @@ import {
   type RevealPathInput,
   type SaveExportedFileInput,
   type TrashPathInput,
+  type WriteFileInput,
 } from "../../src/lib/desktopApi";
 import {
   copyPathInputSchema,
@@ -35,6 +36,7 @@ import {
   revealPathInputSchema,
   saveExportedFileInputSchema,
   trashPathInputSchema,
+  writeFileInputSchema,
 } from "../../src/lib/desktopSchemas";
 import { resolveDesktopBuiltinSkillRootsForReveal } from "../services/desktopBuiltinPaths";
 import { isExplorerEntryHidden } from "../services/explorerVisibility";
@@ -125,6 +127,13 @@ export function registerFilesIpc(context: DesktopIpcModuleContext): void {
         await fh.close();
       }
     }
+  });
+
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.writeFile, async (_event, args: WriteFileInput) => {
+    const input = parseWithSchema(writeFileInputSchema, args, "writeFile options");
+    await workspaceRoots.ensureApprovedWorkspaceRoots();
+    const safePath = resolveAllowedPath(workspaceRoots.getApprovedWorkspaceRoots(), input.path);
+    await fs.writeFile(safePath, input.content, "utf8");
   });
 
   handleDesktopInvoke(

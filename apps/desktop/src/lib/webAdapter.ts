@@ -412,6 +412,7 @@ export function createWebAdapter(): DesktopApi {
       workspaceLifecycle: normalizedLifecycle,
       a2ui: false,
       openAiNativeConnectors: false,
+      canvas: overrides?.canvas ?? false,
     };
   };
   const features = resolveWebDesktopFeatureFlags();
@@ -544,6 +545,8 @@ export function createWebAdapter(): DesktopApi {
 
     async showQuickChatWindow(_opts?: ShowQuickChatWindowInput): Promise<void> {},
 
+    async showCanvasWindow(_opts?: { path: string }): Promise<void> {},
+
     async listDirectory(opts): Promise<ExplorerEntry[]> {
       return await readWebJson<ExplorerEntry[]>("/cowork/fs/list", {
         path: opts.path,
@@ -553,6 +556,10 @@ export function createWebAdapter(): DesktopApi {
 
     async readFile(opts): Promise<{ content: string }> {
       return await readWebJson<{ content: string }>("/cowork/fs/read", { path: opts.path });
+    },
+
+    async writeFile(opts): Promise<void> {
+      await maybePostWebJson("/cowork/fs/write", opts);
     },
 
     async readFileForPreview(opts): Promise<ReadFileForPreviewOutput> {
