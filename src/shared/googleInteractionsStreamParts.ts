@@ -239,6 +239,11 @@ export function processGoogleInteractionsStreamEvent(
       if (signature) {
         block.thinkingSignature = signature;
       }
+      const summary = Array.isArray(content.summary) ? content.summary : [];
+      for (const entry of summary) {
+        const text = asNonEmptyString(asRecord(entry)?.text);
+        if (text) block.thinking += text;
+      }
     } else if (isNativeGoogleToolCallContentType(contentType)) {
       const name = nativeToolNameFromContentType(contentType);
       if (!name) return;
@@ -295,6 +300,16 @@ export function processGoogleInteractionsStreamEvent(
         ? { annotations: mergeAnnotationArrays(undefined, delta.annotations) }
         : {}),
     });
+  } else if (deltaType === "text_annotation") {
+    const annotations = mergeAnnotationArrays(
+      existing?.type === "text" ? existing.annotations : undefined,
+      delta.annotations,
+    );
+    if (existing?.type === "text") {
+      existing.annotations = annotations;
+    } else if (annotations && annotations.length > 0) {
+      contentBlocks.set(index, { type: "text", text: "", annotations });
+    }
   } else if (deltaType === "function_call") {
     if (existing?.type === "toolCall") {
       const deltaName = asNonEmptyString(delta.name);
@@ -430,7 +445,15 @@ export function mapGoogleInteractionsEventToStreamParts(
     }
 
     if (contentType === "thought") {
-      return [{ type: "reasoning-start", id: streamIdForIndex(index) }];
+      const parts: Array<Record<string, unknown>> = [
+        { type: "reasoning-start", id: streamIdForIndex(index) },
+      ];
+      const summary = Array.isArray(content?.summary) ? content.summary : [];
+      for (const entry of summary) {
+        const text = asNonEmptyString(asRecord(entry)?.text);
+        if (text) parts.push({ type: "reasoning-delta", id: streamIdForIndex(index), text });
+      }
+      return parts;
     }
 
     if (contentType === "function_call") {

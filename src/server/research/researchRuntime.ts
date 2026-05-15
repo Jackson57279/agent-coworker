@@ -117,7 +117,7 @@ export async function createResearchInteractionStream(
         ...(opts.collaborativePlanning ? { collaborative_planning: true } : {}),
       },
     },
-    opts.signal ? ({ signal: opts.signal } as any) : undefined,
+    opts.signal ? { signal: opts.signal } : undefined,
   );
 
   return asAsyncIterable<ResearchInteractionStreamEvent>(result);
@@ -133,7 +133,7 @@ export async function resumeResearchInteractionStream(
       stream: true,
       ...(opts.lastEventId ? { last_event_id: opts.lastEventId } : {}),
     },
-    opts.signal ? ({ signal: opts.signal } as any) : undefined,
+    opts.signal ? { signal: opts.signal } : undefined,
   );
 
   return asAsyncIterable<ResearchInteractionStreamEvent>(result);

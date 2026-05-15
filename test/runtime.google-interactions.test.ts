@@ -1141,6 +1141,28 @@ describe("google native interactions request building", () => {
     ]);
   });
 
+  test("convertMessagesToInteractionsInput preserves URI media blocks accepted by the SDK", () => {
+    const input = googleNativeInternal.convertMessagesToInteractionsInput([
+      {
+        role: "user",
+        content: [
+          { type: "image", uri: "gs://bucket/image.png", mimeType: "image/png" },
+          { type: "document", uri: "gs://bucket/file.pdf" },
+        ],
+      },
+    ] as ModelMessage[]);
+
+    expect(input).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "image", uri: "gs://bucket/image.png", mime_type: "image/png" },
+          { type: "document", uri: "gs://bucket/file.pdf" },
+        ],
+      },
+    ]);
+  });
+
   test("convertMessagesToInteractionsInput handles assistant tool calls with repaired thought signatures", () => {
     const input = googleNativeInternal.convertMessagesToInteractionsInput([
       {
@@ -1306,6 +1328,72 @@ describe("google native interactions request building", () => {
     ]);
   });
 
+  test("googleTurnMessagesToModelMessages converts native SDK output block names", () => {
+    const messages = googleNativeInternal.googleTurnMessagesToModelMessages([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thought",
+            signature: "sig_thought",
+            summary: [{ type: "text", text: "Reasoning summary." }],
+          },
+          {
+            type: "function_call",
+            id: "call_1",
+            name: "bash",
+            arguments: { command: "pwd" },
+            signature: "sig_call",
+          },
+          {
+            type: "google_search_call",
+            id: "gs_1",
+            arguments: { queries: ["Gemini"] },
+          },
+          {
+            type: "google_search_result",
+            call_id: "gs_1",
+            result: [{ search_suggestions: "Gemini" }],
+          },
+        ],
+      },
+    ]);
+
+    expect(messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "Reasoning summary.",
+            thinkingSignature: "sig_thought",
+            providerOptions: { google: { thoughtSignature: "sig_thought" } },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "bash",
+            input: { command: "pwd" },
+            thoughtSignature: "sig_call",
+            providerOptions: { google: { thoughtSignature: "sig_call" } },
+          },
+          {
+            type: "providerToolCall",
+            id: "gs_1",
+            name: "nativeWebSearch",
+            arguments: { queries: ["Gemini"] },
+          },
+          {
+            type: "providerToolResult",
+            callId: "gs_1",
+            name: "nativeWebSearch",
+            result: [{ search_suggestions: "Gemini" }],
+          },
+        ],
+      },
+    ]);
+  });
+
   test("convertToolsToInteractionsTools maps to function type", () => {
     const tools = googleNativeInternal.convertToolsToInteractionsTools([
       {
@@ -1319,6 +1407,36 @@ describe("google native interactions request building", () => {
     expect(tools[0].type).toBe("function");
     expect(tools[0].name).toBe("readFile");
     expect(tools[0].description).toBe("Read a file");
+  });
+
+  test("processStreamEvent preserves SDK text_annotation deltas", () => {
+    const blocks = new Map();
+
+    googleNativeInternal.processStreamEvent(
+      { event_type: "content.start", index: 0, content: { type: "text" } },
+      blocks,
+    );
+    googleNativeInternal.processStreamEvent(
+      { event_type: "content.delta", index: 0, delta: { type: "text", text: "Answer" } },
+      blocks,
+    );
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "content.delta",
+        index: 0,
+        delta: {
+          type: "text_annotation",
+          annotations: [{ type: "url_citation", url: "https://example.com" }],
+        },
+      },
+      blocks,
+    );
+
+    expect(blocks.get(0)).toEqual({
+      type: "text",
+      text: "Answer",
+      annotations: [{ type: "url_citation", url: "https://example.com" }],
+    });
   });
 
   test("processStreamEvent accumulates text content", () => {
@@ -1731,7 +1849,9 @@ describe("google native interactions request building", () => {
 
   test("identifies native code execution stream content as disabled", () => {
     expect(googleNativeInternal.isGoogleCodeExecutionContentType("code_execution_call")).toBe(true);
-    expect(googleNativeInternal.isGoogleCodeExecutionContentType("code_execution_result")).toBe(true);
+    expect(googleNativeInternal.isGoogleCodeExecutionContentType("code_execution_result")).toBe(
+      true,
+    );
     expect(googleNativeInternal.isGoogleCodeExecutionContentType("google_search_call")).toBe(false);
   });
 
@@ -2033,7 +2153,6 @@ describe("google native interactions request building", () => {
       },
     ]);
   });
-
 
   test("mapGoogleEventToStreamParts preserves native Google search sources for citation fallbacks", () => {
     const blocks = new Map();

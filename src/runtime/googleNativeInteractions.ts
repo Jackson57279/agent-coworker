@@ -8,14 +8,16 @@ import { piTurnMessagesToModelMessages, toolResultContentFromOutput } from "./pi
 // Types
 // ---------------------------------------------------------------------------
 
+type GoogleInteractionsToolChoice = Interactions.ToolChoiceType | Interactions.ToolChoiceConfig;
+
 type GoogleInteractionsStreamOptions = {
   signal?: AbortSignal;
   temperature?: number;
-  thinkingLevel?: string;
+  thinkingLevel?: Interactions.ThinkingLevel;
   thinkingBudget?: number;
   thinkingSummaries?: "auto" | "none";
   maxOutputTokens?: number;
-  toolChoice?: string;
+  toolChoice?: GoogleInteractionsToolChoice;
   nativeWebSearch?: boolean;
 };
 
@@ -73,11 +75,12 @@ function getGoogleInteractionsClient(apiKey: string): Interactions {
 // Message conversion: ModelMessage[] → Interactions API input
 // ---------------------------------------------------------------------------
 
-type InteractionsInput = Array<Record<string, unknown>>;
+type InteractionsContent = Interactions.Content;
+type InteractionsInput = Interactions.Turn[];
 
 type InteractionTurn = {
   role: "user" | "model";
-  content: string | Array<Record<string, unknown>>;
+  content: Interactions.Turn["content"];
 };
 
 type GoogleSignatureProviderKey = "google" | "vertex";
@@ -109,7 +112,9 @@ function asNonEmptyString(value: unknown): string | undefined {
 
 function getGoogleThoughtSignature(record: Record<string, unknown>): string | undefined {
   const directSignature =
-    asNonEmptyString(record.thoughtSignature) ?? asNonEmptyString(record.thinkingSignature);
+    asNonEmptyString(record.thoughtSignature) ??
+    asNonEmptyString(record.thinkingSignature) ??
+    asNonEmptyString(record.signature);
   if (directSignature) return directSignature;
 
   const providerOptions = asRecord(record.providerOptions);
@@ -153,33 +158,35 @@ function mergeGoogleThoughtProviderOptions(
   };
 }
 
-function buildTextContent(text: unknown): Record<string, unknown> | null {
+function buildTextContent(text: unknown): Interactions.TextContent | null {
   const value = asNonEmptyString(text);
   return value ? { type: "text", text: value } : null;
 }
 
-function buildImageContent(record: Record<string, unknown>): Record<string, unknown> | null {
-  return buildBinaryContent(record, "image");
+function buildImageContent(record: Record<string, unknown>): Interactions.ImageContent | null {
+  return buildBinaryContent(record, "image") as Interactions.ImageContent | null;
 }
 
 function buildBinaryContent(
   record: Record<string, unknown>,
   type: "image" | "audio" | "video" | "document",
-): Record<string, unknown> | null {
+): InteractionsContent | null {
   const data = asNonEmptyString(record.data);
+  const uri = asNonEmptyString(record.uri);
   const mimeType = asNonEmptyString(record.mimeType) ?? asNonEmptyString(record.mime_type);
-  if (!data || !mimeType) return null;
+  if (!data && !uri) return null;
   return {
     type,
-    data,
-    mime_type: mimeType,
-  };
+    ...(data ? { data } : {}),
+    ...(uri ? { uri } : {}),
+    ...(mimeType ? { mime_type: mimeType } : {}),
+  } as InteractionsContent;
 }
 
-function convertRichContentParts(parts: unknown): Array<Record<string, unknown>> {
+function convertRichContentParts(parts: unknown): InteractionsContent[] {
   if (!Array.isArray(parts)) return [];
 
-  const content: Array<Record<string, unknown>> = [];
+  const content: InteractionsContent[] = [];
   for (const rawPart of parts) {
     if (typeof rawPart === "string") {
       const textPart = buildTextContent(rawPart);
@@ -229,7 +236,7 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
   }
   if (!Array.isArray(message.content)) return null;
 
-  const parts: Array<Record<string, unknown>> = [];
+  const parts: InteractionsContent[] = [];
   for (const rawPart of message.content) {
     if (typeof rawPart === "string") {
       const textPart = buildTextContent(rawPart);
@@ -290,7 +297,7 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
         id: convertToolCallId(toolCallId),
         arguments: args,
         ...(signature ? { signature } : {}),
-      });
+      } as InteractionsContent);
       continue;
     }
 
@@ -310,7 +317,7 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
         result: record.result,
         ...(record.isError === true ? { is_error: true } : {}),
         ...(signature ? { signature } : {}),
-      });
+      } as InteractionsContent);
     }
   }
 
@@ -320,7 +327,7 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
 function turnFromToolMessage(message: ModelMessage): InteractionTurn | null {
   if (!Array.isArray(message.content)) return null;
 
-  const parts: Array<Record<string, unknown>> = [];
+  const parts: InteractionsContent[] = [];
   for (const rawPart of message.content) {
     const record = asRecord(rawPart);
     if (!record) continue;
@@ -331,14 +338,16 @@ function turnFromToolMessage(message: ModelMessage): InteractionTurn | null {
 
     const toolName = asNonEmptyString(record.toolName);
     const richResult = toolResultContentFromOutput(record.output ?? record.content);
-    const resultParts = richResult.flatMap<Record<string, unknown>>((part) => {
-      if (part.type === "text") {
-        const textPart = buildTextContent(part.text);
-        return textPart ? [textPart] : [];
-      }
-      const imagePart = buildImageContent(part);
-      return imagePart ? [imagePart] : [];
-    });
+    const resultParts = richResult.flatMap<Interactions.TextContent | Interactions.ImageContent>(
+      (part) => {
+        if (part.type === "text") {
+          const textPart = buildTextContent(part.text);
+          return textPart ? [textPart] : [];
+        }
+        const imagePart = buildImageContent(part);
+        return imagePart ? [imagePart] : [];
+      },
+    );
 
     const result =
       resultParts.length === 1 && resultParts[0]?.type === "text"
@@ -406,8 +415,14 @@ function googleAssistantContentBlockToModelPart(rawPart: unknown): Record<string
     };
   }
 
-  if (partType === "thinking" || partType === "reasoning") {
-    const thinking = asNonEmptyString(record.thinking) ?? asNonEmptyString(record.text);
+  if (partType === "thought" || partType === "thinking" || partType === "reasoning") {
+    const summary = Array.isArray(record.summary) ? record.summary : [];
+    const summaryText = summary
+      .map((entry) => asNonEmptyString(asRecord(entry)?.text))
+      .filter((entry): entry is string => !!entry)
+      .join("\n");
+    const thinking =
+      asNonEmptyString(record.thinking) ?? asNonEmptyString(record.text) ?? summaryText;
     if (!thinking) return null;
 
     const signature = getGoogleThoughtSignature(record);
@@ -420,7 +435,7 @@ function googleAssistantContentBlockToModelPart(rawPart: unknown): Record<string
     };
   }
 
-  if (partType === "toolCall" || partType === "tool-call") {
+  if (partType === "function_call" || partType === "toolCall" || partType === "tool-call") {
     const toolCallId = asNonEmptyString(record.id) ?? asNonEmptyString(record.toolCallId);
     const toolName = asNonEmptyString(record.name) ?? asNonEmptyString(record.toolName);
     if (!toolCallId || !toolName) return null;
@@ -433,6 +448,46 @@ function googleAssistantContentBlockToModelPart(rawPart: unknown): Record<string
       toolCallId,
       toolName,
       input,
+      ...(signature ? { thoughtSignature: signature } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
+    };
+  }
+
+  if (partType && isNativeGoogleToolCallContentType(partType)) {
+    const toolCallId = asNonEmptyString(record.id) ?? asNonEmptyString(record.toolCallId);
+    const toolName = nativeToolNameFromContentType(partType);
+    if (!toolCallId || !toolName) return null;
+
+    const input = asRecord(record.arguments) ?? asRecord(record.input) ?? {};
+    const signature = getGoogleThoughtSignature(record);
+    const providerOptions = mergeGoogleThoughtProviderOptions(record, signature);
+    return {
+      type: "providerToolCall",
+      id: toolCallId,
+      name: toolName,
+      arguments: input,
+      ...(signature ? { thoughtSignature: signature } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
+    };
+  }
+
+  if (partType && isNativeGoogleToolResultContentType(partType)) {
+    const toolCallId =
+      asNonEmptyString(record.call_id) ??
+      asNonEmptyString(record.callId) ??
+      asNonEmptyString(record.toolCallId) ??
+      asNonEmptyString(record.id);
+    const toolName = nativeToolNameFromContentType(partType);
+    if (!toolCallId || !toolName) return null;
+
+    const signature = getGoogleThoughtSignature(record);
+    const providerOptions = mergeGoogleThoughtProviderOptions(record, signature);
+    return {
+      type: "providerToolResult",
+      callId: toolCallId,
+      name: toolName,
+      result: record.result,
+      ...(record.is_error === true || record.isError === true ? { isError: true } : {}),
       ...(signature ? { thoughtSignature: signature } : {}),
       ...(providerOptions ? { providerOptions } : {}),
     };
@@ -596,9 +651,20 @@ function isGoogleCodeExecutionContentType(contentType: unknown): boolean {
 
 function googleStreamEventContentType(event: Record<string, unknown>): string | undefined {
   return (
-    asNonEmptyString(asRecord(event.content)?.type) ??
-    asNonEmptyString(asRecord(event.delta)?.type)
+    asNonEmptyString(asRecord(event.content)?.type) ?? asNonEmptyString(asRecord(event.delta)?.type)
   );
+}
+
+function isGoogleToolChoiceType(value: unknown): value is Interactions.ToolChoiceType {
+  return value === "auto" || value === "any" || value === "none" || value === "validated";
+}
+
+function normalizeGoogleToolChoice(value: unknown): GoogleInteractionsToolChoice | undefined {
+  if (isGoogleToolChoiceType(value)) return value;
+  const record = asRecord(value);
+  return record && record.allowed_tools !== undefined
+    ? ({ allowed_tools: record.allowed_tools } as Interactions.ToolChoiceConfig)
+    : undefined;
 }
 
 function extractStringArray(value: unknown): string[] {
@@ -715,13 +781,16 @@ function ensureThinkingBlock(
 
 function convertToolsToInteractionsTools(
   tools: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  return tools.map((tool) => ({
-    type: "function",
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.parameters,
-  }));
+): Interactions.Tool[] {
+  return tools.map(
+    (tool) =>
+      ({
+        type: "function",
+        name: asNonEmptyString(tool.name),
+        description: asNonEmptyString(tool.description),
+        parameters: tool.parameters,
+      }) satisfies Interactions.Function,
+  );
 }
 
 function hasToolNamed(tools: Array<Record<string, unknown>>, name: string): boolean {
@@ -732,7 +801,7 @@ function canUseProviderNativeWebTools(tools: Array<Record<string, unknown>>): bo
   return hasToolNamed(tools, "webSearch") || hasToolNamed(tools, "webFetch");
 }
 
-function buildGoogleBuiltInTools(opts: GoogleNativeStepRequest): Array<Record<string, unknown>> {
+function buildGoogleBuiltInTools(opts: GoogleNativeStepRequest): Interactions.Tool[] {
   const allowProviderNativeWebTools = canUseProviderNativeWebTools(opts.tools);
   const nativeWebSearchEnabled =
     opts.streamOptions.nativeWebSearch === true && allowProviderNativeWebTools;
@@ -748,15 +817,16 @@ function buildGoogleBuiltInTools(opts: GoogleNativeStepRequest): Array<Record<st
 // Build request
 // ---------------------------------------------------------------------------
 
-export function buildGoogleNativeRequest(opts: GoogleNativeStepRequest): Record<string, unknown> {
+export function buildGoogleNativeRequest(
+  opts: GoogleNativeStepRequest,
+): Interactions.CreateModelInteractionParamsStreaming {
   const input = convertMessagesToInteractionsInput(opts.messages);
   const tools = [...convertToolsToInteractionsTools(opts.tools), ...buildGoogleBuiltInTools(opts)];
 
-  const generationConfig: Record<string, unknown> = {};
+  const generationConfig: Interactions.GenerationConfig = {};
 
-  const thinkingLevel = opts.streamOptions.thinkingLevel?.toLowerCase();
-  if (thinkingLevel && thinkingLevel !== "none") {
-    generationConfig.thinking_level = thinkingLevel;
+  if (opts.streamOptions.thinkingLevel) {
+    generationConfig.thinking_level = opts.streamOptions.thinkingLevel;
   }
   if (opts.streamOptions.thinkingSummaries) {
     generationConfig.thinking_summaries = opts.streamOptions.thinkingSummaries;
@@ -771,11 +841,12 @@ export function buildGoogleNativeRequest(opts: GoogleNativeStepRequest): Record<
   if (opts.streamOptions.maxOutputTokens !== undefined) {
     generationConfig.max_output_tokens = opts.streamOptions.maxOutputTokens;
   }
-  if (opts.streamOptions.toolChoice) {
-    generationConfig.tool_choice = opts.streamOptions.toolChoice;
+  const toolChoice = normalizeGoogleToolChoice(opts.streamOptions.toolChoice);
+  if (toolChoice) {
+    generationConfig.tool_choice = toolChoice;
   }
 
-  const request: Record<string, unknown> = {
+  const request: Interactions.CreateModelInteractionParamsStreaming = {
     model: opts.model.id,
     input,
     stream: true,
@@ -902,6 +973,11 @@ function processStreamEvent(
       if (signature) {
         block.thinkingSignature = signature;
       }
+      const summary = Array.isArray(content.summary) ? content.summary : [];
+      for (const entry of summary) {
+        const text = asNonEmptyString(asRecord(entry)?.text);
+        if (text) block.thinking += text;
+      }
     } else if (isNativeGoogleToolCallContentType(contentType)) {
       const name = nativeToolNameFromContentType(contentType);
       if (!name) return;
@@ -957,6 +1033,16 @@ function processStreamEvent(
           ? { annotations: mergeAnnotationArrays(undefined, delta.annotations) }
           : {}),
       });
+    } else if (deltaType === "text_annotation") {
+      const annotations = mergeAnnotationArrays(
+        existing?.type === "text" ? existing.annotations : undefined,
+        delta.annotations,
+      );
+      if (existing?.type === "text") {
+        existing.annotations = annotations;
+      } else if (annotations && annotations.length > 0) {
+        contentBlocks.set(index, { type: "text", text: "", annotations });
+      }
     } else if (deltaType === "function_call") {
       if (existing?.type === "toolCall") {
         const deltaName = asNonEmptyString(delta.name);
@@ -1095,7 +1181,15 @@ function mapGoogleEventToStreamParts(
     }
 
     if (contentType === "thought") {
-      return [{ type: "reasoning-start", id: streamIdForIndex(index) }];
+      const parts: Array<Record<string, unknown>> = [
+        { type: "reasoning-start", id: streamIdForIndex(index) },
+      ];
+      const summary = Array.isArray(content?.summary) ? content.summary : [];
+      for (const entry of summary) {
+        const text = asNonEmptyString(asRecord(entry)?.text);
+        if (text) parts.push({ type: "reasoning-delta", id: streamIdForIndex(index), text });
+      }
+      return parts;
     }
 
     if (contentType === "function_call") {
@@ -1243,10 +1337,10 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
   const request = buildGoogleNativeRequest(opts);
 
   // Create streaming interaction
-  const stream = await client.create({
-    ...request,
-    stream: true,
-  } as Interactions.CreateModelInteractionParamsStreaming);
+  const stream = await client.create(
+    request,
+    opts.streamOptions.signal ? { signal: opts.streamOptions.signal } : undefined,
+  );
 
   const contentBlocks = new Map<number, AssistantContentBlock>();
   const providerToolCallsById = new Map<string, ProviderToolCallState>();

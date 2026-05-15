@@ -45,6 +45,89 @@ describe("googleInteractionsStreamParts", () => {
     });
   });
 
+  test("preserves SDK text_annotation deltas on final text-end parts", () => {
+    const contentBlocks = new Map();
+    const providerToolCallsById = new Map();
+
+    processGoogleInteractionsStreamEvent(
+      {
+        event_type: "content.start",
+        index: 0,
+        content: { type: "text" },
+      },
+      contentBlocks,
+      providerToolCallsById,
+    );
+    processGoogleInteractionsStreamEvent(
+      {
+        event_type: "content.delta",
+        index: 0,
+        delta: { type: "text", text: "Cited answer" },
+      },
+      contentBlocks,
+      providerToolCallsById,
+    );
+    processGoogleInteractionsStreamEvent(
+      {
+        event_type: "content.delta",
+        index: 0,
+        delta: {
+          type: "text_annotation",
+          annotations: [{ type: "url_citation", url: "https://example.com" }],
+        },
+      },
+      contentBlocks,
+      providerToolCallsById,
+    );
+
+    expect(contentBlocks.get(0)).toEqual({
+      type: "text",
+      text: "Cited answer",
+      annotations: [{ type: "url_citation", url: "https://example.com" }],
+    });
+    expect(
+      mapGoogleInteractionsEventToStreamParts(
+        { event_type: "content.stop", index: 0 },
+        contentBlocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      {
+        type: "text-end",
+        id: "s0",
+        annotations: [{ type: "url_citation", url: "https://example.com" }],
+      },
+    ]);
+  });
+
+  test("emits thought summaries included on SDK content.start blocks", () => {
+    const contentBlocks = new Map();
+    const providerToolCallsById = new Map();
+    const startEvent = {
+      event_type: "content.start",
+      index: 0,
+      content: {
+        type: "thought",
+        signature: "sig_start",
+        summary: [{ type: "text", text: "Initial reasoning." }],
+      },
+    };
+
+    processGoogleInteractionsStreamEvent(startEvent, contentBlocks, providerToolCallsById);
+
+    expect(contentBlocks.get(0)).toEqual({
+      type: "thinking",
+      thinking: "Initial reasoning.",
+      thinkingSignature: "sig_start",
+    });
+    expect(
+      mapGoogleInteractionsEventToStreamParts(startEvent, contentBlocks, providerToolCallsById),
+    ).toEqual([
+      { type: "reasoning-start", id: "s0" },
+      { type: "reasoning-delta", id: "s0", text: "Initial reasoning." },
+    ]);
+  });
+
   test("keeps the first emitted function_call id stable during replay projection", () => {
     const contentBlocks = new Map();
     const providerToolCallsById = new Map();
