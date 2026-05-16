@@ -2,11 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["expo-env.d.ts", "src", "modules", ".expo/types/**/*.ts"]
+  "include": ["expo-env.d.ts", "src", "modules", ".expo/types/**/*.ts"],
+  "exclude": ["modules/remodex-secure-transport"]
 }

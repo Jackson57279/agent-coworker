@@ -6,13 +6,14 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#171d13"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "co.weinbach.cowork.mobile",
@@ -22,15 +23,23 @@
     },
     "android": {
       "package": "co.weinbach.cowork.mobile",
-      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#171d13"
       },
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
-    "plugins": ["expo-router", "expo-dev-client", "expo-camera", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      "expo-camera",
+      "expo-secure-store",
+      "expo-font",
+      "expo-image"
+    ],
     "experiments": {
       "typedRoutes": true
     }
