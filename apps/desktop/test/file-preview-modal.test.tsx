@@ -54,6 +54,9 @@ const docxPreviewModule = await import("../src/lib/docxPreview");
 spyOn(docxPreviewModule, "loadDocxPreviewLayout").mockImplementation(loadDocxPreviewLayoutMock);
 
 const { useAppStore } = await import("../src/app/store");
+const { reactivateWorkspaceJsonRpcSocketState } = await import(
+  "../src/app/store.helpers/jsonRpcSocket"
+);
 const { RUNTIME } = await import("../src/app/store.helpers/runtimeState");
 const { FilePreviewModal } = await import("../src/ui/FilePreviewModal");
 
@@ -71,6 +74,7 @@ function setupPreviewJsdom() {
 
 function resetAppStore() {
   const state = useAppStore.getState();
+  reactivateWorkspaceJsonRpcSocketState("ws-1");
   RUNTIME.jsonRpcSockets.clear();
   RUNTIME.jsonRpcSockets.set("ws-1", {
     readyPromise: Promise.resolve(),
@@ -361,6 +365,10 @@ describe("file preview modal", () => {
       });
 
       const doc = harness.dom.window.document;
+      await waitForUi(
+        () =>
+          requestMock.mock.calls.length > 0 && doc.body.textContent?.includes("Revenue") === true,
+      );
       expect(readFileForPreviewMock).not.toHaveBeenCalled();
       expect(requestMock.mock.calls[0]?.[0]).toBe("cowork/workspace/spreadsheet/preview");
       expect(requestMock.mock.calls[0]?.[1]).toMatchObject({

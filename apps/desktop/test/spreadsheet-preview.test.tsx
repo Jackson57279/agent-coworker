@@ -1,15 +1,23 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import { setupJsdom } from "./jsdomHarness";
 
 const { useAppStore } = await import("../src/app/store");
+const { reactivateWorkspaceJsonRpcSocketState } = await import(
+  "../src/app/store.helpers/jsonRpcSocket"
+);
 const { RUNTIME } = await import("../src/app/store.helpers/runtimeState");
 const { SpreadsheetPreview } = await import("../src/ui/SpreadsheetPreview");
 
-function resetAppStore(sendMessageMock = mock(async () => {})) {
+type AppStoreState = ReturnType<typeof useAppStore.getState>;
+
+const originalSendMessage = useAppStore.getState().sendMessage;
+
+function resetAppStore(sendMessage?: AppStoreState["sendMessage"]) {
   const state = useAppStore.getState();
+  reactivateWorkspaceJsonRpcSocketState("ws-1");
   RUNTIME.jsonRpcSockets.clear();
   useAppStore.setState({
     ...state,
@@ -34,8 +42,9 @@ function resetAppStore(sendMessageMock = mock(async () => {})) {
         serverUrl: "ws://mock",
       },
     },
-    sendMessage: sendMessageMock,
-  } as Partial<ReturnType<typeof useAppStore.getState>>);
+    filePreview: null,
+    sendMessage: sendMessage ?? originalSendMessage,
+  } as Partial<AppStoreState>);
 }
 
 async function flushUi() {
@@ -57,11 +66,16 @@ describe("SpreadsheetPreview", () => {
     resetAppStore();
   });
 
+  afterEach(() => {
+    RUNTIME.jsonRpcSockets.clear();
+    useAppStore.setState({ sendMessage: originalSendMessage } as Partial<AppStoreState>);
+  });
+
   test.serial(
     "renders workbook controls, search, cell metadata, and agent edit prompts",
     async () => {
       const harness = setupJsdom({ includeAnimationFrame: true });
-      const sendMessageMock = mock(async () => {});
+      const sendMessageMock = mock(async () => true);
       resetAppStore(sendMessageMock);
 
       try {
@@ -161,7 +175,7 @@ describe("SpreadsheetPreview", () => {
         expect(doc.body.textContent).toContain("Number format: $0.00");
 
         const promptInput = doc.querySelector<HTMLInputElement>(
-          "input[placeholder='Ask model to edit this spreadsheet...']",
+          "input[placeholder='Ask agent to edit this file...']",
         );
         if (!promptInput) throw new Error("missing agent prompt input");
         await act(async () => {

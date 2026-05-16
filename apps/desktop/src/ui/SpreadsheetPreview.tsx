@@ -494,7 +494,7 @@ ${instructions}`;
                 void sendEditPrompt();
               }
             }}
-            placeholder="Ask model to edit this spreadsheet..."
+            placeholder="Ask agent to edit this file..."
             className="h-10 flex-1 border-none bg-transparent pl-3 pr-10 text-sm shadow-none focus-visible:ring-0"
           />
           <Button
