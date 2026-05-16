@@ -1,5 +1,6 @@
 import { JSONRPC_ERROR_CODES } from "../protocol";
 import { jsonRpcWorkspaceRequestSchemas } from "../schema.workspace";
+import { previewSpreadsheetFile } from "../../spreadsheetPreview";
 import type { JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
 
 export function createWorkspaceRouteHandlers(
@@ -50,6 +51,36 @@ export function createWorkspaceRouteHandlers(
         ),
         state,
       });
+    },
+
+    "cowork/workspace/spreadsheet/preview": async (ws, message) => {
+      const parsed = jsonRpcWorkspaceRequestSchemas[
+        "cowork/workspace/spreadsheet/preview"
+      ].safeParse(message.params);
+      if (!parsed.success) {
+        const detail = parsed.error.issues[0]?.message;
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: detail ? `${message.method}: ${detail}` : `${message.method}: invalid params`,
+        });
+        return;
+      }
+
+      try {
+        const cwd = context.utils.resolveWorkspacePath(parsed.data, message.method);
+        const result = await previewSpreadsheetFile({
+          cwd,
+          filePath: parsed.data.path,
+          ...(parsed.data.sheetName ? { sheetName: parsed.data.sheetName } : {}),
+          ...(parsed.data.viewport ? { viewport: parsed.data.viewport } : {}),
+        });
+        context.jsonrpc.sendResult(ws, message.id, result);
+      } catch (error) {
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
   };
 }

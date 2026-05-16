@@ -181,6 +181,58 @@ describe("server JSON-RPC flows", () => {
     }
   });
 
+  test("workspace spreadsheet preview returns viewport data and rejects path escapes", async () => {
+    const tmpDir = await makeTmpProject();
+    const csvPath = path.join(tmpDir, "large.csv");
+    const lines = ["name,value"];
+    for (let i = 0; i < 240; i++) {
+      lines.push(`row ${i},${i}`);
+    }
+    await fs.writeFile(csvPath, `${lines.join("\n")}\n`, "utf8");
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const preview = await rpc.sendRequest("cowork/workspace/spreadsheet/preview", {
+        cwd: tmpDir,
+        path: csvPath,
+        viewport: { rowCount: 5, colCount: 2 },
+      });
+
+      expect(preview.result.ok).toBe(true);
+      expect(preview.result.preview.kind).toBe("csv");
+      expect(preview.result.preview.viewport.rowCount).toBe(5);
+      expect(preview.result.preview.viewport.truncatedRows).toBe(true);
+      expect(preview.result.preview.cells[1][0].value).toBe("row 0");
+
+      const outsideDir = await makeTmpProject("agent-harness-spreadsheet-outside-");
+      const outsidePath = path.join(outsideDir, "outside.csv");
+      await fs.writeFile(outsidePath, "a,b\n1,2\n", "utf8");
+      const escaped = await rpc.sendRequest("cowork/workspace/spreadsheet/preview", {
+        cwd: tmpDir,
+        path: outsidePath,
+      });
+      expect(escaped.error.message).toContain("outside the workspace root");
+
+      const linkPath = path.join(tmpDir, "linked.csv");
+      try {
+        await fs.symlink(outsidePath, linkPath);
+        const linked = await rpc.sendRequest("cowork/workspace/spreadsheet/preview", {
+          cwd: tmpDir,
+          path: linkPath,
+        });
+        expect(linked.error.message).toContain("outside the workspace root");
+      } catch {
+        // Symlink creation may be unavailable in some environments.
+      } finally {
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   test("thread/list includes wire counts for live and persisted threads", async () => {
     const tmpDir = await makeTmpProject();
     let threadId = "";

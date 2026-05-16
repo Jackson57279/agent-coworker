@@ -4,6 +4,7 @@ export type FilePreviewKind =
   | "pdf"
   | "image"
   | "docx"
+  | "csv"
   | "xlsx"
   | "unsupported"
   | "unknown";
@@ -71,6 +72,7 @@ export function getFilePreviewKind(filePath: string): FilePreviewKind {
   if (MARKDOWN_EXT.has(ext)) return "markdown";
   if (ext === ".docx") return "docx";
   if (ext === ".doc") return "unsupported";
+  if (ext === ".csv") return "csv";
   if (ext === ".xlsx") return "xlsx";
   if (ext === ".pptx" || ext === ".ppt") return "unsupported";
   if (IMAGE_EXT.has(ext)) return "image";
