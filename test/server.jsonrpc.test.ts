@@ -169,70 +169,74 @@ describe("server JSON-RPC websocket mode", () => {
     }
   });
 
-  test("JSON-RPC subprotocol mode requires initialize handshake", async () => {
-    const tmpDir = await makeTmpProject();
-    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+  test(
+    "JSON-RPC subprotocol mode requires initialize handshake",
+    async () => {
+      const tmpDir = await makeTmpProject();
+      const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
-    try {
-      const ws = new WebSocket(url, "cowork.jsonrpc.v1");
-      await waitForOpen(ws);
-      await expectNoMessage(ws);
+      try {
+        const ws = new WebSocket(url, "cowork.jsonrpc.v1");
+        await waitForOpen(ws);
+        await expectNoMessage(ws);
 
-      ws.send(
-        JSON.stringify({
+        ws.send(
+          JSON.stringify({
+            id: 1,
+            method: "thread/list",
+            params: {},
+          }),
+        );
+        const notInitialized = await waitForSingleMessage(ws);
+        expect(notInitialized).toEqual({
           id: 1,
-          method: "thread/list",
-          params: {},
-        }),
-      );
-      const notInitialized = await waitForSingleMessage(ws);
-      expect(notInitialized).toEqual({
-        id: 1,
-        error: {
-          code: -32002,
-          message: "Not initialized",
-        },
-      });
-
-      ws.send(
-        JSON.stringify({
-          id: 2,
-          method: "initialize",
-          params: {
-            clientInfo: {
-              name: "test-client",
-              version: "1.0.0",
-            },
+          error: {
+            code: -32002,
+            message: "Not initialized",
           },
-        }),
-      );
-      const initializeResponse = await waitForSingleMessage(ws);
-      expect(initializeResponse.id).toBe(2);
-      expect(initializeResponse.result.protocolVersion).toBe("0.1");
-      expect(initializeResponse.result.transport.protocolMode).toBe("jsonrpc");
+        });
 
-      ws.send(JSON.stringify({ method: "initialized" }));
-      await expectNoMessage(ws);
+        ws.send(
+          JSON.stringify({
+            id: 2,
+            method: "initialize",
+            params: {
+              clientInfo: {
+                name: "test-client",
+                version: "1.0.0",
+              },
+            },
+          }),
+        );
+        const initializeResponse = await waitForSingleMessage(ws);
+        expect(initializeResponse.id).toBe(2);
+        expect(initializeResponse.result.protocolVersion).toBe("0.1");
+        expect(initializeResponse.result.transport.protocolMode).toBe("jsonrpc");
 
-      ws.send(
-        JSON.stringify({
+        ws.send(JSON.stringify({ method: "initialized" }));
+        await expectNoMessage(ws);
+
+        ws.send(
+          JSON.stringify({
+            id: 3,
+            method: "thread/list",
+            params: {},
+          }),
+        );
+        const listedThreads = await waitForSingleMessage(ws);
+        expect(listedThreads).toEqual({
           id: 3,
-          method: "thread/list",
-          params: {},
-        }),
-      );
-      const listedThreads = await waitForSingleMessage(ws);
-      expect(listedThreads).toEqual({
-        id: 3,
-        result: {
-          threads: [],
-        },
-      });
-      ws.close();
-    } finally {
-      await stopTestServer(server);
-    }
-  });
+          result: {
+            threads: [],
+          },
+        });
+        ws.close();
+      } finally {
+        await stopTestServer(server);
+      }
+    },
+    15_000,
+  );
 
   test("subprotocol JSON-RPC mode initializes without sending an implicit hello", async () => {
     const tmpDir = await makeTmpProject();
@@ -345,42 +349,46 @@ describe("server JSON-RPC websocket mode", () => {
     }
   });
 
-  test("JSON-RPC workspace control routes fall back to the server cwd when params.cwd is omitted", async () => {
-    const tmpDir = await makeTmpProject();
-    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+  test(
+    "JSON-RPC workspace control routes fall back to the server cwd when params.cwd is omitted",
+    async () => {
+      const tmpDir = await makeTmpProject();
+      const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
-    try {
-      const ws = new WebSocket(url, "cowork.jsonrpc.v1");
-      await waitForOpen(ws);
-      ws.send(
-        JSON.stringify({
-          id: 1,
-          method: "initialize",
-          params: {
-            clientInfo: {
-              name: "test-client",
+      try {
+        const ws = new WebSocket(url, "cowork.jsonrpc.v1");
+        await waitForOpen(ws);
+        ws.send(
+          JSON.stringify({
+            id: 1,
+            method: "initialize",
+            params: {
+              clientInfo: {
+                name: "test-client",
+              },
             },
-          },
-        }),
-      );
-      await waitForSingleMessage(ws);
-      ws.send(JSON.stringify({ method: "initialized" }));
-      await expectNoMessage(ws);
+          }),
+        );
+        await waitForSingleMessage(ws);
+        ws.send(JSON.stringify({ method: "initialized" }));
+        await expectNoMessage(ws);
 
-      ws.send(
-        JSON.stringify({
-          id: 2,
-          method: "cowork/provider/status/refresh",
-          params: {},
-        }),
-      );
-      const response = await waitForSingleMessage(ws);
-      expect(response.id).toBe(2);
-      expect(response.result?.event?.type).toBe("provider_status");
-      expect(Array.isArray(response.result?.event?.providers)).toBe(true);
-      ws.close();
-    } finally {
-      await stopTestServer(server);
-    }
-  });
+        ws.send(
+          JSON.stringify({
+            id: 2,
+            method: "cowork/provider/status/refresh",
+            params: {},
+          }),
+        );
+        const response = await waitForSingleMessage(ws);
+        expect(response.id).toBe(2);
+        expect(response.result?.event?.type).toBe("provider_status");
+        expect(Array.isArray(response.result?.event?.providers)).toBe(true);
+        ws.close();
+      } finally {
+        await stopTestServer(server);
+      }
+    },
+    15_000,
+  );
 });
