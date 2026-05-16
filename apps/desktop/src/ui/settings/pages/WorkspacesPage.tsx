@@ -37,6 +37,7 @@ import {
 import { useAppStore } from "../../../app/store";
 import type { PersistedProviderStatus } from "../../../app/types";
 import {
+  isOneOffChatWorkspace,
   normalizeWorkspaceUserProfile,
   type WorkspaceRecord,
   type WorkspaceUserProfile,
@@ -239,15 +240,23 @@ function hasConfiguredProviderStatus(
 
 function useSharedUpdateWorkspaceDefaults() {
   const perWorkspaceSettings = useAppStore((s) => s.perWorkspaceSettings);
-  const workspaces = useAppStore((s) => s.workspaces);
+  const allWorkspaces = useAppStore((s) => s.workspaces);
+  const workspaces = useMemo(
+    () => allWorkspaces.filter((workspace) => !isOneOffChatWorkspace(workspace)),
+    [allWorkspaces],
+  );
   const rawUpdate = useAppStore((s) => s.updateWorkspaceDefaults);
+  const projectWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => !isOneOffChatWorkspace(workspace)),
+    [workspaces],
+  );
   type WorkspaceDefaultsPatch = Parameters<typeof rawUpdate>[1];
   return useMemo(() => {
     if (perWorkspaceSettings) return rawUpdate;
     return async (_workspaceId: string, patch: WorkspaceDefaultsPatch) => {
-      await Promise.all(workspaces.map((ws) => rawUpdate(ws.id, patch)));
+      await Promise.all(projectWorkspaces.map((ws) => rawUpdate(ws.id, patch)));
     };
-  }, [perWorkspaceSettings, workspaces, rawUpdate]);
+  }, [perWorkspaceSettings, projectWorkspaces, rawUpdate]);
 }
 
 type OpenAiCompatibleModelSettingsCardProps = {

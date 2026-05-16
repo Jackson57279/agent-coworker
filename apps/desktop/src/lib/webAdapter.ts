@@ -6,6 +6,7 @@ import { hydrateTranscriptSnapshot } from "../app/transcriptHydration";
 import type { HydratedTranscriptSnapshot, PersistedState, TranscriptEvent } from "../app/types";
 import type {
   ContextMenuItem,
+  CreateOneOffChatWorkspaceOutput,
   DesktopApi,
   DesktopMenuCommand,
   ExplorerEntry,
@@ -435,6 +436,17 @@ export function createWebAdapter(): DesktopApi {
 
     async stopWorkspaceServer(opts): Promise<void> {
       await maybePostWebJson<void>("/cowork/desktop/workspace/stop", opts);
+    },
+
+    async createOneOffChatWorkspace(opts): Promise<CreateOneOffChatWorkspaceOutput> {
+      const workspace = await maybePostWebJson<CreateOneOffChatWorkspaceOutput>(
+        "/cowork/desktop/one-off-chat/workspace",
+        opts ?? {},
+      );
+      if (workspace) {
+        return workspace;
+      }
+      throw new Error("One-off chats require the Cowork desktop service.");
     },
 
     async loadState(): Promise<PersistedState> {

@@ -38,6 +38,31 @@ afterEach(async () => {
 });
 
 describe("web desktop routes", () => {
+  test("desktop service route creates one-off chat workspaces", async () => {
+    const workspace = await makeTempDir("cowork-web-desktop-one-off-route-");
+    const service = {
+      getWorkspaceRoots: async () => [workspace],
+      createOneOffChatWorkspace: async (opts?: { titleHint?: string }) => ({
+        name: opts?.titleHint ?? "New chat",
+        path: path.join(workspace, "created-chat"),
+      }),
+    };
+
+    const response = await handleWebDesktopRoute(
+      new Request("http://localhost/cowork/desktop/one-off-chat/workspace", {
+        method: "POST",
+        body: JSON.stringify({ titleHint: "Scratch pad" }),
+      }),
+      { cwd: workspace, desktopService: service as any },
+    );
+
+    expect(response).not.toBeNull();
+    expect(await readJson(response!)).toEqual({
+      name: "Scratch pad",
+      path: path.join(workspace, "created-chat"),
+    });
+  });
+
   test("desktop service exposes persisted workspaces and allows fs access across them", async () => {
     const userDataDir = await makeTempDir("cowork-web-desktop-userdata-");
     const workspaceA = await makeTempDir("cowork-web-desktop-ws-a-");

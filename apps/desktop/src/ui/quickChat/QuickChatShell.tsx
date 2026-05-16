@@ -49,7 +49,7 @@ export function QuickChatShell({ init, ready, startupError }: QuickChatShellProp
   }, [ready, requestedThreadId, selectThread, selectedThreadId, startupError, threads]);
 
   useEffect(() => {
-    if (!ready || startupError || workspaces.length === 0) {
+    if (!ready || startupError) {
       return;
     }
     if (requestedThreadId && threads.some((thread) => thread.id === requestedThreadId)) {
@@ -75,7 +75,6 @@ export function QuickChatShell({ init, ready, startupError }: QuickChatShellProp
     selectedThreadId,
     startupError,
     threads,
-    workspaces.length,
   ]);
 
   useEffect(() => {

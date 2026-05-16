@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
 import net from "node:net";
+import path from "node:path";
 import { WebSocket as NodeWebSocket } from "ws";
 
 import { startAgentServer } from "../src/server/startServer";
@@ -378,6 +380,54 @@ describe("server JSON-RPC websocket mode", () => {
       expect(response.id).toBe(2);
       expect(response.result?.event?.type).toBe("provider_status");
       expect(Array.isArray(response.result?.event?.providers)).toBe(true);
+      ws.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  }, 15_000);
+
+  test("thread/list isolates one-off chat cwd histories", async () => {
+    const tmpDir = await makeTmpProject();
+    const chatA = path.join(tmpDir, ".cowork", "chats", "20260516-chat-a");
+    const chatB = path.join(tmpDir, ".cowork", "chats", "20260516-chat-b");
+    await fs.mkdir(chatA, { recursive: true });
+    await fs.mkdir(chatB, { recursive: true });
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const ws = new WebSocket(url, "cowork.jsonrpc.v1");
+      await waitForOpen(ws);
+      ws.send(
+        JSON.stringify({
+          id: 1,
+          method: "initialize",
+          params: { clientInfo: { name: "test-client" } },
+        }),
+      );
+      await waitForSingleMessage(ws);
+      ws.send(JSON.stringify({ method: "initialized" }));
+      await expectNoMessage(ws);
+
+      ws.send(JSON.stringify({ id: 2, method: "thread/start", params: { cwd: chatA } }));
+      const startedA = await waitForSingleMessage(ws);
+      await waitForSingleMessage(ws);
+      ws.send(JSON.stringify({ id: 3, method: "thread/start", params: { cwd: chatB } }));
+      const startedB = await waitForSingleMessage(ws);
+      await waitForSingleMessage(ws);
+
+      ws.send(JSON.stringify({ id: 4, method: "thread/list", params: { cwd: chatA } }));
+      const listedA = await waitForSingleMessage(ws);
+      ws.send(JSON.stringify({ id: 5, method: "thread/list", params: { cwd: chatB } }));
+      const listedB = await waitForSingleMessage(ws);
+
+      expect(listedA.result.threads.map((thread: { id: string }) => thread.id)).toEqual([
+        startedA.result.thread.id,
+      ]);
+      expect(listedB.result.threads.map((thread: { id: string }) => thread.id)).toEqual([
+        startedB.result.thread.id,
+      ]);
+      expect(startedA.result.thread.cwd).toBe(chatA);
+      expect(startedB.result.thread.cwd).toBe(chatB);
       ws.close();
     } finally {
       await stopTestServer(server);

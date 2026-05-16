@@ -14,6 +14,15 @@ export type StartWorkspaceServerInput = {
   featureFlags?: DesktopFeatureFlagOverrides;
 };
 
+export type CreateOneOffChatWorkspaceInput = {
+  titleHint?: string;
+};
+
+export type CreateOneOffChatWorkspaceOutput = {
+  name: string;
+  path: string;
+};
+
 export type StopWorkspaceServerInput = {
   workspaceId: string;
 };
@@ -299,6 +308,9 @@ export interface DesktopApi {
   readonly features: DesktopFeatureFlags;
   readonly isPackaged?: boolean;
   resolveDesktopFeatureFlags(overrides?: DesktopFeatureFlagOverrides): DesktopFeatureFlags;
+  createOneOffChatWorkspace(
+    opts?: CreateOneOffChatWorkspaceInput,
+  ): Promise<CreateOneOffChatWorkspaceOutput>;
   startWorkspaceServer(opts: StartWorkspaceServerInput): Promise<{ url: string }>;
   stopWorkspaceServer(opts: StopWorkspaceServerInput): Promise<void>;
   startMobileRelay(opts: MobileRelayStartInput): Promise<MobileRelayBridgeState>;
@@ -355,6 +367,7 @@ export interface DesktopApi {
 }
 
 export const DESKTOP_IPC_CHANNELS = {
+  createOneOffChatWorkspace: "desktop:createOneOffChatWorkspace",
   startWorkspaceServer: "desktop:startWorkspaceServer",
   stopWorkspaceServer: "desktop:stopWorkspaceServer",
   mobileRelayStart: "desktop:mobileRelayStart",

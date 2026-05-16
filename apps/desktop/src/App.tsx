@@ -5,6 +5,7 @@ import { resolvePluginCatalogWorkspaceSelection } from "./app/pluginManagement";
 import { hasGoogleApiKeyForResearch } from "./app/researchAvailability";
 import { useAppStore } from "./app/store";
 import { disposeAllJsonRpcState } from "./app/store.helpers";
+import { isOneOffChatWorkspace } from "./app/types";
 import type { DesktopMenuCommand, SystemAppearance } from "./lib/desktopApi";
 import {
   getPlatformChrome,
@@ -143,20 +144,25 @@ const ChatShell = memo(function ChatShell({
     }
     return workspaces.find((workspace) => workspace.id === activeThread.workspaceId) ?? null;
   }, [activeThread, workspaces]);
+  const projectWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => !isOneOffChatWorkspace(workspace)),
+    [workspaces],
+  );
   const pluginSelection = useMemo(
     () =>
       resolvePluginCatalogWorkspaceSelection({
-        workspaces,
+        workspaces: projectWorkspaces,
         selectedWorkspaceId,
         pluginManagementWorkspaceId,
         pluginManagementMode,
       }),
-    [pluginManagementMode, pluginManagementWorkspaceId, selectedWorkspaceId, workspaces],
+    [pluginManagementMode, pluginManagementWorkspaceId, projectWorkspaces, selectedWorkspaceId],
   );
   const pluginManagementWorkspace = useMemo(
     () =>
-      workspaces.find((workspace) => workspace.id === pluginSelection.displayWorkspaceId) ?? null,
-    [pluginSelection.displayWorkspaceId, workspaces],
+      projectWorkspaces.find((workspace) => workspace.id === pluginSelection.displayWorkspaceId) ??
+      null,
+    [pluginSelection.displayWorkspaceId, projectWorkspaces],
   );
   const runtime = selectedThreadId ? threadRuntimeById[selectedThreadId] : null;
   const busy = runtime?.busy === true;
@@ -220,7 +226,7 @@ const ChatShell = memo(function ChatShell({
       <AppTopBar
         busy={effectiveView === "chat" ? busy : false}
         onToggleSidebar={toggleSidebar}
-        onNewChat={() => void newThread({ workspaceId: selectedWorkspaceId ?? undefined })}
+        onNewChat={() => void newThread()}
         sidebarCollapsed={sidebarCollapsed}
         sidebarWidth={sidebarWidth}
         contextSidebarCollapsed={contextSidebarCollapsed}
@@ -235,7 +241,7 @@ const ChatShell = memo(function ChatShell({
         managementMode={effectiveView === "skills" ? "plugins" : "thread"}
         suppressThreadDetails={effectiveView === "research"}
         managementWorkspaceId={pluginSelection.displayWorkspaceId}
-        managementWorkspaces={workspaces.map((workspace) => ({
+        managementWorkspaces={projectWorkspaces.map((workspace) => ({
           id: workspace.id,
           name: workspace.name,
         }))}

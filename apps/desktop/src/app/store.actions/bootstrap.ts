@@ -6,6 +6,7 @@ import {
   normalizeDesktopFeatureFlagOverrides,
 } from "../../../../../src/shared/featureFlags";
 import {
+  deleteTranscript,
   getDesktopFeatureFlags,
   getUpdateState,
   isPackagedDesktopApp,
@@ -56,6 +57,7 @@ import {
   type CachedDesktopUiState,
   type CachedSessionSnapshot,
   normalizeDesktopSettings,
+  normalizeSidebarSectionOrder,
   normalizeWorkspaceUserProfile,
   type PersistedOnboardingState,
   type PersistedProviderState,
@@ -132,7 +134,8 @@ function normalizeKnownSettingsPageId(value: unknown): SettingsPageId {
     value === "memory" ||
     value === "featureFlags" ||
     value === "updates" ||
-    value === "developer"
+    value === "developer" ||
+    value === "archivedChats"
     ? value
     : "providers";
 }
@@ -152,6 +155,7 @@ const normalizedSettingsPageSchema = z.preprocess(
     "featureFlags",
     "updates",
     "developer",
+    "archivedChats",
   ]),
 );
 const normalizedNullableSelectionSchema = z.preprocess(
@@ -172,6 +176,12 @@ const persistedWorkspaceSchema = z
     id: z.string(),
     name: z.string(),
     path: z.string(),
+    workspaceKind: z
+      .preprocess(
+        (value) => (value === "oneOffChat" ? "oneOffChat" : "project"),
+        z.enum(["project", "oneOffChat"]),
+      )
+      .optional(),
     createdAt: z.string(),
     lastOpenedAt: z.string(),
     wsProtocol: z.preprocess(() => "jsonrpc", z.literal("jsonrpc")),
@@ -236,6 +246,7 @@ const persistedWorkspaceSchema = z
       id: workspace.id,
       name: workspace.name,
       path: workspace.path,
+      workspaceKind: workspace.workspaceKind ?? "project",
       createdAt: workspace.createdAt,
       lastOpenedAt: workspace.lastOpenedAt,
       wsProtocol: "jsonrpc",
@@ -273,6 +284,10 @@ const persistedThreadSchema = z
     draft: z
       .preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean())
       .optional(),
+    archived: z
+      .preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean())
+      .optional(),
+    archivedAt: z.string().optional(),
   })
   .passthrough()
   .transform((thread): ThreadRecord => {
@@ -290,6 +305,8 @@ const persistedThreadSchema = z
       lastEventSeq: thread.lastEventSeq,
       legacyTranscriptId: thread.legacyTranscriptId ?? (thread.id !== id ? thread.id : null),
       draft: thread.draft ?? false,
+      archived: thread.archived ?? false,
+      archivedAt: thread.archivedAt,
     };
   });
 
@@ -350,6 +367,15 @@ const persistedStateSchema = z
     ),
     desktopSettings: z
       .object({
+        archivedChatsAutoDeleteDays: z
+          .preprocess(
+            (value) =>
+              typeof value === "number" && Number.isFinite(value)
+                ? Math.max(0, Math.floor(value))
+                : 0,
+            z.number().int().nonnegative(),
+          )
+          .optional(),
         quickChat: z
           .object({
             iconEnabled: z
@@ -368,6 +394,12 @@ const persistedStateSchema = z
               )
               .optional(),
           })
+          .optional(),
+        sidebarSectionOrder: z
+          .preprocess(
+            (value) => normalizeSidebarSectionOrder(Array.isArray(value) ? value : undefined),
+            z.array(z.enum(["projects", "chats"])),
+          )
           .optional(),
       })
       .optional(),
@@ -694,8 +726,10 @@ export function createBootstrapActions(
   | "setShowHiddenFiles"
   | "setPerWorkspaceSettings"
   | "setQuickChatIconEnabled"
+  | "setArchivedChatsAutoDeleteDays"
   | "setQuickChatShortcutEnabled"
   | "setQuickChatShortcutAccelerator"
+  | "setSidebarSectionOrder"
   | "setDesktopFeatureFlagOverride"
   | "setUpdateState"
   | "checkForUpdates"
@@ -756,9 +790,41 @@ export function createBootstrapActions(
 
         const autoOpen = shouldAutoOpenOnboarding(onboardingOpts);
 
+        const resolvedDesktopSettings = normalizeDesktopSettings(state.desktopSettings);
+        const autoDeleteDays = resolvedDesktopSettings.archivedChatsAutoDeleteDays;
+        let finalThreads = state.threads;
+
+        if (autoDeleteDays && autoDeleteDays > 0) {
+          const nowMs = Date.now();
+          const thresholdMs = autoDeleteDays * 24 * 60 * 60 * 1000;
+          const remainingThreads: typeof state.threads = [];
+          for (const thread of state.threads) {
+            if (thread.archived && thread.archivedAt) {
+              const archivedTime = Date.parse(thread.archivedAt);
+              if (Number.isFinite(archivedTime) && nowMs - archivedTime > thresholdMs) {
+                const transcriptIds = [
+                  thread.legacyTranscriptId ?? null,
+                  thread.sessionId ?? null,
+                  thread.id,
+                ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+                for (const transcriptId of new Set(transcriptIds)) {
+                  try {
+                    await deleteTranscript({ threadId: transcriptId });
+                  } catch {
+                    // ignore
+                  }
+                }
+                continue;
+              }
+            }
+            remainingThreads.push(thread);
+          }
+          finalThreads = remainingThreads;
+        }
+
         set({
           workspaces: state.workspaces,
-          threads: state.threads,
+          threads: finalThreads,
           selectedWorkspaceId: ui.selectedWorkspaceId,
           selectedThreadId: ui.selectedThreadId,
           pluginManagementWorkspaceId: ui.pluginManagementWorkspaceId,
@@ -999,6 +1065,16 @@ export function createBootstrapActions(
       void persistNow(get);
     },
 
+    setArchivedChatsAutoDeleteDays: (days) => {
+      set((state) => ({
+        desktopSettings: {
+          ...state.desktopSettings,
+          archivedChatsAutoDeleteDays: days,
+        },
+      }));
+      void persistNow(get);
+    },
+
     setQuickChatShortcutEnabled: (enabled) => {
       set((state) => ({
         desktopSettings: {
@@ -1020,6 +1096,16 @@ export function createBootstrapActions(
             ...state.desktopSettings.quickChat,
             shortcutAccelerator: normalizeQuickChatShortcutAccelerator(accelerator),
           },
+        },
+      }));
+      void persistNow(get);
+    },
+
+    setSidebarSectionOrder: (orderedSections) => {
+      set((state) => ({
+        desktopSettings: {
+          ...state.desktopSettings,
+          sidebarSectionOrder: normalizeSidebarSectionOrder(orderedSections),
         },
       }));
       void persistNow(get);

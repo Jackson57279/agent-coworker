@@ -177,6 +177,15 @@ describe("settings nav (store)", () => {
       researchListError: null,
       researchSubscribedIds: [],
       researchExportPendingIds: [],
+      desktopSettings: {
+        quickChat: {
+          iconEnabled: true,
+          shortcutEnabled: false,
+          shortcutAccelerator: "CommandOrControl+Shift+Space",
+        },
+        archivedChatsAutoDeleteDays: 0,
+        sidebarSectionOrder: ["projects", "chats"],
+      },
       threads: [],
       threadRuntimeById: {},
       selectedThreadId: null,
@@ -496,6 +505,76 @@ describe("settings nav (store)", () => {
     expect(savedStates.at(-1)?.desktopSettings?.quickChat?.shortcutAccelerator).toBe("Alt+Space");
   });
 
+  test("setArchivedChatsAutoDeleteDays updates persisted settings", () => {
+    useAppStore.getState().setArchivedChatsAutoDeleteDays(30);
+    expect(useAppStore.getState().desktopSettings.archivedChatsAutoDeleteDays).toBe(30);
+    expect(savedStates.at(-1)?.desktopSettings?.archivedChatsAutoDeleteDays).toBe(30);
+  });
+
+  test("setSidebarSectionOrder normalizes and persists sidebar section order", () => {
+    useAppStore.getState().setSidebarSectionOrder(["chats", "projects"]);
+    expect(useAppStore.getState().desktopSettings.sidebarSectionOrder).toEqual([
+      "chats",
+      "projects",
+    ]);
+    expect(savedStates.at(-1)?.desktopSettings?.sidebarSectionOrder).toEqual([
+      "chats",
+      "projects",
+    ]);
+  });
+
+  test("archiveThread archives thread and clears selectedThreadId if active", async () => {
+    useAppStore.setState({
+      threads: [
+        {
+          id: "t-1",
+          workspaceId: "w-1",
+          title: "A thread",
+          createdAt: "2026-05-15T00:00:00.000Z",
+          lastMessageAt: "2026-05-15T00:00:00.000Z",
+          status: "active",
+          sessionId: null,
+          messageCount: 0,
+          lastEventSeq: 0,
+        },
+      ],
+      selectedThreadId: "t-1",
+    });
+
+    await useAppStore.getState().archiveThread("t-1");
+
+    const thread = useAppStore.getState().threads.find((t) => t.id === "t-1");
+    expect(thread?.archived).toBe(true);
+    expect(thread?.archivedAt).toBeDefined();
+    expect(useAppStore.getState().selectedThreadId).toBeNull();
+  });
+
+  test("restoreThread restores archived thread", async () => {
+    useAppStore.setState({
+      threads: [
+        {
+          id: "t-1",
+          workspaceId: "w-1",
+          title: "A thread",
+          createdAt: "2026-05-15T00:00:00.000Z",
+          lastMessageAt: "2026-05-15T00:00:00.000Z",
+          status: "active",
+          sessionId: null,
+          messageCount: 0,
+          lastEventSeq: 0,
+          archived: true,
+          archivedAt: "2026-05-15T00:00:00.000Z",
+        },
+      ],
+    });
+
+    await useAppStore.getState().restoreThread("t-1");
+
+    const thread = useAppStore.getState().threads.find((t) => t.id === "t-1");
+    expect(thread?.archived).toBe(false);
+    expect(thread?.archivedAt).toBeUndefined();
+  });
+
   test("openSkills shows guidance when no workspace is available", async () => {
     await useAppStore.getState().openSkills();
     expect(useAppStore.getState().view).toBe("chat");
@@ -568,7 +647,7 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().researchListError).toBeNull();
   });
 
-  test("newThread falls back to first workspace when none is selected", async () => {
+  test("newThread creates a one-off chat when none is selected", async () => {
     useAppStore.setState({
       workspaces: [
         {
@@ -587,12 +666,20 @@ describe("settings nav (store)", () => {
 
     await useAppStore.getState().newThread();
     const state = useAppStore.getState();
+    const chatWorkspace = state.workspaces.find(
+      (workspace) => workspace.workspaceKind === "oneOffChat",
+    );
 
-    expect(state.selectedWorkspaceId).toBe("ws-1");
+    expect(chatWorkspace).toBeDefined();
+    expect(state.selectedWorkspaceId).toBe(chatWorkspace?.id);
+    expect(state.workspaces.find((workspace) => workspace.id === "ws-1")).toBeDefined();
     expect(state.threads.length).toBe(1);
-    expect(state.threads[0]?.workspaceId).toBe("ws-1");
+    expect(state.threads[0]?.workspaceId).toBe(chatWorkspace?.id);
     expect(state.selectedThreadId).toBe(state.threads[0]?.id);
     expect(state.threads[0]?.draft).toBe(true);
+    expect(savedStates.at(-1)?.workspaces?.some((workspace: any) => workspace.workspaceKind === "oneOffChat")).toBe(
+      true,
+    );
     expect(savedStates.at(-1)?.threads).toEqual([]);
     expect(startWorkspaceServerCalls).toBe(0);
     expect(agentSocketConnectCalls).toBe(0);

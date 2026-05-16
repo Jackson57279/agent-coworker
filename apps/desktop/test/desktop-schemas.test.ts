@@ -84,11 +84,13 @@ describe("desktop persisted-state schema defaults", () => {
       developerMode: true,
       showHiddenFiles: true,
       desktopSettings: {
+        archivedChatsAutoDeleteDays: 14,
         quickChat: {
           iconEnabled: false,
           shortcutEnabled: true,
           shortcutAccelerator: "Alt+Space",
         },
+        sidebarSectionOrder: ["chats", "projects"],
       },
     });
 
@@ -108,6 +110,8 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.desktopSettings?.quickChat?.iconEnabled).toBe(false);
     expect(parsed.desktopSettings?.quickChat?.shortcutEnabled).toBe(true);
     expect(parsed.desktopSettings?.quickChat?.shortcutAccelerator).toBe("Alt+Space");
+    expect(parsed.desktopSettings?.archivedChatsAutoDeleteDays).toBe(14);
+    expect(parsed.desktopSettings?.sidebarSectionOrder).toEqual(["chats", "projects"]);
   });
 
   test("accepts updater state payloads", () => {

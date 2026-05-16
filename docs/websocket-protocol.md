@@ -695,6 +695,12 @@ To resume a thread, call `thread/resume` with `threadId` and optional `afterSeq`
 
 The desktop UI can create draft threads with local IDs before the first JSON-RPC `thread/start` call. Once `thread/start` returns the canonical thread id, the desktop client migrates the local record to that id while retaining `legacyTranscriptId` only for on-disk transcript lookup during desktop state migration.
 
+### One-Off Chat Workspaces
+
+The server does not expose a separate one-off chat protocol in v1. Desktop clients model a one-off chat as a normal cwd-backed workspace whose directory lives under `~/.cowork/chats/<timestamp>-<slug>-<id>`, then use the existing `thread/*`, `turn/*`, and `cowork/*` methods against that cwd. Client state should mark those hidden workspace records with `workspaceKind: "oneOffChat"` and keep regular project workspaces as `workspaceKind: "project"`; legacy records without a kind are projects.
+
+Global `New Chat` actions should create a fresh one-off chat workspace and one draft thread. Project-scoped actions, such as `New chat in project`, should reuse the chosen project workspace and then run the same JSON-RPC thread flow.
+
 ## Validation Rules
 
 All JSON-RPC messages are validated before dispatch:

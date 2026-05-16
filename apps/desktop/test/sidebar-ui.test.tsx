@@ -141,6 +141,7 @@ function makeWorkspace(overrides: Record<string, unknown> = {}) {
     id: "ws-1",
     name: "Agent Coworker",
     path: "/tmp/agent-coworker",
+    workspaceKind: "project",
     createdAt: "2026-03-24T00:00:00.000Z",
     lastOpenedAt: "2026-03-24T00:00:00.000Z",
     defaultProvider: "openai",
@@ -265,6 +266,176 @@ describe("desktop sidebar", () => {
       }
     },
   );
+
+  test.serial("groups one-off chats separately from project workspaces", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          workspaces: [
+            makeWorkspace(),
+            makeWorkspace({
+              id: "chat-ws-1",
+              name: "Hidden one-off workspace",
+              path: "/tmp/cowork-chat-1",
+              workspaceKind: "oneOffChat",
+            }),
+          ],
+          threads: [
+            ...makeThreads(1),
+            {
+              id: "chat-thread-1",
+              workspaceId: "chat-ws-1",
+              title: "Loose idea",
+              titleSource: "manual" as const,
+              createdAt: "2026-03-24T00:00:00.000Z",
+              lastMessageAt: "2026-03-24T12:00:00.000Z",
+              status: "active" as const,
+              sessionId: "chat-session-1",
+              messageCount: 1,
+              lastEventSeq: 1,
+              draft: false,
+            },
+          ],
+          selectedWorkspaceId: "chat-ws-1",
+          selectedThreadId: "chat-thread-1",
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      expect(container.textContent).toContain("Chats");
+      expect(container.textContent).toContain("Loose idea");
+      expect(container.textContent).toContain("Projects");
+      expect(container.textContent).toContain("Agent Coworker");
+      expect(container.textContent).not.toContain("Hidden one-off workspace");
+      expect(
+        Array.from(container.querySelectorAll("[data-sidebar-section]")).map((section) =>
+          section.getAttribute("data-sidebar-section"),
+        ),
+      ).toEqual(["projects", "chats"]);
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test.serial("honors the persisted Chats-above-Projects sidebar section order", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          desktopSettings: {
+            ...defaultStoreState.desktopSettings,
+            sidebarSectionOrder: ["chats", "projects"],
+          },
+          workspaces: [
+            makeWorkspace(),
+            makeWorkspace({
+              id: "chat-ws-1",
+              name: "Hidden one-off workspace",
+              path: "/tmp/cowork-chat-1",
+              workspaceKind: "oneOffChat",
+            }),
+          ],
+          threads: [
+            {
+              id: "chat-thread-1",
+              workspaceId: "chat-ws-1",
+              title: "Loose idea",
+              titleSource: "manual" as const,
+              createdAt: "2026-03-24T00:00:00.000Z",
+              lastMessageAt: "2026-03-24T12:00:00.000Z",
+              status: "active" as const,
+              sessionId: "chat-session-1",
+              messageCount: 1,
+              lastEventSeq: 1,
+              draft: false,
+            },
+          ],
+          selectedWorkspaceId: "chat-ws-1",
+          selectedThreadId: "chat-thread-1",
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      expect(
+        Array.from(container.querySelectorAll("[data-sidebar-section]")).map((section) =>
+          section.getAttribute("data-sidebar-section"),
+        ),
+      ).toEqual(["chats", "projects"]);
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test.serial("New Chat creates a one-off chat from the sidebar", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          workspaces: [makeWorkspace()],
+          selectedWorkspaceId: "ws-1",
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      const newChatButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.trim() === "New Chat",
+      );
+      if (!(newChatButton instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing New Chat button");
+      }
+
+      await act(async () => {
+        newChatButton.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      const state = useAppStore.getState();
+      const selectedWorkspace = state.workspaces.find(
+        (workspace) => workspace.id === state.selectedWorkspaceId,
+      );
+      expect(selectedWorkspace?.workspaceKind).toBe("oneOffChat");
+      expect(state.threads[0]).toMatchObject({
+        workspaceId: selectedWorkspace?.id,
+        draft: true,
+      });
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
 
   test.serial(
     "switches a thread row into inline rename mode with a focused shared input",
@@ -638,7 +809,7 @@ describe("desktop sidebar", () => {
         expect(workspaceCards).toHaveLength(1);
         expect(container.textContent).toContain("Agent Coworker");
         expect(container.textContent).not.toContain("Research Lab");
-        expect(container.querySelector('[aria-label="Add workspace"]')).not.toBeNull();
+        expect(container.querySelector('[aria-label="Add project"]')).not.toBeNull();
       } finally {
         if (root) {
           await act(async () => {

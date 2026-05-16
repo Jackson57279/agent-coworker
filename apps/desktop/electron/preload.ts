@@ -10,6 +10,7 @@ import {
   type ConfirmActionInput,
   type CopyPathInput,
   type CreateDirectoryInput,
+  type CreateOneOffChatWorkspaceInput,
   DESKTOP_EVENT_CHANNELS,
   DESKTOP_IPC_CHANNELS,
   type DeleteTranscriptInput,
@@ -46,6 +47,7 @@ import {
   confirmActionInputSchema,
   copyPathInputSchema,
   createDirectoryInputSchema,
+  createOneOffChatWorkspaceInputSchema,
   deleteTranscriptInputSchema,
   desktopMenuCommandSchema,
   desktopNotificationInputSchema,
@@ -89,6 +91,10 @@ function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, label: string)
 
 function assertStartWorkspaceServerInput(opts: StartWorkspaceServerInput): void {
   parseWithSchema(startWorkspaceServerInputSchema, opts, "startWorkspaceServer options");
+}
+
+function assertCreateOneOffChatWorkspaceInput(opts: CreateOneOffChatWorkspaceInput): void {
+  parseWithSchema(createOneOffChatWorkspaceInputSchema, opts, "createOneOffChatWorkspace options");
 }
 
 function assertStopWorkspaceServerInput(opts: StopWorkspaceServerInput): void {
@@ -222,6 +228,11 @@ const desktopApi = Object.freeze<DesktopApi>({
   isPackaged: process.env.COWORK_IS_PACKAGED === "true",
   resolveDesktopFeatureFlags: (overrides) =>
     resolvePreloadDesktopFeatureFlags(normalizeDesktopFeatureFlagOverrides(overrides)),
+  createOneOffChatWorkspace: (opts: CreateOneOffChatWorkspaceInput = {}) => {
+    assertCreateOneOffChatWorkspaceInput(opts);
+    return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.createOneOffChatWorkspace, opts);
+  },
+
   startWorkspaceServer: (opts: StartWorkspaceServerInput) => {
     assertStartWorkspaceServerInput(opts);
     return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.startWorkspaceServer, opts);

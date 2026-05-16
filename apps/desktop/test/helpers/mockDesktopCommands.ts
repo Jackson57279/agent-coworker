@@ -91,6 +91,7 @@ export function createDesktopCommandsMock(
   return {
     getDesktopFeatureFlags: (featureOverrides) => resolveFlags(featureOverrides),
     isPackagedDesktopApp: () => false,
+    createOneOffChatWorkspace: async () => ({ name: "New chat", path: "/tmp/cowork-chat" }),
     startWorkspaceServer: async () => ({ url: "ws://mock" }),
     stopWorkspaceServer: async () => {},
     loadState: async () => ({ version: 2, workspaces: [], threads: [] }),

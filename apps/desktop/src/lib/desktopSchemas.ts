@@ -16,6 +16,7 @@ import type {
   ContextMenuItem,
   CopyPathInput,
   CreateDirectoryInput,
+  CreateOneOffChatWorkspaceInput,
   DeleteTranscriptInput,
   DesktopMenuCommand,
   DesktopNotificationInput,
@@ -57,6 +58,30 @@ const optionalStringSchema = z.preprocess(
   (value) => (typeof value === "string" ? value : undefined),
   z.string().optional(),
 );
+const sidebarSectionKeys = ["projects", "chats"] as const;
+type SidebarSectionKey = (typeof sidebarSectionKeys)[number];
+function normalizePersistedSidebarSectionOrder(value: unknown): SidebarSectionKey[] {
+  const seen = new Set<SidebarSectionKey>();
+  const ordered: SidebarSectionKey[] = [];
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (entry !== "projects" && entry !== "chats") {
+        continue;
+      }
+      if (seen.has(entry)) {
+        continue;
+      }
+      seen.add(entry);
+      ordered.push(entry);
+    }
+  }
+  for (const key of sidebarSectionKeys) {
+    if (!seen.has(key)) {
+      ordered.push(key);
+    }
+  }
+  return ordered;
+}
 const safeIdSchema = nonEmptyStringSchema.regex(SAFE_ID, "contains invalid characters");
 const directionSchema = z.enum(["server", "client"]);
 const reasoningEffortSchema = z.enum(OPENAI_REASONING_EFFORT_VALUES);
@@ -180,6 +205,11 @@ export const startWorkspaceServerInputSchema: z.ZodType<StartWorkspaceServerInpu
   featureFlags: desktopFeatureFlagOverridesSchema.optional(),
 });
 
+export const createOneOffChatWorkspaceInputSchema: z.ZodType<CreateOneOffChatWorkspaceInput> =
+  z.object({
+    titleHint: z.string().trim().optional(),
+  });
+
 export const stopWorkspaceServerInputSchema: z.ZodType<StopWorkspaceServerInput> = z.object({
   workspaceId: safeIdSchema,
 });
@@ -276,6 +306,12 @@ const persistedWorkspaceSchema = z
     id: safeIdSchema,
     name: nonEmptyStringSchema,
     path: nonEmptyStringSchema,
+    workspaceKind: z
+      .preprocess(
+        (value) => (value === "oneOffChat" ? "oneOffChat" : "project"),
+        z.enum(["project", "oneOffChat"]),
+      )
+      .optional(),
     createdAt: nonEmptyStringSchema,
     lastOpenedAt: nonEmptyStringSchema,
     wsProtocol: z.preprocess(() => "jsonrpc", z.literal("jsonrpc")),
@@ -379,11 +415,25 @@ const persistedProviderUiStateSchema = z
         ),
       })
       .optional(),
+    archivedChatsAutoDeleteDays: z
+      .preprocess(
+        (value) =>
+          typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+        z.number().int().nonnegative(),
+      )
+      .optional(),
   })
   .optional();
 
 const persistedDesktopSettingsSchema = z
   .object({
+    archivedChatsAutoDeleteDays: z
+      .preprocess(
+        (value) =>
+          typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+        z.number().int().nonnegative(),
+      )
+      .optional(),
     quickChat: z
       .object({
         iconEnabled: z
@@ -400,6 +450,12 @@ const persistedDesktopSettingsSchema = z
           )
           .optional(),
       })
+      .optional(),
+    sidebarSectionOrder: z
+      .preprocess(
+        (value) => normalizePersistedSidebarSectionOrder(value),
+        z.array(z.enum(["projects", "chats"])),
+      )
       .optional(),
   })
   .optional();

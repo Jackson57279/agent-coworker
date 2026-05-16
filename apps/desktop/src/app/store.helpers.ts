@@ -71,6 +71,7 @@ import type {
   ResearchCard,
   ResearchDetail,
   ResearchSettingsState,
+  SidebarSectionKey,
   SettingsPageId,
   ThreadBusyPolicy,
   ThreadRecord,
@@ -241,12 +242,15 @@ export type AppStoreState = {
 
   newThread: (opts?: {
     workspaceId?: string;
+    scope?: "oneOff" | "project";
     titleHint?: string;
     firstMessage?: string;
     mode?: "draft" | "session";
     attachments?: import("./store.helpers/jsonRpcSocket").FileAttachmentInput[];
   }) => Promise<boolean>;
   removeThread: (threadId: string) => Promise<void>;
+  archiveThread: (threadId: string) => Promise<void>;
+  restoreThread: (threadId: string) => Promise<void>;
   deleteThreadHistory: (threadId: string) => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
   reconnectThread: (
@@ -281,8 +285,10 @@ export type AppStoreState = {
   setShowHiddenFiles: (v: boolean) => void;
   setPerWorkspaceSettings: (enabled: boolean) => void;
   setQuickChatIconEnabled: (enabled: boolean) => void;
+  setArchivedChatsAutoDeleteDays: (days: number) => void;
   setQuickChatShortcutEnabled: (enabled: boolean) => void;
   setQuickChatShortcutAccelerator: (accelerator: string) => void;
+  setSidebarSectionOrder: (orderedSections: SidebarSectionKey[]) => void;
   setDesktopFeatureFlagOverride: (flagId: DesktopFeatureFlagId, enabled: boolean) => Promise<void>;
   setUpdateState: (state: UpdaterState) => void;
   checkForUpdates: () => Promise<void>;

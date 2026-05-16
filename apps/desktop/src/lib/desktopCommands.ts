@@ -7,6 +7,8 @@ import { resolveFeatureFlags } from "../../../../src/shared/featureFlags";
 import type { HydratedTranscriptSnapshot, PersistedState, TranscriptEvent } from "../app/types";
 import type {
   ConfirmActionInput,
+  CreateOneOffChatWorkspaceInput,
+  CreateOneOffChatWorkspaceOutput,
   DesktopApi,
   DesktopMenuCommand,
   DesktopNotificationInput,
@@ -77,6 +79,12 @@ export async function startWorkspaceServer(opts: {
 
 export async function stopWorkspaceServer(opts: { workspaceId: string }): Promise<void> {
   await requireDesktopApi().stopWorkspaceServer(opts);
+}
+
+export async function createOneOffChatWorkspace(
+  opts?: CreateOneOffChatWorkspaceInput,
+): Promise<CreateOneOffChatWorkspaceOutput> {
+  return await requireDesktopApi().createOneOffChatWorkspace(opts);
 }
 
 export async function loadState(): Promise<PersistedState> {
