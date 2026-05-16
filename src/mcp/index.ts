@@ -253,11 +253,10 @@ async function createRuntimeMcpClient(opts: {
 
   return {
     tools: async () => {
-      const listed = (await client.request({ method: "tools/list" }, z.any())) as {
-        tools?: Array<Record<string, unknown>>;
-      };
+      const listed = await client.listTools();
       const discovered: Record<string, unknown> = {};
       for (const entry of listed.tools ?? []) {
+        const rawEntry = entry as typeof entry & Record<string, unknown>;
         const name = typeof entry.name === "string" ? entry.name : "";
         if (!name) continue;
         const description =
@@ -274,8 +273,8 @@ async function createRuntimeMcpClient(opts: {
           ),
           ...(entry.annotations ? { annotations: entry.annotations } : {}),
           ...(entry._meta ? { _meta: entry._meta } : {}),
-          ...(entry.connector_id ? { connectorId: entry.connector_id } : {}),
-          ...(entry.connector_name ? { connectorName: entry.connector_name } : {}),
+          ...(typeof rawEntry.connector_id === "string" ? { connectorId: rawEntry.connector_id } : {}),
+          ...(typeof rawEntry.connector_name === "string" ? { connectorName: rawEntry.connector_name } : {}),
           execute: async (input: unknown) => {
             const meta = normalizeToolMeta(entry._meta);
             const params: CallToolRequest["params"] = {
