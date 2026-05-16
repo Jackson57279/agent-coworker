@@ -349,6 +349,17 @@ export function Canvas({ path }: { path: string }) {
     return () => clearTimeout(timer);
   }, [content, path]);
 
+  useEffect(() => {
+    if (!floatingCoords) {
+      if ('Highlight' in window) {
+        try {
+          (CSS as any).highlights.delete('canvas-temp-highlight');
+        } catch (e) {}
+      }
+      savedSelectionRangeRef.current = null;
+    }
+  }, [floatingCoords]);
+
   const handleInput = () => {
     if (!editorRef.current) return;
     const html = editorRef.current.innerHTML;
@@ -427,10 +438,16 @@ export function Canvas({ path }: { path: string }) {
       }
 
       const selection = window.getSelection();
+      const activeElement = document.activeElement;
+      const isFocusedInInputs = activeElement && (
+        activeElement.tagName === "INPUT" || 
+        activeElement.tagName === "TEXTAREA" || 
+        floatingRef.current?.contains(activeElement)
+      );
+
       // Only show the floating bar if there's an actual text selection
       if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
         const text = selection.toString().trim();
-        const activeElement = document.activeElement;
         const canvasEl = document.querySelector(".app-canvas");
         
         // Ensure the selection is actually inside our canvas
@@ -442,12 +459,6 @@ export function Canvas({ path }: { path: string }) {
         if (activeElement && floatingRef.current?.contains(activeElement)) {
           return;
         }
-
-        // Specifically check if the selection is purely inside the contentEditable paper page.
-        // We DO NOT want the floating portal to steal focus/appear when the user is simply trying
-        // to highlight and format text natively inside the WYSIWYG editor.
-        const isEditingInRichEditor = activeElement?.hasAttribute("contenteditable") || 
-          (selection.anchorNode && selection.anchorNode.parentElement?.closest("[contenteditable]"));
 
         if (text && (selectionInCanvas || activeTab === "preview")) {
           setSelectedText(text);
@@ -468,6 +479,17 @@ export function Canvas({ path }: { path: string }) {
         }
       }
 
+      // If selection is lost/collapsed, and we are not focused on our inputs,
+      // fully clear the saved selection and temp highlight so they don't stick or leak!
+      if (!isFocusedInInputs) {
+        if ('Highlight' in window) {
+          try {
+            (CSS as any).highlights.delete('canvas-temp-highlight');
+          } catch (e) {}
+        }
+        savedSelectionRangeRef.current = null;
+      }
+
       // ONLY clear the floating bar if we actually lost selection
       setSelectedText("");
       setFloatingCoords(null);
@@ -481,6 +503,13 @@ export function Canvas({ path }: { path: string }) {
     setSelectedText("");
     setFloatingCoords(null);
     isInteractingRef.current = false;
+    // Always remove temp highlight when clearing selection state
+    if ('Highlight' in window) {
+      try {
+        (CSS as any).highlights.delete('canvas-temp-highlight');
+      } catch (e) {}
+    }
+    savedSelectionRangeRef.current = null;
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -513,6 +542,33 @@ export function Canvas({ path }: { path: string }) {
       setTimeout(() => {
         isInteractingRef.current = false;
       }, 0);
+
+      // Backup: after pointer up, check if there's a finalized text selection inside
+      // the canvas and force-show the floating bar in case selectionchange was missed.
+      setTimeout(() => {
+        if (isInteractingRef.current) return;
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+        const text = selection.toString().trim();
+        if (!text) return;
+        const canvasEl = document.querySelector(".app-canvas");
+        const inCanvas = (selection.anchorNode && canvasEl?.contains(selection.anchorNode)) ||
+                         (selection.focusNode && canvasEl?.contains(selection.focusNode));
+        if (!inCanvas) return;
+        setSelectedText(text);
+        try {
+          const range = selection.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            setFloatingCoords({
+              x: rect.left + rect.width / 2,
+              y: rect.top,
+            });
+          }
+        } catch (e) {
+          console.error("Failed to get bounding rect of selection on pointerup", e);
+        }
+      }, 50);
     };
 
     document.addEventListener("pointerdown", handleWindowPointerDown);

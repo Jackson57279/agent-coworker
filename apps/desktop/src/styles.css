@@ -553,6 +553,11 @@ body.app-resizing-sidebars {
   user-select: none;
 }
 
+body.app-resizing-message-bar {
+  cursor: row-resize;
+  user-select: none;
+}
+
 body.app-resizing-sidebars .app-left-sidebar-pane,
 body.app-resizing-sidebars .app-right-sidebar-pane {
   transition: none;

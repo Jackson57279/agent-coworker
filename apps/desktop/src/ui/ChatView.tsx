@@ -1545,6 +1545,7 @@ export function ChatView() {
             <MessageBarResizer />
             <PromptInputRoot
               className="w-full max-w-full rounded-[20px] border border-border/50 bg-background/90 app-shadow-overlay backdrop-blur-md"
+              style={{ height: messageBarHeight }}
               fileDrop={
                 inputDisabled || transcriptOnly
                   ? undefined
