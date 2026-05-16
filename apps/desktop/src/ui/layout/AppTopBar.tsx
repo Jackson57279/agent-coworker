@@ -472,8 +472,7 @@ export function AppTopBar({
                   <DropdownMenuItem
                     onClick={() => onSetCanvasActiveTab("preview")}
                     className={cn(
-                      canvasActiveTab === "preview" &&
-                        "font-semibold text-primary bg-primary/5",
+                      canvasActiveTab === "preview" && "font-semibold text-primary bg-primary/5",
                     )}
                   >
                     <EyeIcon className="mr-2 size-3.5" />
@@ -499,9 +498,7 @@ export function AppTopBar({
                     <BoldIcon className="mr-2 size-3.5" />
                     Show Styling Bar
                   </span>
-                  {canvasShowFormattingBar && (
-                    <CheckIcon className="size-3.5 text-primary" />
-                  )}
+                  {canvasShowFormattingBar && <CheckIcon className="size-3.5 text-primary" />}
                 </DropdownMenuItem>
               ) : null}
             </DropdownMenuContent>

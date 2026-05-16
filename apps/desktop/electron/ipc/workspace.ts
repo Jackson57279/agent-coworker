@@ -5,8 +5,8 @@ import { createOneOffChatWorkspace } from "../../../../src/utils/oneOffChats";
 import { hydrateTranscriptSnapshot } from "../../src/app/transcriptHydration";
 import type { PersistedState } from "../../src/app/types";
 import {
-  DESKTOP_IPC_CHANNELS,
   type CreateOneOffChatWorkspaceInput,
+  DESKTOP_IPC_CHANNELS,
   type DeleteTranscriptInput,
   type ReadTranscriptInput,
   type StartWorkspaceServerInput,

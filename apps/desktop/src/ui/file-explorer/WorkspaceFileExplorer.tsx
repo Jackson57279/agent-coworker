@@ -11,8 +11,8 @@ import {
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAppStore } from "../../app/store";
-import { isOneOffChatWorkspace } from "../../app/types";
 import type { ExplorerEntry } from "../../app/types";
+import { isOneOffChatWorkspace } from "../../app/types";
 import { Button } from "../../components/ui/button";
 import {
   confirmAction,

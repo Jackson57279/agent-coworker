@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import {
   type MouseEvent,
-  type ReactNode,
   memo,
+  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -341,66 +341,58 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
                         />
                       </div>
                     ) : (
-                      <Button
-                        key={thread.id}
-                        className={cn(
-                          "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left group",
-                          isActive
-                            ? "border-border/45 bg-foreground/[0.05] text-foreground"
-                            : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
-                        )}
-                        onClick={() => selectThread(thread.id)}
-                        onContextMenu={(event) =>
-                          onThreadContextMenu(event, thread.id, displayTitle)
-                        }
-                        onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
-                        title={displayTitle}
-                        type="button"
-                        variant="ghost"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">
-                            {displayTitle}
-                          </span>
-                        </span>
-
-                        <span className="relative flex shrink-0 items-center gap-2 pl-2 min-w-8 justify-end">
-                          {busy ? (
-                            <span
-                              className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <>
-                              {ageLabel ? (
-                                <span className="text-[11px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
-                                  {ageLabel}
-                                </span>
-                              ) : null}
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                className="absolute right-0 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-muted-foreground/60 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-all duration-200 ease-out transform scale-75 group-hover:scale-100"
-                                title="Archive thread"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  event.preventDefault();
-                                  void archiveThread(thread.id);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.stopPropagation();
-                                    event.preventDefault();
-                                    void archiveThread(thread.id);
-                                  }
-                                }}
-                              >
-                                <ArchiveIcon className="h-3.5 w-3.5" />
-                              </span>
-                            </>
+                      <div key={thread.id} className="relative group">
+                        <Button
+                          className={cn(
+                            "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left",
+                            isActive
+                              ? "border-border/45 bg-foreground/[0.05] text-foreground"
+                              : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
                           )}
-                        </span>
-                      </Button>
+                          onClick={() => selectThread(thread.id)}
+                          onContextMenu={(event) =>
+                            onThreadContextMenu(event, thread.id, displayTitle)
+                          }
+                          onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
+                          title={displayTitle}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">
+                              {displayTitle}
+                            </span>
+                          </span>
+
+                          <span className="relative flex shrink-0 items-center gap-2 pl-2 min-w-8 justify-end">
+                            {busy ? (
+                              <span
+                                className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"
+                                aria-hidden="true"
+                              />
+                            ) : ageLabel ? (
+                              <span className="text-[11px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
+                                {ageLabel}
+                              </span>
+                            ) : null}
+                          </span>
+                        </Button>
+                        {!busy ? (
+                          <button
+                            type="button"
+                            className="absolute right-2.5 top-1/2 z-10 h-5 w-5 -translate-y-1/2 flex items-center justify-center rounded-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-muted-foreground/60 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-all duration-200 ease-out transform scale-75 group-hover:scale-100"
+                            title="Archive thread"
+                            aria-label="Archive thread"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              event.preventDefault();
+                              void archiveThread(thread.id);
+                            }}
+                          >
+                            <ArchiveIcon className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                      </div>
                     );
                   })}
 
@@ -556,58 +548,56 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
   }
 
   return (
-    <Button
-      className={cn(
-        "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left group",
-        isActive
-          ? "border-border/45 bg-foreground/[0.05] text-foreground"
-          : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
-      )}
-      onClick={() => selectThread(thread.id)}
-      onContextMenu={(event) => onThreadContextMenu(event, thread.id, displayTitle)}
-      onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
-      title={displayTitle}
-      type="button"
-      variant="ghost"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">{displayTitle}</span>
-      </span>
-
-      <span className="relative flex shrink-0 items-center gap-2 pl-2 min-w-8 justify-end">
-        {busy ? (
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true" />
-        ) : (
-          <>
-            {ageLabel ? (
-              <span className="text-[11px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
-                {ageLabel}
-              </span>
-            ) : null}
-            <span
-              role="button"
-              tabIndex={0}
-              className="absolute right-0 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-muted-foreground/60 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-all duration-200 ease-out transform scale-75 group-hover:scale-100"
-              title="Archive chat"
-              onClick={(event) => {
-                event.stopPropagation();
-                event.preventDefault();
-                void archiveThread(thread.id);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.stopPropagation();
-                  event.preventDefault();
-                  void archiveThread(thread.id);
-                }
-              }}
-            >
-              <ArchiveIcon className="h-3.5 w-3.5" />
-            </span>
-          </>
+    <div className="relative group">
+      <Button
+        className={cn(
+          "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left",
+          isActive
+            ? "border-border/45 bg-foreground/[0.05] text-foreground"
+            : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
         )}
-      </span>
-    </Button>
+        onClick={() => selectThread(thread.id)}
+        onContextMenu={(event) => onThreadContextMenu(event, thread.id, displayTitle)}
+        onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
+        title={displayTitle}
+        type="button"
+        variant="ghost"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">
+            {displayTitle}
+          </span>
+        </span>
+
+        <span className="relative flex shrink-0 items-center gap-2 pl-2 min-w-8 justify-end">
+          {busy ? (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"
+              aria-hidden="true"
+            />
+          ) : ageLabel ? (
+            <span className="text-[11px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
+              {ageLabel}
+            </span>
+          ) : null}
+        </span>
+      </Button>
+      {!busy ? (
+        <button
+          type="button"
+          className="absolute right-2.5 top-1/2 z-10 h-5 w-5 -translate-y-1/2 flex items-center justify-center rounded-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto text-muted-foreground/60 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-all duration-200 ease-out transform scale-75 group-hover:scale-100"
+          title="Archive chat"
+          aria-label="Archive chat"
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            void archiveThread(thread.id);
+          }}
+        >
+          <ArchiveIcon className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </div>
   );
 });
 
@@ -1027,31 +1017,29 @@ export const Sidebar = memo(function Sidebar() {
       </div>
       {chatsOpen ? (
         oneOffChatThreads.length === 0 ? (
-        <div className="px-3 py-2 text-[12px] text-muted-foreground/60 italic">
-          No chats yet
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <div className="grid gap-1">
-            {oneOffChatThreads.map((thread) => (
-              <SidebarOneOffChatItem
-                key={thread.id}
-                editInputRef={editInputRef}
-                editingThreadId={editingThreadId}
-                editingTitle={editingTitle}
-                onCancelRename={cancelRename}
-                onCommitRename={commitRename}
-                onEditingTitleChange={setEditingTitle}
-                onStartEditing={startEditing}
-                onThreadContextMenu={handleThreadContextMenu}
-                selectedThreadId={sidebarSelectedThreadId}
-                selectThread={handleSelectThread}
-                thread={thread}
-                threadRuntimeById={threadRuntimeById}
-              />
-            ))}
+          <div className="px-3 py-2 text-[12px] text-muted-foreground/60 italic">No chats yet</div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <div className="grid gap-1">
+              {oneOffChatThreads.map((thread) => (
+                <SidebarOneOffChatItem
+                  key={thread.id}
+                  editInputRef={editInputRef}
+                  editingThreadId={editingThreadId}
+                  editingTitle={editingTitle}
+                  onCancelRename={cancelRename}
+                  onCommitRename={commitRename}
+                  onEditingTitleChange={setEditingTitle}
+                  onStartEditing={startEditing}
+                  onThreadContextMenu={handleThreadContextMenu}
+                  selectedThreadId={sidebarSelectedThreadId}
+                  selectThread={handleSelectThread}
+                  thread={thread}
+                  threadRuntimeById={threadRuntimeById}
+                />
+              ))}
+            </div>
           </div>
-        </div>
         )
       ) : null}
     </div>

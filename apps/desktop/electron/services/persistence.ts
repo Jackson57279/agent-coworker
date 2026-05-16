@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { app } from "electron";
 import { z } from "zod";
+import { normalizeDesktopFeatureFlagOverrides } from "../../../../src/shared/featureFlags";
 import {
   ensureOneOffChatWorkspacePath,
   isPathInsideOneOffChatsRoot,
   normalizeWorkspaceKind,
 } from "../../../../src/utils/oneOffChats";
-import { normalizeDesktopFeatureFlagOverrides } from "../../../../src/shared/featureFlags";
 import { normalizeWorkspaceProviderOptions } from "../../src/app/openaiCompatibleProviderOptions";
 import { normalizePersistedProviderState } from "../../src/app/persistedProviderState";
 import {
@@ -21,8 +21,8 @@ import type {
   PersistedState,
   ThreadRecord,
   TranscriptEvent,
-  WorkspaceRecord,
   WorkspaceKind,
+  WorkspaceRecord,
   WorkspaceUserProfile,
 } from "../../src/app/types";
 import { normalizeDesktopSettings, normalizeWorkspaceUserProfile } from "../../src/app/types";

@@ -273,8 +273,12 @@ async function createRuntimeMcpClient(opts: {
           ),
           ...(entry.annotations ? { annotations: entry.annotations } : {}),
           ...(entry._meta ? { _meta: entry._meta } : {}),
-          ...(typeof rawEntry.connector_id === "string" ? { connectorId: rawEntry.connector_id } : {}),
-          ...(typeof rawEntry.connector_name === "string" ? { connectorName: rawEntry.connector_name } : {}),
+          ...(typeof rawEntry.connector_id === "string"
+            ? { connectorId: rawEntry.connector_id }
+            : {}),
+          ...(typeof rawEntry.connector_name === "string"
+            ? { connectorName: rawEntry.connector_name }
+            : {}),
           execute: async (input: unknown) => {
             const meta = normalizeToolMeta(entry._meta);
             const params: CallToolRequest["params"] = {

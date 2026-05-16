@@ -932,7 +932,10 @@ export function resolveRelativeFileHref(rawHref: string, basePath: string | null
   return desktopPathToFileUrl(`${normalizedBase}/${cleaned}`);
 }
 
-export function rewriteDesktopFileLinksInTree(node: HastNode, basePath: string | null = null): void {
+export function rewriteDesktopFileLinksInTree(
+  node: HastNode,
+  basePath: string | null = null,
+): void {
   if (typeof node.url === "string") {
     const rebased = resolveRelativeFileHref(node.url, basePath);
     if (rebased) {
@@ -1160,10 +1163,9 @@ export const MessageResponse = memo(function MessageResponse({
   ...props
 }: MessageResponseProps) {
   const { children, components, plugins, rehypePlugins, remarkPlugins, ...restProps } = props;
-  const desktopFileLinksPlugin = useMemo<[typeof remarkRewriteDesktopFileLinks, { basePath: string | null }]>(
-    () => [remarkRewriteDesktopFileLinks, { basePath: desktopBasePath }],
-    [desktopBasePath],
-  );
+  const desktopFileLinksPlugin = useMemo<
+    [typeof remarkRewriteDesktopFileLinks, { basePath: string | null }]
+  >(() => [remarkRewriteDesktopFileLinks, { basePath: desktopBasePath }], [desktopBasePath]);
 
   return (
     <Streamdown

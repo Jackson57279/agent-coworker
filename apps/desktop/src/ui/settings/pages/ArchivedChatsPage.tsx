@@ -1,9 +1,4 @@
-import {
-  ArchiveIcon,
-  ClockIcon,
-  RotateCcwIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { ArchiveIcon, ClockIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
 import { useAppStore } from "../../../app/store";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
@@ -34,9 +29,7 @@ export function ArchivedChatsPage() {
   const desktopSettings = useAppStore((s) => s.desktopSettings);
   const restoreThread = useAppStore((s) => s.restoreThread);
   const deleteThreadHistory = useAppStore((s) => s.deleteThreadHistory);
-  const setArchivedChatsAutoDeleteDays = useAppStore(
-    (s) => s.setArchivedChatsAutoDeleteDays,
-  );
+  const setArchivedChatsAutoDeleteDays = useAppStore((s) => s.setArchivedChatsAutoDeleteDays);
 
   const archivedThreads = threads.filter((t) => t.archived);
   const currentAutoDelete = desktopSettings.archivedChatsAutoDeleteDays;
@@ -61,11 +54,10 @@ export function ArchivedChatsPage() {
       <Card className="border border-border/45 bg-foreground/[0.015] shadow-none">
         <CardContent className="p-4 space-y-4">
           <div className="flex flex-col gap-1.5">
-            <h3 className="text-sm font-semibold tracking-[-0.01em]">
-              Auto-delete Settings
-            </h3>
+            <h3 className="text-sm font-semibold tracking-[-0.01em]">Auto-delete Settings</h3>
             <p className="text-xs text-muted-foreground leading-normal max-w-xl">
-              Configure how long archived conversation history remains before being permanently deleted from your computer.
+              Configure how long archived conversation history remains before being permanently
+              deleted from your computer.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -99,15 +91,15 @@ export function ArchivedChatsPage() {
             <ArchiveIcon className="h-8 w-8 mb-3 text-muted-foreground/30" />
             <p className="text-sm font-medium text-foreground">No archived chats</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Archived chats will be stored here. You can archive any chat from the sidebar by hovering over its date label.
+              Archived chats will be stored here. You can archive any chat from the sidebar by
+              hovering over its date label.
             </p>
           </div>
         ) : (
           <div className="border border-border/45 rounded-xl divide-y divide-border/40 overflow-hidden bg-background">
             {archivedThreads.map((thread) => {
               const wsName =
-                workspaces.find((w) => w.id === thread.workspaceId)?.name ||
-                "Unknown workspace";
+                workspaces.find((w) => w.id === thread.workspaceId)?.name || "Unknown workspace";
               return (
                 <div
                   key={thread.id}

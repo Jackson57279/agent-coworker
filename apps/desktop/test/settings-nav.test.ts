@@ -517,10 +517,7 @@ describe("settings nav (store)", () => {
       "chats",
       "projects",
     ]);
-    expect(savedStates.at(-1)?.desktopSettings?.sidebarSectionOrder).toEqual([
-      "chats",
-      "projects",
-    ]);
+    expect(savedStates.at(-1)?.desktopSettings?.sidebarSectionOrder).toEqual(["chats", "projects"]);
   });
 
   test("archiveThread archives thread and clears selectedThreadId if active", async () => {
@@ -677,9 +674,11 @@ describe("settings nav (store)", () => {
     expect(state.threads[0]?.workspaceId).toBe(chatWorkspace?.id);
     expect(state.selectedThreadId).toBe(state.threads[0]?.id);
     expect(state.threads[0]?.draft).toBe(true);
-    expect(savedStates.at(-1)?.workspaces?.some((workspace: any) => workspace.workspaceKind === "oneOffChat")).toBe(
-      true,
-    );
+    expect(
+      savedStates
+        .at(-1)
+        ?.workspaces?.some((workspace: any) => workspace.workspaceKind === "oneOffChat"),
+    ).toBe(true);
     expect(savedStates.at(-1)?.threads).toEqual([]);
     expect(startWorkspaceServerCalls).toBe(0);
     expect(agentSocketConnectCalls).toBe(0);

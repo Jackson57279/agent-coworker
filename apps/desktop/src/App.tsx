@@ -15,11 +15,11 @@ import {
   onSystemAppearanceChanged,
   onUpdateStateChanged,
   setWindowAppearance,
+  showCanvasWindow,
   showNotification,
   showQuickChatWindow,
 } from "./lib/desktopCommands";
-import { showCanvasWindow } from "./lib/desktopCommands";
-import { isCanvasSupportedFile, getFilePreviewKind } from "./lib/filePreviewKind";
+import { getFilePreviewKind, isCanvasSupportedFile } from "./lib/filePreviewKind";
 import { applyPlatformChromeToDocument } from "./lib/platformChromeDom";
 import { canPopOutQuickChatThread } from "./lib/quickChatPopout";
 import { getDesktopWindowMode } from "./lib/windowMode";
@@ -211,8 +211,7 @@ const ChatShell = memo(function ChatShell({
     canvasPath !== null &&
     isCanvasSupportedFile(canvasPath) &&
     !contextSidebarCollapsed;
-  const canvasIsMarkdown =
-    canvasPath !== null && getFilePreviewKind(canvasPath) === "markdown";
+  const canvasIsMarkdown = canvasPath !== null && getFilePreviewKind(canvasPath) === "markdown";
   useEffect(() => {
     const sidebarStateChanged =
       previousSidebarStateRef.current.sidebarCollapsed !== sidebarCollapsed ||
@@ -281,9 +280,7 @@ const ChatShell = memo(function ChatShell({
         canvasActiveTab={canvasActiveTab}
         onSetCanvasActiveTab={setCanvasActiveTab}
         canvasShowFormattingBar={canvasShowFormattingBar}
-        onToggleCanvasFormattingBar={() =>
-          setCanvasShowFormattingBar(!canvasShowFormattingBar)
-        }
+        onToggleCanvasFormattingBar={() => setCanvasShowFormattingBar(!canvasShowFormattingBar)}
         onPopOutCanvas={
           showCanvasInTopBar && canvasPath
             ? () => {
