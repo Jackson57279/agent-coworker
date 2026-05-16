@@ -56,6 +56,7 @@ const errorWithCodeAndSourceSchema = z
     source: z.string().optional(),
   })
   .passthrough();
+type UploadedAttachmentStat = NonNullable<Awaited<ReturnType<typeof fs.stat>>>;
 const serverErrorCodeSet = new Set<string>(SERVER_ERROR_CODES);
 const serverErrorSourceSet = new Set<string>(SERVER_ERROR_SOURCES);
 const defaultSourceByErrorCode: Partial<Record<ServerErrorCode, ServerErrorSource>> = {
@@ -1329,7 +1330,7 @@ export class TurnExecutionManager {
 
   private async resolveUploadedAttachmentPath(
     uploadedPath: string,
-  ): Promise<{ canonicalPath: string; stat: Awaited<ReturnType<typeof fs.stat>> }> {
+  ): Promise<{ canonicalPath: string; stat: UploadedAttachmentStat }> {
     const resolvedUploadsDir = path.resolve(this.getUploadsDirectory());
     const diskPath = path.resolve(uploadedPath);
     if (!isPathInside(resolvedUploadsDir, diskPath)) {
