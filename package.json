@@ -71,7 +71,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1035.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1037.0",
-    "@google/genai": "^1.50.1",
+    "@google/genai": "^2.3.0",
     "@langfuse/otel": "^4.6.1",
     "@mariozechner/pi-ai": "^0.70.2",
     "@modelcontextprotocol/sdk": "^1.29.0",

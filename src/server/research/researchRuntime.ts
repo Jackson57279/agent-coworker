@@ -94,7 +94,21 @@ async function waitForOperation<T>(
   return current;
 }
 
-export type ResearchInteractionStreamEvent = Interactions.InteractionSSEEvent;
+type LegacyResearchInteractionStreamEvent = {
+  event_type: string;
+  event_id?: string;
+  interaction?: Interactions.Interaction;
+  status?: Interactions.Interaction["status"];
+  index?: number;
+  content?: unknown;
+  step?: unknown;
+  delta?: unknown;
+  error?: { message?: string; code?: string };
+};
+
+export type ResearchInteractionStreamEvent =
+  | Interactions.InteractionSSEEvent
+  | LegacyResearchInteractionStreamEvent;
 
 export async function createResearchInteractionStream(
   opts: CreateResearchInteractionStreamOptions,

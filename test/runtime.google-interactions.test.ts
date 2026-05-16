@@ -947,8 +947,8 @@ describe("google native interactions request building", () => {
     expect(Array.isArray(request.input)).toBe(true);
     expect(Array.isArray(request.tools)).toBe(true);
     expect((request.input as Array<Record<string, unknown>>)[0]).toEqual({
-      role: "user",
-      content: "Hello",
+      type: "user_input",
+      content: [{ type: "text", text: "Hello" }],
     });
 
     const genConfig = request.generation_config as Record<string, unknown>;
@@ -1077,9 +1077,9 @@ describe("google native interactions request building", () => {
     ] as ModelMessage[]);
 
     expect(input).toEqual([
-      { role: "user", content: "Hello world" },
-      { role: "model", content: [{ type: "text", text: "Hi there." }] },
-      { role: "user", content: "What is my name?" },
+      { type: "user_input", content: [{ type: "text", text: "Hello world" }] },
+      { type: "model_output", content: [{ type: "text", text: "Hi there." }] },
+      { type: "user_input", content: [{ type: "text", text: "What is my name?" }] },
     ]);
   });
 
@@ -1091,9 +1091,9 @@ describe("google native interactions request building", () => {
     ] as ModelMessage[]);
 
     expect(input).toEqual([
-      { role: "user", content: "Hello world" },
-      { role: "model", content: "Hi there." },
-      { role: "user", content: "What did you just say?" },
+      { type: "user_input", content: [{ type: "text", text: "Hello world" }] },
+      { type: "model_output", content: [{ type: "text", text: "Hi there." }] },
+      { type: "user_input", content: [{ type: "text", text: "What did you just say?" }] },
     ]);
   });
 
@@ -1107,7 +1107,7 @@ describe("google native interactions request building", () => {
 
     expect(input).toEqual([
       {
-        role: "model",
+        type: "model_output",
         content: [{ type: "text", text: "Saved response." }],
       },
     ]);
@@ -1129,7 +1129,7 @@ describe("google native interactions request building", () => {
 
     expect(input).toEqual([
       {
-        role: "user",
+        type: "user_input",
         content: [
           { type: "text", text: "Describe this image" },
           { type: "image", data: "abc123", mime_type: "image/png" },
@@ -1154,7 +1154,7 @@ describe("google native interactions request building", () => {
 
     expect(input).toEqual([
       {
-        role: "user",
+        type: "user_input",
         content: [
           { type: "image", uri: "gs://bucket/image.png", mime_type: "image/png" },
           { type: "document", uri: "gs://bucket/file.pdf" },
@@ -1181,16 +1181,11 @@ describe("google native interactions request building", () => {
 
     expect(input.length).toBe(1);
     expect(input[0]).toEqual({
-      role: "model",
-      content: [
-        {
-          type: "function_call",
-          id: "call_123",
-          name: "bash",
-          arguments: { command: "ls" },
-          signature: "sig_123",
-        },
-      ],
+      type: "function_call",
+      id: "call_123",
+      name: "bash",
+      arguments: { command: "ls" },
+      signature: "sig_123",
     });
   });
 
@@ -1231,31 +1226,26 @@ describe("google native interactions request building", () => {
 
     expect(input).toEqual([
       {
-        role: "model",
-        content: [
-          {
-            type: "google_search_call",
-            id: "gs_1",
-            arguments: { queries: ["latest Gemini announcements"] },
-            signature: "sig_call",
-          },
-          {
-            type: "google_search_result",
-            call_id: "gs_1",
-            result: [{ search_suggestions: "Latest Gemini announcements" }],
-            signature: "sig_result",
-          },
-          {
-            type: "url_context_call",
-            id: "uc_1",
-            arguments: { urls: ["https://example.com"] },
-          },
-          {
-            type: "url_context_result",
-            call_id: "uc_1",
-            result: { url: "https://example.com", status: "ok" },
-          },
-        ],
+        type: "google_search_call",
+        id: "gs_1",
+        arguments: { queries: ["latest Gemini announcements"] },
+        signature: "sig_call",
+      },
+      {
+        type: "google_search_result",
+        call_id: "gs_1",
+        result: [{ search_suggestions: "Latest Gemini announcements" }],
+        signature: "sig_result",
+      },
+      {
+        type: "url_context_call",
+        id: "uc_1",
+        arguments: { urls: ["https://example.com"] },
+      },
+      {
+        type: "url_context_result",
+        call_id: "uc_1",
+        result: { url: "https://example.com", status: "ok" },
       },
     ]);
   });
@@ -1311,19 +1301,14 @@ describe("google native interactions request building", () => {
 
     expect(input).toEqual([
       {
-        role: "user",
-        content: [
-          {
-            type: "function_result",
-            call_id: "call_123",
-            name: "read",
-            result: [
-              { type: "text", text: "image attached" },
-              { type: "image", data: "abc123", mime_type: "image/png" },
-            ],
-            is_error: false,
-          },
+        type: "function_result",
+        call_id: "call_123",
+        name: "read",
+        result: [
+          { type: "text", text: "image attached" },
+          { type: "image", data: "abc123", mime_type: "image/png" },
         ],
+        is_error: false,
       },
     ]);
   });
@@ -1407,6 +1392,43 @@ describe("google native interactions request building", () => {
     expect(tools[0].type).toBe("function");
     expect(tools[0].name).toBe("readFile");
     expect(tools[0].description).toBe("Read a file");
+  });
+
+  test("processStreamEvent handles SDK v2 step events and arguments deltas", () => {
+    const blocks = new Map();
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.start",
+        index: 0,
+        step: { type: "function_call", id: "call_v2", name: "bash", arguments: {} },
+      },
+      blocks,
+    );
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.delta",
+        index: 0,
+        delta: { type: "arguments_delta", arguments: '{"command":"pwd"}' },
+      },
+      blocks,
+    );
+
+    expect(blocks.get(0)).toEqual({
+      type: "toolCall",
+      id: "call_v2",
+      name: "bash",
+      arguments: { command: "pwd" },
+    });
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        { event_type: "step.stop", index: 0 },
+        blocks,
+      ),
+    ).toEqual([
+      { type: "tool-input-end", id: "call_v2" },
+      { type: "tool-call", toolCallId: "call_v2", toolName: "bash", input: { command: "pwd" } },
+    ]);
   });
 
   test("processStreamEvent preserves SDK text_annotation deltas", () => {

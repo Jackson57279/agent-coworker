@@ -128,6 +128,52 @@ describe("googleInteractionsStreamParts", () => {
     ]);
   });
 
+  test("maps SDK v2 step events and arguments deltas", () => {
+    const contentBlocks = new Map();
+    const providerToolCallsById = new Map();
+
+    const startEvent = {
+      event_type: "step.start",
+      index: 0,
+      step: {
+        type: "function_call",
+        id: "call_v2",
+        name: "bash",
+        arguments: {},
+      },
+    };
+    processGoogleInteractionsStreamEvent(startEvent, contentBlocks, providerToolCallsById);
+    expect(
+      mapGoogleInteractionsEventToStreamParts(startEvent, contentBlocks, providerToolCallsById),
+    ).toEqual([{ type: "tool-input-start", id: "call_v2", toolName: "bash" }]);
+
+    const deltaEvent = {
+      event_type: "step.delta",
+      index: 0,
+      delta: { type: "arguments_delta", arguments: '{"command":"pwd"}' },
+    };
+    processGoogleInteractionsStreamEvent(deltaEvent, contentBlocks, providerToolCallsById);
+    expect(contentBlocks.get(0)).toEqual({
+      type: "toolCall",
+      id: "call_v2",
+      name: "bash",
+      arguments: { command: "pwd" },
+    });
+    expect(
+      mapGoogleInteractionsEventToStreamParts(deltaEvent, contentBlocks, providerToolCallsById),
+    ).toEqual([{ type: "tool-input-delta", id: "call_v2", delta: '{"command":"pwd"}' }]);
+    expect(
+      mapGoogleInteractionsEventToStreamParts(
+        { event_type: "step.stop", index: 0 },
+        contentBlocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      { type: "tool-input-end", id: "call_v2" },
+      { type: "tool-call", toolCallId: "call_v2", toolName: "bash", input: { command: "pwd" } },
+    ]);
+  });
+
   test("keeps the first emitted function_call id stable during replay projection", () => {
     const contentBlocks = new Map();
     const providerToolCallsById = new Map();

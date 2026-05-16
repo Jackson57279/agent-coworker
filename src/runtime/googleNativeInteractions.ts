@@ -76,12 +76,8 @@ function getGoogleInteractionsClient(apiKey: string): Interactions {
 // ---------------------------------------------------------------------------
 
 type InteractionsContent = Interactions.Content;
-type InteractionsInput = Interactions.Turn[];
-
-type InteractionTurn = {
-  role: "user" | "model";
-  content: Interactions.Turn["content"];
-};
+type InteractionsStep = Interactions.Step;
+type InteractionsInput = InteractionsStep[];
 
 type GoogleSignatureProviderKey = "google" | "vertex";
 
@@ -219,28 +215,43 @@ function convertRichContentParts(parts: unknown): InteractionsContent[] {
   return content;
 }
 
-function turnFromUserMessage(message: ModelMessage): InteractionTurn | null {
+function userInputStep(content: InteractionsContent[]): InteractionsStep {
+  return { type: "user_input", content } as InteractionsStep;
+}
+
+function modelOutputStep(content: InteractionsContent[]): InteractionsStep {
+  return { type: "model_output", content } as InteractionsStep;
+}
+
+function stepsFromUserMessage(message: ModelMessage): InteractionsInput {
   if (typeof message.content === "string") {
-    const text = message.content.trim();
-    return text ? { role: "user", content: text } : null;
+    const textPart = buildTextContent(message.content);
+    return textPart ? [userInputStep([textPart])] : [];
   }
 
   const parts = convertRichContentParts(message.content);
-  return parts.length > 0 ? { role: "user", content: parts } : null;
+  return parts.length > 0 ? [userInputStep(parts)] : [];
 }
 
-function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null {
+function stepsFromAssistantMessage(message: ModelMessage): InteractionsInput {
   if (typeof message.content === "string") {
-    const text = message.content.trim();
-    return text ? { role: "model", content: text } : null;
+    const textPart = buildTextContent(message.content);
+    return textPart ? [modelOutputStep([textPart])] : [];
   }
-  if (!Array.isArray(message.content)) return null;
+  if (!Array.isArray(message.content)) return [];
 
-  const parts: InteractionsContent[] = [];
+  const steps: InteractionsInput = [];
+  let modelContent: InteractionsContent[] = [];
+  const flushModelContent = () => {
+    if (modelContent.length === 0) return;
+    steps.push(modelOutputStep(modelContent));
+    modelContent = [];
+  };
+
   for (const rawPart of message.content) {
     if (typeof rawPart === "string") {
       const textPart = buildTextContent(rawPart);
-      if (textPart) parts.push(textPart);
+      if (textPart) modelContent.push(textPart);
       continue;
     }
 
@@ -252,7 +263,7 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       const textPart = buildTextContent(
         record.text ?? record.inputText ?? record.outputText ?? record.value,
       );
-      if (textPart) parts.push(textPart);
+      if (textPart) modelContent.push(textPart);
       continue;
     }
 
@@ -260,11 +271,12 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       const signature = getGoogleThoughtSignature(record);
       if (!signature) continue;
       const summaryPart = buildTextContent(record.text ?? record.thinking);
-      parts.push({
+      flushModelContent();
+      steps.push({
         type: "thought",
         signature,
         ...(summaryPart ? { summary: [summaryPart] } : {}),
-      });
+      } as InteractionsStep);
       continue;
     }
 
@@ -274,13 +286,14 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       if (!toolCallId || !toolName) continue;
       const args = asRecord(record.input) ?? asRecord(record.arguments) ?? {};
       const signature = getGoogleThoughtSignature(record);
-      parts.push({
+      flushModelContent();
+      steps.push({
         type: "function_call",
         id: convertToolCallId(toolCallId),
         name: toolName,
         arguments: args,
         ...(signature ? { signature } : {}),
-      });
+      } as InteractionsStep);
       continue;
     }
 
@@ -292,12 +305,13 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       if (!nativeToolName) continue;
       const args = asRecord(record.arguments) ?? asRecord(record.input) ?? {};
       const signature = getGoogleThoughtSignature(record);
-      parts.push({
+      flushModelContent();
+      steps.push({
         type: nativeGoogleToolCallContentType(nativeToolName),
         id: convertToolCallId(toolCallId),
         arguments: args,
         ...(signature ? { signature } : {}),
-      } as InteractionsContent);
+      } as InteractionsStep);
       continue;
     }
 
@@ -311,23 +325,25 @@ function turnFromAssistantMessage(message: ModelMessage): InteractionTurn | null
       const nativeToolName = nativeToolNameFromWireName(toolName);
       if (!nativeToolName) continue;
       const signature = getGoogleThoughtSignature(record);
-      parts.push({
+      flushModelContent();
+      steps.push({
         type: nativeGoogleToolResultContentType(nativeToolName),
         call_id: convertToolCallId(toolCallId),
         result: record.result,
         ...(record.isError === true ? { is_error: true } : {}),
         ...(signature ? { signature } : {}),
-      } as InteractionsContent);
+      } as InteractionsStep);
     }
   }
 
-  return parts.length > 0 ? { role: "model", content: parts } : null;
+  flushModelContent();
+  return steps;
 }
 
-function turnFromToolMessage(message: ModelMessage): InteractionTurn | null {
-  if (!Array.isArray(message.content)) return null;
+function stepsFromToolMessage(message: ModelMessage): InteractionsInput {
+  if (!Array.isArray(message.content)) return [];
 
-  const parts: InteractionsContent[] = [];
+  const steps: InteractionsInput = [];
   for (const rawPart of message.content) {
     const record = asRecord(rawPart);
     if (!record) continue;
@@ -357,33 +373,30 @@ function turnFromToolMessage(message: ModelMessage): InteractionTurn | null {
           : safeJsonStringify(record.output ?? record.content);
     const signature = getGoogleThoughtSignature(record);
 
-    parts.push({
+    steps.push({
       type: "function_result",
       call_id: convertToolCallId(toolCallId),
       result,
       is_error: record.isError === true,
       ...(toolName ? { name: toolName } : {}),
       ...(signature ? { signature } : {}),
-    });
+    } as InteractionsStep);
   }
 
-  return parts.length > 0 ? { role: "user", content: parts } : null;
+  return steps;
 }
 
 function convertMessagesToInteractionsInput(messages: ModelMessage[]): InteractionsInput {
   const input: InteractionsInput = [];
 
   for (const msg of messages) {
-    const role = msg.role;
-    const turn =
-      role === "user"
-        ? turnFromUserMessage(msg)
-        : role === "assistant"
-          ? turnFromAssistantMessage(msg)
-          : role === "tool"
-            ? turnFromToolMessage(msg)
-            : null;
-    if (turn) input.push(turn);
+    if (msg.role === "user") {
+      input.push(...stepsFromUserMessage(msg));
+    } else if (msg.role === "assistant") {
+      input.push(...stepsFromAssistantMessage(msg));
+    } else if (msg.role === "tool") {
+      input.push(...stepsFromToolMessage(msg));
+    }
   }
 
   return input;
@@ -651,8 +664,26 @@ function isGoogleCodeExecutionContentType(contentType: unknown): boolean {
 
 function googleStreamEventContentType(event: Record<string, unknown>): string | undefined {
   return (
-    asNonEmptyString(asRecord(event.content)?.type) ?? asNonEmptyString(asRecord(event.delta)?.type)
+    asNonEmptyString(asRecord(event.content)?.type) ??
+    asNonEmptyString(asRecord(event.step)?.type) ??
+    asNonEmptyString(asRecord(event.delta)?.type)
   );
+}
+
+function appendJsonObjectDelta(target: Record<string, unknown>, delta: string): void {
+  const previous = typeof target.__jsonDelta === "string" ? target.__jsonDelta : "";
+  const next = `${previous}${delta}`;
+  target.__jsonDelta = next;
+  try {
+    const parsed = JSON.parse(next) as unknown;
+    const parsedRecord = asRecord(parsed);
+    if (parsedRecord) {
+      delete target.__jsonDelta;
+      Object.assign(target, parsedRecord);
+    }
+  } catch {
+    // Keep buffering until a later arguments_delta completes the JSON object.
+  }
 }
 
 function isGoogleToolChoiceType(value: unknown): value is Interactions.ToolChoiceType {
@@ -941,9 +972,9 @@ function processStreamEvent(
 ): void {
   const eventType = event.event_type as string;
 
-  if (eventType === "content.start") {
+  if (eventType === "content.start" || eventType === "step.start") {
     const index = event.index as number;
-    const content = asRecord(event.content);
+    const content = asRecord(event.content ?? event.step);
     if (!content) return;
 
     const contentType = asNonEmptyString(content.type);
@@ -1013,7 +1044,7 @@ function processStreamEvent(
     return;
   }
 
-  if (eventType === "content.delta") {
+  if (eventType === "content.delta" || eventType === "step.delta") {
     const index = event.index as number;
     const delta = asRecord(event.delta);
     if (!delta) return;
@@ -1033,7 +1064,7 @@ function processStreamEvent(
           ? { annotations: mergeAnnotationArrays(undefined, delta.annotations) }
           : {}),
       });
-    } else if (deltaType === "text_annotation") {
+    } else if (deltaType === "text_annotation" || deltaType === "text_annotation_delta") {
       const annotations = mergeAnnotationArrays(
         existing?.type === "text" ? existing.annotations : undefined,
         delta.annotations,
@@ -1042,6 +1073,12 @@ function processStreamEvent(
         existing.annotations = annotations;
       } else if (annotations && annotations.length > 0) {
         contentBlocks.set(index, { type: "text", text: "", annotations });
+      }
+    } else if (deltaType === "arguments_delta") {
+      const deltaText = typeof delta.arguments === "string" ? delta.arguments : undefined;
+      if (!deltaText) return;
+      if (existing?.type === "toolCall" || existing?.type === "providerToolCall") {
+        appendJsonObjectDelta(existing.arguments, deltaText);
       }
     } else if (deltaType === "function_call") {
       if (existing?.type === "toolCall") {
@@ -1158,15 +1195,18 @@ function mapGoogleEventToStreamParts(
   if (
     eventType !== "content.start" &&
     eventType !== "content.delta" &&
-    eventType !== "content.stop"
+    eventType !== "content.stop" &&
+    eventType !== "step.start" &&
+    eventType !== "step.delta" &&
+    eventType !== "step.stop"
   ) {
     return [];
   }
 
   const index = typeof event.index === "number" ? event.index : 0;
 
-  if (eventType === "content.start") {
-    const content = asRecord(event.content);
+  if (eventType === "content.start" || eventType === "step.start") {
+    const content = asRecord(event.content ?? event.step);
     const contentType = asNonEmptyString(content?.type);
 
     if (contentType === "text") {
@@ -1232,7 +1272,7 @@ function mapGoogleEventToStreamParts(
     return [];
   }
 
-  if (eventType === "content.delta") {
+  if (eventType === "content.delta" || eventType === "step.delta") {
     const delta = asRecord(event.delta);
     const deltaType = asNonEmptyString(delta?.type);
 
@@ -1252,6 +1292,15 @@ function mapGoogleEventToStreamParts(
         ];
       }
       return [];
+    }
+
+    if (deltaType === "arguments_delta") {
+      const block = contentBlocks.get(index);
+      const deltaText = typeof delta?.arguments === "string" ? delta.arguments : undefined;
+      if (!deltaText || (block?.type !== "toolCall" && block?.type !== "providerToolCall")) {
+        return [];
+      }
+      return [{ type: "tool-input-delta", id: block.id, delta: deltaText }];
     }
 
     if (deltaType === "function_call") {
@@ -1380,13 +1429,13 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
         );
       }
 
-      if (eventType === "interaction.start") {
+      if (eventType === "interaction.start" || eventType === "interaction.created") {
         const interaction = eventRecord.interaction as Record<string, unknown> | undefined;
         interactionId = interaction?.id as string | undefined;
         continue;
       }
 
-      if (eventType === "interaction.complete") {
+      if (eventType === "interaction.complete" || eventType === "interaction.completed") {
         const interaction = eventRecord.interaction as Record<string, unknown> | undefined;
         if (!interactionId && interaction?.id) {
           interactionId = interaction.id as string;
@@ -1405,7 +1454,10 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
       if (
         eventType === "content.start" ||
         eventType === "content.delta" ||
-        eventType === "content.stop"
+        eventType === "content.stop" ||
+        eventType === "step.start" ||
+        eventType === "step.delta" ||
+        eventType === "step.stop"
       ) {
         processStreamEvent(eventRecord, contentBlocks, providerToolCallsById);
         if (eventType === "content.stop") {
