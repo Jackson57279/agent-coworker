@@ -8,6 +8,7 @@ import {
   FolderOpenIcon,
   FolderPlusIcon,
   MoreHorizontalIcon,
+  PlusIcon,
   Settings2Icon,
   SparklesIcon,
   SquarePenIcon,
@@ -453,10 +454,7 @@ const SidebarSectionFrame = memo(function SidebarSectionFrame({
   sectionKey,
 }: SidebarSectionFrameProps) {
   const controls = useDragControls();
-  const className = cn(
-    "min-h-0 flex flex-col",
-    sectionKey === "projects" ? "flex-1" : "shrink-0",
-  );
+  const className = cn("flex flex-col");
 
   if (!reorderEnabled) {
     return (
@@ -534,10 +532,10 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
 
   if (isEditing) {
     return (
-      <div className="sidebar-thread-item flex w-full items-center gap-2.5 rounded-md border border-border/40 bg-foreground/[0.04] px-1 py-1.5 text-left text-foreground">
+      <div className="sidebar-thread-item flex w-full items-center gap-2.5 rounded-lg border border-border/40 bg-foreground/[0.04] px-2.5 py-1.5 text-left text-foreground">
         <Input
           ref={editInputRef}
-          className="min-w-0 w-full h-7 rounded-md border-border/70 text-[15px] shadow-none [&_[data-slot=input]]:h-7 [&_[data-slot=input]]:px-2 [&_[data-slot=input]]:text-[15px]"
+          className="min-w-0 w-full h-7 rounded-md border-border/70 text-[13px] shadow-none [&_[data-slot=input]]:h-7 [&_[data-slot=input]]:px-2 [&_[data-slot=input]]:text-[13px]"
           value={editingTitle}
           onBlur={() => onCommitRename(thread.id, editingTitle)}
           onChange={(event) => onEditingTitleChange(event.target.value)}
@@ -560,10 +558,10 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
   return (
     <Button
       className={cn(
-        "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-3 rounded-md border border-transparent px-1 py-1.5 text-left group",
+        "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left group",
         isActive
-          ? "border-border/35 bg-foreground/[0.045] text-foreground"
-          : "text-foreground/82 hover:bg-foreground/[0.03] hover:text-foreground",
+          ? "border-border/45 bg-foreground/[0.05] text-foreground"
+          : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
       )}
       onClick={() => selectThread(thread.id)}
       onContextMenu={(event) => onThreadContextMenu(event, thread.id, displayTitle)}
@@ -573,7 +571,7 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
       variant="ghost"
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-medium">{displayTitle}</span>
+        <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">{displayTitle}</span>
       </span>
 
       <span className="relative flex shrink-0 items-center gap-2 pl-2 min-w-8 justify-end">
@@ -582,7 +580,7 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
         ) : (
           <>
             {ageLabel ? (
-              <span className="text-[13px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
+              <span className="text-[11px] font-medium text-muted-foreground transition-opacity duration-150 group-hover:opacity-0 group-hover:pointer-events-none">
                 {ageLabel}
               </span>
             ) : null}
@@ -653,6 +651,7 @@ export const Sidebar = memo(function Sidebar() {
   >({});
   const [expandedThreadLists, setExpandedThreadLists] = useState<Record<string, boolean>>({});
   const [projectsOpen, setProjectsOpen] = useState(true);
+  const [chatsOpen, setChatsOpen] = useState(true);
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const projectWorkspaces = useMemo(
@@ -778,11 +777,8 @@ export const Sidebar = memo(function Sidebar() {
     [chatWorkspaces, threadsByWorkspaceId],
   );
   const orderedSectionKeys = useMemo(
-    () =>
-      normalizeSidebarSectionOrder(sidebarSectionOrder).filter(
-        (sectionKey) => sectionKey === "projects" || oneOffChatThreads.length > 0,
-      ),
-    [oneOffChatThreads.length, sidebarSectionOrder],
+    () => normalizeSidebarSectionOrder(sidebarSectionOrder),
+    [sidebarSectionOrder],
   );
   const sectionReorderEnabled = orderedSectionKeys.length > 1;
 
@@ -991,16 +987,51 @@ export const Sidebar = memo(function Sidebar() {
     );
   });
 
-  const chatSection =
-    oneOffChatThreads.length > 0 ? (
-      <div className="flex max-h-[40%] min-h-0 flex-col gap-2">
-        <div
-          className="cursor-grab px-1 text-[17px] font-medium text-muted-foreground/75 active:cursor-grabbing"
-          data-sidebar-section-drag-handle="true"
-        >
-          Chats
+  const chatSection = (
+    <div className="flex flex-col gap-2">
+      <div
+        className="group flex items-center justify-between gap-2 px-1"
+        data-sidebar-section-drag-handle="true"
+      >
+        <div className="flex min-w-0 flex-1 cursor-grab items-center gap-1.5 active:cursor-grabbing">
+          <span className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/75">
+            Chats
+          </span>
+          <Button
+            aria-expanded={chatsOpen}
+            aria-label={chatsOpen ? "Collapse chats" : "Expand chats"}
+            className="size-6 shrink-0 rounded-md bg-transparent text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+            data-sidebar-section-action="true"
+            onClick={() => setChatsOpen((open) => !open)}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDownIcon
+              className={cn("h-4 w-4 transition-transform", chatsOpen ? "" : "-rotate-90")}
+            />
+          </Button>
         </div>
-        <div className="min-h-0 overflow-auto pr-1">
+        <div className="flex items-center">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+            data-sidebar-section-action="true"
+            onClick={() => void newThread()}
+            aria-label="New chat"
+          >
+            <PlusIcon className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      {chatsOpen ? (
+        oneOffChatThreads.length === 0 ? (
+        <div className="px-3 py-2 text-[12px] text-muted-foreground/60 italic">
+          No chats yet
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
           <div className="grid gap-1">
             {oneOffChatThreads.map((thread) => (
               <SidebarOneOffChatItem
@@ -1021,20 +1052,25 @@ export const Sidebar = memo(function Sidebar() {
             ))}
           </div>
         </div>
-      </div>
-    ) : null;
+        )
+      ) : null}
+    </div>
+  );
 
   const projectSection = (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div
-        className="flex items-center justify-between gap-2 px-1"
+        className="group flex items-center justify-between gap-2 px-1"
         data-sidebar-section-drag-handle="true"
       >
         <div className="flex min-w-0 flex-1 cursor-grab items-center gap-1.5 active:cursor-grabbing">
+          <span className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/75">
+            Projects
+          </span>
           <Button
             aria-expanded={projectsOpen}
             aria-label={projectsOpen ? "Collapse projects" : "Expand projects"}
-            className="size-6 shrink-0 rounded-md bg-transparent text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground"
+            className="size-6 shrink-0 rounded-md bg-transparent text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
             data-sidebar-section-action="true"
             onClick={() => setProjectsOpen((open) => !open)}
             size="icon-sm"
@@ -1045,14 +1081,11 @@ export const Sidebar = memo(function Sidebar() {
               className={cn("h-4 w-4 transition-transform", projectsOpen ? "" : "-rotate-90")}
             />
           </Button>
-          <span className="truncate text-[17px] font-medium text-muted-foreground/75">
-            Projects
-          </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center">
           <Button
             aria-label="Project section options"
-            className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
+            className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
             data-sidebar-section-action="true"
             onClick={handleProjectSectionMenu}
             size="icon-sm"
@@ -1061,24 +1094,12 @@ export const Sidebar = memo(function Sidebar() {
           >
             <MoreHorizontalIcon className="h-4 w-4" />
           </Button>
-          {workspaceLifecycleEnabled ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
-              data-sidebar-section-action="true"
-              onClick={() => void addWorkspace()}
-              aria-label="Add project"
-            >
-              <FolderPlusIcon className="h-4 w-4" />
-            </Button>
-          ) : null}
         </div>
       </div>
 
       {projectsOpen ? (
         projectWorkspaces.length === 0 ? (
-          <div className="min-h-0 flex-1 overflow-auto pr-1">
+          <div className="flex flex-col">
             <div className="rounded-md border border-border/55 bg-foreground/[0.03] px-4 py-4 text-center text-xs text-muted-foreground">
               <FolderPlusIcon
                 strokeWidth={1.5}
@@ -1102,15 +1123,14 @@ export const Sidebar = memo(function Sidebar() {
           <Reorder.Group
             as="div"
             axis="y"
-            className="min-h-0 flex-1 overflow-auto pr-1"
-            layoutScroll
+            className="flex flex-col gap-1"
             onReorder={handleReorder}
             values={visibleProjectWorkspaces}
           >
             {workspaceItems}
           </Reorder.Group>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto pr-1">{workspaceItems}</div>
+          <div className="flex flex-col gap-1">{workspaceItems}</div>
         )
       ) : null}
     </div>
@@ -1190,7 +1210,7 @@ export const Sidebar = memo(function Sidebar() {
       <Reorder.Group
         as="section"
         axis="y"
-        className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden"
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
         onReorder={handleSectionReorder}
         values={orderedSectionKeys}
       >

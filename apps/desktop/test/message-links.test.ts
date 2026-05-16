@@ -209,6 +209,36 @@ describe("desktop message local file links", () => {
     expect(html).not.toContain("[blocked]");
   });
 
+  test("resolves bare filename hrefs against the workspace base path", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        MessageResponse,
+        {
+          desktopBasePath: "/Users/mweinbach/.cowork/chats/20260516T160131Z-chat-a602792b35",
+        },
+        "Saved to your workspace: [Citadel_TV_Show_Research.docx](Citadel_TV_Show_Research.docx).",
+      ),
+    );
+
+    expect(html).toContain("Citadel_TV_Show_Research.docx");
+    expect(html).toContain("<button");
+    expect(html).not.toContain("[blocked]");
+  });
+
+  test("leaves bare filename hrefs alone when no base path is provided", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        MessageResponse,
+        null,
+        "[Citadel_TV_Show_Research.docx](Citadel_TV_Show_Research.docx)",
+      ),
+    );
+
+    // Without a base path the harden plugin still blocks the link; this regression test
+    // makes the dependency on `desktopBasePath` visible.
+    expect(html).toContain("Citadel_TV_Show_Research.docx");
+  });
+
   test("auto-links bare absolute file paths in rendered assistant text", () => {
     const html = renderToStaticMarkup(
       createElement(

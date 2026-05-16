@@ -809,7 +809,7 @@ describe("desktop sidebar", () => {
         expect(workspaceCards).toHaveLength(1);
         expect(container.textContent).toContain("Agent Coworker");
         expect(container.textContent).not.toContain("Research Lab");
-        expect(container.querySelector('[aria-label="Add project"]')).not.toBeNull();
+        expect(container.querySelector('[aria-label="Project section options"]')).not.toBeNull();
       } finally {
         if (root) {
           await act(async () => {

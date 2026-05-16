@@ -912,8 +912,32 @@ export function rewriteBareDesktopFilePathsInTree(node: HastNode): void {
   node.children = nextChildren;
 }
 
-export function rewriteDesktopFileLinksInTree(node: HastNode): void {
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+const RELATIVE_FILENAME_RE = /^[\w.\-+ ()%,&'!@$=~^]+\.[A-Za-z0-9]{1,12}$/;
+
+/** Resolve a markdown href that looks like a bare filename (no scheme, no slashes) against the active workspace path. */
+export function resolveRelativeFileHref(rawHref: string, basePath: string | null): string | null {
+  if (!basePath) return null;
+  if (!rawHref || URL_SCHEME_RE.test(rawHref)) return null;
+  if (rawHref.startsWith("/") || rawHref.startsWith("\\") || rawHref.startsWith("#")) {
+    return null;
+  }
+  // Strip a query/fragment so `Foo.docx?x=1` still resolves.
+  const cleaned = rawHref.replace(/[?#].*$/, "");
+  if (!RELATIVE_FILENAME_RE.test(cleaned)) {
+    return null;
+  }
+  const normalizedBase = basePath.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!normalizedBase) return null;
+  return desktopPathToFileUrl(`${normalizedBase}/${cleaned}`);
+}
+
+export function rewriteDesktopFileLinksInTree(node: HastNode, basePath: string | null = null): void {
   if (typeof node.url === "string") {
+    const rebased = resolveRelativeFileHref(node.url, basePath);
+    if (rebased) {
+      node.url = rebased;
+    }
     const desktopPath = fileUrlToDesktopPath(node.url);
     if (desktopPath) {
       normalizeDesktopFileLinkLabel(node, desktopPath, node.url);
@@ -936,16 +960,21 @@ export function rewriteDesktopFileLinksInTree(node: HastNode): void {
     typeof node.properties?.href === "string"
   ) {
     const href = node.properties.href;
-    const desktopPath = fileUrlToDesktopPath(href);
+    const rebased = resolveRelativeFileHref(href, basePath);
+    if (rebased) {
+      node.properties.href = rebased;
+    }
+    const currentHref = node.properties.href as string;
+    const desktopPath = fileUrlToDesktopPath(currentHref);
     if (desktopPath) {
-      normalizeDesktopFileLinkLabel(node, desktopPath, href);
+      normalizeDesktopFileLinkLabel(node, desktopPath, currentHref);
     }
 
-    const rewrittenHref = encodeDesktopLocalFileHref(href);
+    const rewrittenHref = encodeDesktopLocalFileHref(currentHref);
     if (rewrittenHref) {
       node.properties.href = rewrittenHref;
     } else {
-      const rewrittenExternalHref = encodeDesktopExternalHref(href);
+      const rewrittenExternalHref = encodeDesktopExternalHref(currentHref);
       if (rewrittenExternalHref) {
         node.properties.href = rewrittenExternalHref;
       }
@@ -957,14 +986,15 @@ export function rewriteDesktopFileLinksInTree(node: HastNode): void {
   }
 
   for (const child of node.children) {
-    rewriteDesktopFileLinksInTree(child);
+    rewriteDesktopFileLinksInTree(child, basePath);
   }
 }
 
-export function remarkRewriteDesktopFileLinks() {
+export function remarkRewriteDesktopFileLinks(opts?: { basePath?: string | null }) {
+  const basePath = opts?.basePath ?? null;
   return (tree: HastNode) => {
     rewriteBareDesktopFilePathsInTree(tree);
-    rewriteDesktopFileLinksInTree(tree);
+    rewriteDesktopFileLinksInTree(tree, basePath);
   };
 }
 
@@ -1076,6 +1106,8 @@ export type MessageResponseProps = StreamdownProps & {
   citationSources?: readonly CitationSource[];
   citationAnnotations?: unknown;
   fallbackToSourcesFooter?: boolean;
+  /** Absolute workspace path used to resolve bare filename hrefs in markdown links. */
+  desktopBasePath?: string | null;
 };
 
 function normalizeMessageResponseChildren(
@@ -1124,9 +1156,14 @@ export const MessageResponse = memo(function MessageResponse({
   citationAnnotations,
   normalizeDisplayCitations = false,
   fallbackToSourcesFooter = true,
+  desktopBasePath = null,
   ...props
 }: MessageResponseProps) {
   const { children, components, plugins, rehypePlugins, remarkPlugins, ...restProps } = props;
+  const desktopFileLinksPlugin = useMemo<[typeof remarkRewriteDesktopFileLinks, { basePath: string | null }]>(
+    () => [remarkRewriteDesktopFileLinks, { basePath: desktopBasePath }],
+    [desktopBasePath],
+  );
 
   return (
     <Streamdown
@@ -1154,8 +1191,8 @@ export const MessageResponse = memo(function MessageResponse({
       }}
       remarkPlugins={
         remarkPlugins
-          ? [...remarkPlugins, remarkRewriteDesktopFileLinks]
-          : [defaultRemarkPlugins.gfm, remarkRewriteDesktopFileLinks]
+          ? [...remarkPlugins, desktopFileLinksPlugin]
+          : [defaultRemarkPlugins.gfm, desktopFileLinksPlugin]
       }
       rehypePlugins={rehypePlugins ?? defaultDesktopRehypePlugins}
     />

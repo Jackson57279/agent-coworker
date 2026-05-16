@@ -552,6 +552,7 @@ const FeedRow = memo(function FeedRow(props: {
   item: FeedItem;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
   citationSources?: CitationSource[];
+  desktopBasePath?: string | null;
   isLatestUiSurface?: boolean;
   a2uiEnabled: boolean;
 }) {
@@ -600,6 +601,7 @@ const FeedRow = memo(function FeedRow(props: {
               citationAnnotations={item.annotations}
               citationSources={props.citationSources}
               citationUrlsByIndex={props.citationUrlsByIndex}
+              desktopBasePath={props.desktopBasePath}
               normalizeDisplayCitations
               fallbackToSourcesFooter={!hasSources}
             >
@@ -1511,6 +1513,7 @@ export function ChatView() {
                     item={item.item}
                     citationUrlsByIndex={citationUrlsByMessageId.get(item.item.id)}
                     citationSources={citationSourcesByMessageId.get(item.item.id)}
+                    desktopBasePath={workspace?.path ?? null}
                     isLatestUiSurface={item.item.id === latestUiSurfaceItemId}
                     a2uiEnabled={a2uiEnabled}
                   />
