@@ -13,13 +13,17 @@ export const PROVIDER_MANAGED_CONTINUATION_PROVIDER_NAMES = [
   "codex-cli",
   "google",
 ] as const;
-export type ProviderManagedContinuationProvider = OpenAiContinuationProvider | "codex-cli" | "google";
+export type ProviderManagedContinuationProvider =
+  | OpenAiContinuationProvider
+  | "codex-cli"
+  | "google";
 
 export type GoogleContinuationState = {
   provider: "google";
   model: string;
   interactionId: string;
   updatedAt: string;
+  requestFingerprint?: string;
 };
 
 export type CodexAppServerContinuationState = {
@@ -40,6 +44,7 @@ export const googleContinuationStateSchema = z
     model: z.string().trim().min(1),
     interactionId: z.string().trim().min(1),
     updatedAt: z.string().datetime({ offset: true }),
+    requestFingerprint: z.string().trim().min(1).optional(),
   })
   .strict();
 

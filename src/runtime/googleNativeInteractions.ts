@@ -19,6 +19,8 @@ type GoogleInteractionsStreamOptions = {
   maxOutputTokens?: number;
   toolChoice?: GoogleInteractionsToolChoice;
   nativeWebSearch?: boolean;
+  responseFormat?: unknown;
+  responseMimeType?: string;
 };
 
 export type GoogleNativeStepRequest = {
@@ -45,6 +47,73 @@ export type RunGoogleNativeInteractionStep = (
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+export type GoogleInteractionErrorKind =
+  | "abort"
+  | "auth"
+  | "quota"
+  | "stale_continuation"
+  | "schema"
+  | "retryable"
+  | "unknown";
+
+export function classifyGoogleInteractionError(error: unknown): GoogleInteractionErrorKind {
+  const text = error instanceof Error ? error.message : String(error);
+  const normalized = text.toLowerCase();
+  if (normalized.includes("abort")) return "abort";
+  if (
+    normalized.includes("api key") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("permission_denied") ||
+    normalized.includes("401") ||
+    normalized.includes("403")
+  ) {
+    return "auth";
+  }
+  if (
+    normalized.includes("quota") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("resource_exhausted") ||
+    normalized.includes("429")
+  ) {
+    return "quota";
+  }
+  if (
+    (normalized.includes("previous_interaction") || normalized.includes("interaction_id")) &&
+    (normalized.includes("not found") ||
+      normalized.includes("invalid") ||
+      normalized.includes("expired") ||
+      normalized.includes("unknown"))
+  ) {
+    return "stale_continuation";
+  }
+  if (
+    normalized.includes("schema") ||
+    normalized.includes("invalid argument") ||
+    normalized.includes("invalid_argument") ||
+    normalized.includes("bad request") ||
+    normalized.includes("400")
+  ) {
+    return "schema";
+  }
+  if (
+    normalized.includes("timeout") ||
+    normalized.includes("temporar") ||
+    normalized.includes("unavailable") ||
+    normalized.includes("internal") ||
+    normalized.includes("502") ||
+    normalized.includes("503") ||
+    normalized.includes("504")
+  ) {
+    return "retryable";
+  }
+  return "unknown";
+}
+
+export function isRetryableGoogleInteractionError(error: unknown): boolean {
+  const kind = classifyGoogleInteractionError(error);
+  return kind === "retryable" || kind === "quota";
+}
 
 function resolveGoogleApiKey(explicitKey?: string): string {
   const direct = explicitKey?.trim();
@@ -428,6 +497,22 @@ function googleAssistantContentBlockToModelPart(rawPart: unknown): Record<string
     };
   }
 
+  if (
+    partType === "image" ||
+    partType === "audio" ||
+    partType === "video" ||
+    partType === "document"
+  ) {
+    return {
+      type: partType,
+      ...(asNonEmptyString(record.data) ? { data: asNonEmptyString(record.data) } : {}),
+      ...(asNonEmptyString(record.uri) ? { uri: asNonEmptyString(record.uri) } : {}),
+      ...(asNonEmptyString(record.mime_type)
+        ? { mimeType: asNonEmptyString(record.mime_type) }
+        : {}),
+    };
+  }
+
   if (partType === "thought" || partType === "thinking" || partType === "reasoning") {
     const summary = Array.isArray(record.summary) ? record.summary : [];
     const summaryText = summary
@@ -595,7 +680,12 @@ function _extractTextFromContent(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
-type NativeGoogleToolName = "nativeWebSearch" | "nativeUrlContext";
+type NativeGoogleToolName =
+  | "nativeWebSearch"
+  | "nativeUrlContext"
+  | "nativeFileSearch"
+  | "nativeGoogleMaps"
+  | "nativeMcpServerTool";
 
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
@@ -630,32 +720,70 @@ function nativeToolNameFromContentType(contentType: string): NativeGoogleToolNam
   if (contentType === "url_context_call" || contentType === "url_context_result") {
     return "nativeUrlContext";
   }
+  if (contentType === "file_search_call" || contentType === "file_search_result") {
+    return "nativeFileSearch";
+  }
+  if (contentType === "google_maps_call" || contentType === "google_maps_result") {
+    return "nativeGoogleMaps";
+  }
+  if (contentType === "mcp_server_tool_call" || contentType === "mcp_server_tool_result") {
+    return "nativeMcpServerTool";
+  }
   return null;
 }
 
 function nativeToolNameFromWireName(name: string): NativeGoogleToolName | null {
   return (
     nativeToolNameFromContentType(name) ??
-    (name === "nativeWebSearch" || name === "nativeUrlContext" ? name : null)
+    (
+      [
+        "nativeWebSearch",
+        "nativeUrlContext",
+        "nativeFileSearch",
+        "nativeGoogleMaps",
+        "nativeMcpServerTool",
+      ] as const
+    ).find((entry) => entry === name) ??
+    null
   );
 }
 
 function nativeGoogleToolCallContentType(name: NativeGoogleToolName): string {
-  if (name === "nativeWebSearch") return "google_search_call";
-  return "url_context_call";
+  switch (name) {
+    case "nativeWebSearch":
+      return "google_search_call";
+    case "nativeUrlContext":
+      return "url_context_call";
+    case "nativeFileSearch":
+      return "file_search_call";
+    case "nativeGoogleMaps":
+      return "google_maps_call";
+    case "nativeMcpServerTool":
+      return "mcp_server_tool_call";
+  }
 }
 
 function nativeGoogleToolResultContentType(name: NativeGoogleToolName): string {
-  if (name === "nativeWebSearch") return "google_search_result";
-  return "url_context_result";
+  switch (name) {
+    case "nativeWebSearch":
+      return "google_search_result";
+    case "nativeUrlContext":
+      return "url_context_result";
+    case "nativeFileSearch":
+      return "file_search_result";
+    case "nativeGoogleMaps":
+      return "google_maps_result";
+    case "nativeMcpServerTool":
+      return "mcp_server_tool_result";
+  }
 }
 
 function isNativeGoogleToolCallContentType(contentType: string): boolean {
-  return contentType === "google_search_call" || contentType === "url_context_call";
+  return nativeToolNameFromContentType(contentType) !== null && contentType.endsWith("_call");
 }
 
 function isNativeGoogleToolResultContentType(contentType: string): boolean {
-  return contentType === "google_search_result" || contentType === "url_context_result";
+  return nativeToolNameFromContentType(contentType) !== null && contentType.endsWith("_result");
 }
 
 function isGoogleCodeExecutionContentType(contentType: unknown): boolean {
@@ -763,6 +891,38 @@ function buildNativeGoogleToolResultOutput(
       callId,
       urls: extractStringArray(callArguments.urls),
       results: extractSingletonOrNestedResultEntries(result),
+      raw: result,
+    };
+  }
+
+  if (name === "nativeFileSearch") {
+    return {
+      provider: "google",
+      status: "completed",
+      callId,
+      results: extractResultEntries(result),
+      raw: result,
+    };
+  }
+
+  if (name === "nativeGoogleMaps") {
+    return {
+      provider: "google",
+      status: "completed",
+      callId,
+      results: extractResultEntries(result),
+      raw: result,
+    };
+  }
+
+  if (name === "nativeMcpServerTool") {
+    return {
+      provider: "google",
+      status: "completed",
+      callId,
+      serverName: asNonEmptyString(callArguments.server_name),
+      name: asNonEmptyString(callArguments.name),
+      result,
       raw: result,
     };
   }
@@ -883,6 +1043,12 @@ export function buildGoogleNativeRequest(
     stream: true,
     store: true,
     system_instruction: opts.systemPrompt,
+    ...(opts.streamOptions.responseFormat !== undefined
+      ? { response_format: opts.streamOptions.responseFormat }
+      : {}),
+    ...(opts.streamOptions.responseMimeType
+      ? { response_mime_type: opts.streamOptions.responseMimeType }
+      : {}),
   };
 
   if (Object.keys(generationConfig).length > 0) {
@@ -907,6 +1073,12 @@ export function buildGoogleNativeRequest(
 type AssistantContentBlock =
   | { type: "thinking"; thinking: string; thinkingSignature?: string }
   | { type: "text"; text: string; annotations?: Array<Record<string, unknown>> }
+  | {
+      type: "image" | "audio" | "video" | "document";
+      data?: string;
+      uri?: string;
+      mime_type?: string;
+    }
   | {
       type: "toolCall";
       id: string;
@@ -965,6 +1137,53 @@ function rememberProviderToolCall(
   }
 }
 
+type GoogleStreamEventKind =
+  | "interaction_start"
+  | "interaction_complete"
+  | "interaction_status"
+  | "content"
+  | "error"
+  | "unknown";
+
+function normalizeGoogleStreamEvent(event: Record<string, unknown>): {
+  kind: GoogleStreamEventKind;
+  eventType: string;
+  index?: number;
+  content?: Record<string, unknown> | null;
+  delta?: Record<string, unknown> | null;
+} {
+  const eventType = asNonEmptyString(event.event_type) ?? "unknown";
+  if (eventType === "interaction.start" || eventType === "interaction.created") {
+    return { kind: "interaction_start", eventType };
+  }
+  if (eventType === "interaction.complete" || eventType === "interaction.completed") {
+    return { kind: "interaction_complete", eventType };
+  }
+  if (eventType === "interaction.status_update") {
+    return { kind: "interaction_status", eventType };
+  }
+  if (eventType === "error") {
+    return { kind: "error", eventType };
+  }
+  if (
+    eventType === "content.start" ||
+    eventType === "content.delta" ||
+    eventType === "content.stop" ||
+    eventType === "step.start" ||
+    eventType === "step.delta" ||
+    eventType === "step.stop"
+  ) {
+    return {
+      kind: "content",
+      eventType,
+      index: typeof event.index === "number" ? event.index : undefined,
+      content: asRecord(event.content ?? event.step),
+      delta: asRecord(event.delta),
+    };
+  }
+  return { kind: "unknown", eventType };
+}
+
 function processStreamEvent(
   event: Record<string, unknown>,
   contentBlocks: Map<number, AssistantContentBlock>,
@@ -979,12 +1198,42 @@ function processStreamEvent(
 
     const contentType = asNonEmptyString(content.type);
     if (!contentType) return;
-    if (contentType === "text") {
+    if (contentType === "model_output") {
+      const modelOutputContent = Array.isArray(content.content) ? content.content : [];
+      const text = modelOutputContent
+        .map((part) => asNonEmptyString(asRecord(part)?.text))
+        .filter((part): part is string => !!part)
+        .join("");
+      const annotations = modelOutputContent.flatMap((part) =>
+        asRecordArray(asRecord(part)?.annotations),
+      );
+      if (text || annotations.length > 0) {
+        contentBlocks.set(index, {
+          type: "text",
+          text,
+          ...(annotations.length > 0 ? { annotations } : {}),
+        });
+      }
+    } else if (contentType === "text") {
       contentBlocks.set(index, {
         type: "text",
         text: asNonEmptyString(content.text) ?? "",
         ...(mergeAnnotationArrays(undefined, content.annotations)
           ? { annotations: mergeAnnotationArrays(undefined, content.annotations) }
+          : {}),
+      });
+    } else if (
+      contentType === "image" ||
+      contentType === "audio" ||
+      contentType === "video" ||
+      contentType === "document"
+    ) {
+      contentBlocks.set(index, {
+        type: contentType,
+        ...(asNonEmptyString(content.data) ? { data: asNonEmptyString(content.data) } : {}),
+        ...(asNonEmptyString(content.uri) ? { uri: asNonEmptyString(content.uri) } : {}),
+        ...(asNonEmptyString(content.mime_type)
+          ? { mime_type: asNonEmptyString(content.mime_type) }
           : {}),
       });
     } else if (contentType === "function_call") {
@@ -1013,7 +1262,13 @@ function processStreamEvent(
       const name = nativeToolNameFromContentType(contentType);
       if (!name) return;
       const id = asNonEmptyString(content.id) ?? `provider_tool_${Date.now()}_${index}`;
-      const argumentsRecord = asRecord(content.arguments) ?? {};
+      const argumentsRecord = {
+        ...(asRecord(content.arguments) ?? {}),
+        ...(asNonEmptyString(content.name) ? { name: asNonEmptyString(content.name) } : {}),
+        ...(asNonEmptyString(content.server_name)
+          ? { server_name: asNonEmptyString(content.server_name) }
+          : {}),
+      };
       contentBlocks.set(index, {
         type: "providerToolCall",
         id,
@@ -1062,6 +1317,24 @@ function processStreamEvent(
         text: String(delta.text ?? ""),
         ...(mergeAnnotationArrays(undefined, delta.annotations)
           ? { annotations: mergeAnnotationArrays(undefined, delta.annotations) }
+          : {}),
+      });
+    } else if (
+      deltaType === "image" ||
+      deltaType === "audio" ||
+      deltaType === "video" ||
+      deltaType === "document"
+    ) {
+      const mediaBlock = existing?.type === deltaType ? existing : undefined;
+      contentBlocks.set(index, {
+        type: deltaType,
+        ...(mediaBlock?.data ? { data: mediaBlock.data } : {}),
+        ...(mediaBlock?.uri ? { uri: mediaBlock.uri } : {}),
+        ...(mediaBlock?.mime_type ? { mime_type: mediaBlock.mime_type } : {}),
+        ...(asNonEmptyString(delta.data) ? { data: asNonEmptyString(delta.data) } : {}),
+        ...(asNonEmptyString(delta.uri) ? { uri: asNonEmptyString(delta.uri) } : {}),
+        ...(asNonEmptyString(delta.mime_type)
+          ? { mime_type: asNonEmptyString(delta.mime_type) }
           : {}),
       });
     } else if (deltaType === "text_annotation" || deltaType === "text_annotation_delta") {
@@ -1119,6 +1392,14 @@ function processStreamEvent(
         if (deltaArgs) {
           Object.assign(existing.arguments, deltaArgs);
         }
+        const deltaToolName = asNonEmptyString(delta.name);
+        if (deltaToolName) {
+          existing.arguments.name = deltaToolName;
+        }
+        const deltaServerName = asNonEmptyString(delta.server_name);
+        if (deltaServerName) {
+          existing.arguments.server_name = deltaServerName;
+        }
         rememberProviderToolCall(
           providerToolCallsById,
           deltaId && deltaId !== existing.id ? [existing.id, deltaId] : [existing.id],
@@ -1128,7 +1409,13 @@ function processStreamEvent(
         );
       } else {
         const id = asNonEmptyString(delta.id) ?? `provider_tool_${Date.now()}_${index}`;
-        const argumentsRecord = asRecord(delta.arguments) ?? {};
+        const argumentsRecord = {
+          ...(asRecord(delta.arguments) ?? {}),
+          ...(asNonEmptyString(delta.name) ? { name: asNonEmptyString(delta.name) } : {}),
+          ...(asNonEmptyString(delta.server_name)
+            ? { server_name: asNonEmptyString(delta.server_name) }
+            : {}),
+        };
         contentBlocks.set(index, {
           type: "providerToolCall",
           id,
@@ -1209,11 +1496,17 @@ function mapGoogleEventToStreamParts(
     const content = asRecord(event.content ?? event.step);
     const contentType = asNonEmptyString(content?.type);
 
-    if (contentType === "text") {
+    if (contentType === "text" || contentType === "model_output") {
       const parts: Array<Record<string, unknown>> = [
         { type: "text-start", id: streamIdForIndex(index) },
       ];
-      const initialText = asNonEmptyString(content?.text);
+      const initialText =
+        contentType === "model_output"
+          ? (Array.isArray(content?.content) ? content.content : [])
+              .map((part) => asNonEmptyString(asRecord(part)?.text))
+              .filter((part): part is string => !!part)
+              .join("")
+          : asNonEmptyString(content?.text);
       if (initialText) {
         parts.push({ type: "text-delta", id: streamIdForIndex(index), text: initialText });
       }
@@ -1335,6 +1628,15 @@ function mapGoogleEventToStreamParts(
   if (block?.type === "thinking") {
     return [{ type: "reasoning-end", id: streamIdForIndex(index) }];
   }
+  if (
+    block?.type === "image" ||
+    block?.type === "audio" ||
+    block?.type === "video" ||
+    block?.type === "document"
+  ) {
+    const { type, ...media } = block;
+    return [{ type: "file", mediaType: type, ...media }];
+  }
   if (block?.type === "toolCall") {
     return [
       { type: "tool-input-end", id: block.id },
@@ -1418,9 +1720,10 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
   try {
     for await (const event of stream) {
       const eventRecord = event as unknown as Record<string, unknown>;
-      const eventType = eventRecord.event_type as string;
+      const normalizedEvent = normalizeGoogleStreamEvent(eventRecord);
+      const eventType = normalizedEvent.eventType;
 
-      // Emit raw event for observability
+      // Emit raw event for observability and replay.
       pendingEventDelivery = pendingEventDelivery.then(() => emitRawEvent(eventRecord));
 
       if (isGoogleCodeExecutionContentType(googleStreamEventContentType(eventRecord))) {
@@ -1451,16 +1754,9 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
         throw new Error(message);
       }
 
-      if (
-        eventType === "content.start" ||
-        eventType === "content.delta" ||
-        eventType === "content.stop" ||
-        eventType === "step.start" ||
-        eventType === "step.delta" ||
-        eventType === "step.stop"
-      ) {
+      if (normalizedEvent.kind === "content") {
         processStreamEvent(eventRecord, contentBlocks, providerToolCallsById);
-        if (eventType === "content.stop") {
+        if (eventType === "content.stop" || eventType === "step.stop") {
           const blockIndex = typeof eventRecord.index === "number" ? eventRecord.index : 0;
           queueTextBlockAnnotationEnrichment(
             pendingAnnotationEnrichments,
@@ -1474,6 +1770,16 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
         )) {
           pendingEventDelivery = queueEventDelivery(pendingEventDelivery, emitEvent, part);
         }
+        continue;
+      }
+
+      if (normalizedEvent.kind === "unknown") {
+        pendingEventDelivery = queueEventDelivery(pendingEventDelivery, emitEvent, {
+          type: "unknown",
+          provider: "google",
+          eventType,
+          event: eventRecord,
+        });
       }
     }
 
@@ -1531,7 +1837,10 @@ export const __internal = {
   enrichTextBlockAnnotations,
   getGoogleInteractionsClient,
   googleTurnMessagesToModelMessages,
+  classifyGoogleInteractionError,
+  isRetryableGoogleInteractionError,
   mapGoogleEventToStreamParts,
+  normalizeGoogleStreamEvent,
   processStreamEvent,
   queueTextBlockAnnotationEnrichment,
   resolveGoogleApiKey,

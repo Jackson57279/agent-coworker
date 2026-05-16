@@ -80,12 +80,12 @@
  * strip, and the card's tucked-in top-left corner reveals the same tint
  * (instead of bare Tabbed) where its curve meets the sidebar/topbar L.
  */
-:root[data-platform="win32"]:not([data-reduced-transparency="true"]) .app-chat-body {
-  background: var(--surface-sidebar-pane);
-}
-
 :root[data-platform="win32"] .app-chat-body {
   margin-top: calc(-1 * var(--platform-titlebar-height));
+}
+
+:root[data-platform="win32"]:not([data-reduced-transparency="true"]) .app-chat-body {
+  background: var(--surface-sidebar-pane);
 }
 
 :root[data-platform="win32"] .app-chat-body > .app-left-sidebar-pane {
@@ -233,7 +233,8 @@
  * Fluent "glass over content" feel without relying on a second native
  * material. Disabled when the user requests reduced transparency.
  */
-:root[data-platform="win32"]:not([data-reduced-transparency="true"]) :is(
+:root[data-platform="win32"]:not([data-reduced-transparency="true"])
+  :is(
     [data-slot="alert-dialog-content"],
     [data-slot="context-menu-content"],
     [data-slot="context-menu-sub-content"],

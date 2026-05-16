@@ -394,7 +394,10 @@ export function FilePreviewModal() {
           <div className="flex items-center justify-between gap-4 min-w-0">
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <DialogTitle className="truncate text-base font-medium text-foreground" title={titleName}>
+                <DialogTitle
+                  className="truncate text-base font-medium text-foreground"
+                  title={titleName}
+                >
                   {titleName}
                 </DialogTitle>
                 <Badge

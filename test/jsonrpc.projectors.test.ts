@@ -256,8 +256,7 @@ describe("JSON-RPC projectors", () => {
     });
 
     const reasoningStarted = outbound.find(
-      (message) =>
-        message.method === "item/started" && message.params?.item?.type === "reasoning",
+      (message) => message.method === "item/started" && message.params?.item?.type === "reasoning",
     );
     const reasoningCompleted = outbound.find(
       (message) =>

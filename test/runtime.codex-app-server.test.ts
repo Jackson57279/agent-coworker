@@ -119,9 +119,13 @@ function installMockClientFactory(): void {
 }
 
 function createMockClient(): CodexAppServerClient {
-  const notificationListeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
+  const notificationListeners = new Set<
+    (notification: CodexAppServerJsonRpcNotification) => void
+  >();
   const rawListeners = new Set<(message: CodexAppServerJsonRpcRawMessage) => void>();
-  const serverRequestHandlers = new Set<(request: { id: number; method: string; params?: unknown }) => unknown>();
+  const serverRequestHandlers = new Set<
+    (request: { id: number; method: string; params?: unknown }) => unknown
+  >();
   let closed = false;
   let nextTurnId = 1;
 
@@ -274,7 +278,12 @@ function createMockClient(): CodexAppServerClient {
         reasoningEffort: "high",
       };
     } else if (method === "thread/resume") {
-      const record = params as { threadId?: string; model?: string; approvalPolicy?: string; sandbox?: string };
+      const record = params as {
+        threadId?: string;
+        model?: string;
+        approvalPolicy?: string;
+        sandbox?: string;
+      };
       result = {
         thread: { id: record.threadId ?? "thread_1", modelProvider: "openai", turns: [] },
         model: record.model ?? "gpt-5.4",
@@ -353,7 +362,10 @@ function createMockClient(): CodexAppServerClient {
             });
           }
           if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("eventful")) {
-            await sendServerRequest("requestUserInput", { question: "Need detail?", options: ["yes"] });
+            await sendServerRequest("requestUserInput", {
+              question: "Need detail?",
+              options: ["yes"],
+            });
             sendNotification({
               method: "todoList/updated",
               params: { todos: [{ content: "Wire app-server todos", status: "completed" }] },
@@ -409,12 +421,9 @@ function createMockClient(): CodexAppServerClient {
       const record = params as { expectedTurnId?: string; input?: unknown };
       result = { turnId: record.expectedTurnId };
       queueMicrotask(() => {
-        completeTurn(
-          "thread_1",
-          record.expectedTurnId ?? "turn_1",
-          "hello from app-server",
-          [{ type: "userMessage", id: "steer_user_1", content: record.input }],
-        );
+        completeTurn("thread_1", record.expectedTurnId ?? "turn_1", "hello from app-server", [
+          { type: "userMessage", id: "steer_user_1", content: record.input },
+        ]);
       });
     }
     emitRaw({ direction: "server_response", message: { id: requestId, result } });
@@ -618,23 +627,53 @@ describe("codex app-server runtime", () => {
     expect(JSON.stringify(rawEvents)).not.toContain("Leaked Generated Title");
   });
 
-  test.serial("forwards Codex verbosity and rich web search config to app-server threads", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-config-"));
-    const script = await writeMockAppServer(dir);
-    const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
-    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
-    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+  test.serial(
+    "forwards Codex verbosity and rich web search config to app-server threads",
+    async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-config-"));
+      const script = await writeMockAppServer(dir);
+      const capturePath = path.join(dir, "requests.jsonl");
+      process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
+      process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+      process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
-    const config = {
-      ...makeConfig(dir),
-      providerOptions: {
-        "codex-cli": {
-          textVerbosity: "high",
-          webSearchMode: "live",
-          webSearch: {
-            contextSize: "high",
-            allowedDomains: ["openai.com", "platform.openai.com"],
+      const config = {
+        ...makeConfig(dir),
+        providerOptions: {
+          "codex-cli": {
+            textVerbosity: "high",
+            webSearchMode: "live",
+            webSearch: {
+              contextSize: "high",
+              allowedDomains: ["openai.com", "platform.openai.com"],
+              location: {
+                country: "US",
+                region: "CA",
+                city: "San Francisco",
+                timezone: "America/Los_Angeles",
+              },
+            },
+          },
+        },
+      };
+      const runtime = createRuntime(config);
+      await runtime.runTurn({
+        config,
+        providerOptions: config.providerOptions,
+        system: "You are Codex.",
+        messages: [{ role: "user", content: "Say hi" }],
+        tools: {},
+        maxSteps: 1,
+      });
+
+      const requests = await readCapturedRequests(capturePath);
+      expect(requests.find((entry) => entry.method === "thread/start")?.params.config).toEqual({
+        web_search: "live",
+        model_verbosity: "high",
+        tools: {
+          web_search: {
+            context_size: "high",
+            allowed_domains: ["openai.com", "platform.openai.com"],
             location: {
               country: "US",
               region: "CA",
@@ -643,36 +682,9 @@ describe("codex app-server runtime", () => {
             },
           },
         },
-      },
-    };
-    const runtime = createRuntime(config);
-    await runtime.runTurn({
-      config,
-      providerOptions: config.providerOptions,
-      system: "You are Codex.",
-      messages: [{ role: "user", content: "Say hi" }],
-      tools: {},
-      maxSteps: 1,
-    });
-
-    const requests = await readCapturedRequests(capturePath);
-    expect(requests.find((entry) => entry.method === "thread/start")?.params.config).toEqual({
-      web_search: "live",
-      model_verbosity: "high",
-      tools: {
-        web_search: {
-          context_size: "high",
-          allowed_domains: ["openai.com", "platform.openai.com"],
-          location: {
-            country: "US",
-            region: "CA",
-            city: "San Francisco",
-            timezone: "America/Los_Angeles",
-          },
-        },
-      },
-    });
-  });
+      });
+    },
+  );
 
   test.serial("does not emit empty rich web search config", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-empty-web-"));
@@ -710,13 +722,15 @@ describe("codex app-server runtime", () => {
     });
   });
 
-  test.serial("uses app-server default model when stored Codex model is not available", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-model-"));
-    const script = path.join(dir, "model-gated-codex-app-server.js");
-    const capturePath = path.join(dir, "requests.jsonl");
-    await fs.writeFile(
-      script,
-      `
+  test.serial(
+    "uses app-server default model when stored Codex model is not available",
+    async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-model-"));
+      const script = path.join(dir, "model-gated-codex-app-server.js");
+      const capturePath = path.join(dir, "requests.jsonl");
+      await fs.writeFile(
+        script,
+        `
 const readline = require("node:readline");
 const fs = require("node:fs");
 const rl = readline.createInterface({ input: process.stdin });
@@ -761,39 +775,40 @@ rl.on("line", (line) => {
   }
 });
 `,
-      "utf-8",
-    );
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
-    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
-    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+        "utf-8",
+      );
+      process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
+      process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+      process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
-    const logs: string[] = [];
-    const runtime = createRuntime(makeConfig(dir));
-    const result = await runtime.runTurn({
-      config: makeConfig(dir),
-      system: "You are Codex.",
-      messages: [{ role: "user", content: "Say hi" }],
-      tools: {},
-      maxSteps: 1,
-      log: (line) => logs.push(line),
-    });
+      const logs: string[] = [];
+      const runtime = createRuntime(makeConfig(dir));
+      const result = await runtime.runTurn({
+        config: makeConfig(dir),
+        system: "You are Codex.",
+        messages: [{ role: "user", content: "Say hi" }],
+        tools: {},
+        maxSteps: 1,
+        log: (line) => logs.push(line),
+      });
 
-    expect(result.text).toBe("fallback ok");
-    expect(result.providerState).toMatchObject({
-      provider: "codex-cli",
-      model: "gpt-5.3-codex-spark",
-    });
-    expect(logs.join("\n")).toContain(
-      'model "gpt-5.4" is not available from the resolved app-server',
-    );
-    const requests = await readCapturedRequests(capturePath);
-    expect(requests.find((entry) => entry.method === "thread/start")?.params.model).toBe(
-      "gpt-5.3-codex-spark",
-    );
-    expect(requests.find((entry) => entry.method === "turn/start")?.params.model).toBe(
-      "gpt-5.3-codex-spark",
-    );
-  });
+      expect(result.text).toBe("fallback ok");
+      expect(result.providerState).toMatchObject({
+        provider: "codex-cli",
+        model: "gpt-5.3-codex-spark",
+      });
+      expect(logs.join("\n")).toContain(
+        'model "gpt-5.4" is not available from the resolved app-server',
+      );
+      const requests = await readCapturedRequests(capturePath);
+      expect(requests.find((entry) => entry.method === "thread/start")?.params.model).toBe(
+        "gpt-5.3-codex-spark",
+      );
+      expect(requests.find((entry) => entry.method === "turn/start")?.params.model).toBe(
+        "gpt-5.3-codex-spark",
+      );
+    },
+  );
 
   test.serial("registers Cowork coordination tools as Codex dynamic tools", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-tools-"));
@@ -934,42 +949,45 @@ rl.on("line", (line) => {
     });
   });
 
-  test.serial("passes workspace-write sandbox and approval prompts for regular Codex turns", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-sandbox-"));
-    const script = await writeMockAppServer(dir);
-    const capturePath = path.join(dir, "requests.jsonl");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
-    process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
-    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+  test.serial(
+    "passes workspace-write sandbox and approval prompts for regular Codex turns",
+    async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-sandbox-"));
+      const script = await writeMockAppServer(dir);
+      const capturePath = path.join(dir, "requests.jsonl");
+      process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
+      process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
+      process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
-    const runtime = createRuntime(makeConfig(dir));
-    await runtime.runTurn({
-      config: makeConfig(dir),
-      system: "You are Codex.",
-      messages: [{ role: "user", content: "Say hi" }],
-      tools: {},
-      maxSteps: 1,
-      yolo: false,
-      shellPolicy: "full",
-      approveCommand: async () => true,
-    });
+      const runtime = createRuntime(makeConfig(dir));
+      await runtime.runTurn({
+        config: makeConfig(dir),
+        system: "You are Codex.",
+        messages: [{ role: "user", content: "Say hi" }],
+        tools: {},
+        maxSteps: 1,
+        yolo: false,
+        shellPolicy: "full",
+        approveCommand: async () => true,
+      });
 
-    const requests = await readCapturedRequests(capturePath);
-    expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
-      approvalPolicy: "on-request",
-      sandbox: "workspace-write",
-    });
-    expect(requests.find((entry) => entry.method === "turn/start")?.params).toMatchObject({
-      approvalPolicy: "on-request",
-      sandboxPolicy: {
-        type: "workspaceWrite",
-        writableRoots: [dir],
-        networkAccess: true,
-        excludeTmpdirEnvVar: false,
-        excludeSlashTmp: false,
-      },
-    });
-  });
+      const requests = await readCapturedRequests(capturePath);
+      expect(requests.find((entry) => entry.method === "thread/start")?.params).toMatchObject({
+        approvalPolicy: "on-request",
+        sandbox: "workspace-write",
+      });
+      expect(requests.find((entry) => entry.method === "turn/start")?.params).toMatchObject({
+        approvalPolicy: "on-request",
+        sandboxPolicy: {
+          type: "workspaceWrite",
+          writableRoots: [dir],
+          networkAccess: true,
+          excludeTmpdirEnvVar: false,
+          excludeSlashTmp: false,
+        },
+      });
+    },
+  );
 
   test.serial("passes danger-full-access sandbox when the session is in yolo mode", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-yolo-"));
@@ -1136,48 +1154,51 @@ rl.on("line", (line) => {
     ]);
   });
 
-  test.serial("preserves fresh conversation history and attachment order in text_elements", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-attachments-"));
-    const capturePath = path.join(dir, "requests.jsonl");
-    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+  test.serial(
+    "preserves fresh conversation history and attachment order in text_elements",
+    async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-attachments-"));
+      const capturePath = path.join(dir, "requests.jsonl");
+      process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
 
-    const runtime = createRuntime(makeConfig(dir));
-    await runtime.runTurn({
-      config: makeConfig(dir),
-      system: "You are Codex.",
-      allMessages: [
-        { role: "user", content: "Earlier question" },
-        { role: "assistant", content: "Earlier answer" },
+      const runtime = createRuntime(makeConfig(dir));
+      await runtime.runTurn({
+        config: makeConfig(dir),
+        system: "You are Codex.",
+        allMessages: [
+          { role: "user", content: "Earlier question" },
+          { role: "assistant", content: "Earlier answer" },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Look at these" },
+              { type: "image", mimeType: "image/png", data: "abc", filename: "chart.png" },
+              { type: "file", mimeType: "text/plain", data: "inline", filename: "note.txt" },
+              { type: "file", path: "/tmp/uploaded.pdf", filename: "uploaded.pdf" },
+            ],
+          },
+        ],
+        messages: [{ role: "user", content: "Look at these" }],
+        tools: {},
+        maxSteps: 1,
+      });
+
+      const requests = await readCapturedRequests(capturePath);
+      expect(requests.find((entry) => entry.method === "turn/start")?.params.input).toEqual([
+        { type: "text", text: "User: Earlier question", text_elements: [] },
+        { type: "text", text: "Assistant: Earlier answer", text_elements: [] },
         {
-          role: "user",
-          content: [
-            { type: "text", text: "Look at these" },
+          type: "text",
+          text: "User: Look at these",
+          text_elements: [
             { type: "image", mimeType: "image/png", data: "abc", filename: "chart.png" },
             { type: "file", mimeType: "text/plain", data: "inline", filename: "note.txt" },
             { type: "file", path: "/tmp/uploaded.pdf", filename: "uploaded.pdf" },
           ],
         },
-      ],
-      messages: [{ role: "user", content: "Look at these" }],
-      tools: {},
-      maxSteps: 1,
-    });
-
-    const requests = await readCapturedRequests(capturePath);
-    expect(requests.find((entry) => entry.method === "turn/start")?.params.input).toEqual([
-      { type: "text", text: "User: Earlier question", text_elements: [] },
-      { type: "text", text: "Assistant: Earlier answer", text_elements: [] },
-      {
-        type: "text",
-        text: "User: Look at these",
-        text_elements: [
-          { type: "image", mimeType: "image/png", data: "abc", filename: "chart.png" },
-          { type: "file", mimeType: "text/plain", data: "inline", filename: "note.txt" },
-          { type: "file", path: "/tmp/uploaded.pdf", filename: "uploaded.pdf" },
-        ],
-      },
-    ]);
-  });
+      ]);
+    },
+  );
 
   test.serial("aborts active app-server turns through interruptTurn", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-abort-"));

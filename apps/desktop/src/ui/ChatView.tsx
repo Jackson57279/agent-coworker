@@ -512,19 +512,19 @@ export function ChatThreadHeader(props: {
 
 function parseCanvasEditMessage(text: string) {
   if (!text.startsWith("[Open Canvas Collaborative Edit]")) return null;
-  
+
   const instMarker = "**Instructions:**\n";
   const instIdx = text.indexOf(instMarker);
   if (instIdx === -1) return null;
-  
+
   const rest = text.slice(instIdx + instMarker.length);
-  
+
   const targetMarker = "\n\n**Target Section / Selection:**\n> ";
   const targetIdx = rest.indexOf(targetMarker);
-  
+
   let instructions = rest;
   let selection: string | null = null;
-  
+
   if (targetIdx !== -1) {
     instructions = rest.slice(0, targetIdx);
     selection = rest.slice(targetIdx + targetMarker.length);
@@ -541,7 +541,7 @@ function parseCanvasEditMessage(text: string) {
       }
     }
   }
-  
+
   return {
     instructions: instructions.trim(),
     selection: selection ? selection.trim() : null,
@@ -1183,8 +1183,6 @@ export function ChatView() {
       return;
     }
 
-    if (visibleFeed.length === lastCountRef.current) return;
-
     const previousCount = lastCountRef.current;
     lastCountRef.current = visibleFeed.length;
 
@@ -1201,12 +1199,17 @@ export function ChatView() {
 
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distFromBottom < FEED_BOTTOM_STICKY_THRESHOLD_PX) {
-      el.scrollTop = el.scrollHeight;
+      window.requestAnimationFrame(() => {
+        const nextEl = feedRef.current;
+        if (nextEl) {
+          nextEl.scrollTop = nextEl.scrollHeight;
+        }
+      });
       setShowScrollButton(false);
     } else {
       setShowScrollButton(true);
     }
-  }, [selectedThreadId, visibleFeed.length]);
+  }, [selectedThreadId, visibleFeed]);
 
   useEffect(() => {
     updateScrollButtonVisibility();

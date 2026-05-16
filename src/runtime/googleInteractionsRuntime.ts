@@ -2,13 +2,15 @@ import { normalizeGoogleThinkingLevelForModel } from "../shared/googleThinking";
 import { getGoogleNativeWebSearchFromProviderOptions } from "../shared/openaiCompatibleOptions";
 import {
   type GoogleContinuationState,
-  isInvalidGoogleContinuationError,
   isGoogleContinuationState,
+  isInvalidGoogleContinuationError,
 } from "../shared/providerContinuation";
 import type { ModelMessage } from "../types";
 import { resolveGoogleInteractionsModel } from "./googleInteractionsModel";
 import {
+  classifyGoogleInteractionError,
   googleTurnMessagesToModelMessages,
+  isRetryableGoogleInteractionError,
   type RunGoogleNativeInteractionStep,
   runGoogleNativeInteractionStep,
 } from "./googleNativeInteractions";
@@ -52,20 +54,53 @@ type GoogleInteractionsRuntimeOverrides = {
   runStepImpl?: RunGoogleNativeInteractionStep;
 };
 
+function stableFingerprintStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableFingerprintStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableFingerprintStringify(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function buildGoogleRequestFingerprint(input: {
+  modelId: string;
+  system: string;
+  tools: Array<Record<string, unknown>>;
+  streamOptions: Record<string, unknown>;
+}): string {
+  const { apiKey: _apiKey, signal: _signal, ...safeStreamOptions } = input.streamOptions;
+  return stableFingerprintStringify({
+    modelId: input.modelId,
+    system: input.system,
+    tools: input.tools,
+    streamOptions: safeStreamOptions,
+  });
+}
+
 function matchingGoogleProviderState(
   params: RuntimeRunTurnParams,
   modelId: string,
+  requestFingerprint: string,
 ): GoogleContinuationState | null {
   const providerState = params.providerState;
   if (!isGoogleContinuationState(providerState)) {
     return null;
   }
-  return providerState.model === modelId ? providerState : null;
+  if (providerState.model !== modelId) return null;
+  if (providerState.requestFingerprint && providerState.requestFingerprint !== requestFingerprint) {
+    return null;
+  }
+  return providerState;
 }
 
 function nextGoogleProviderState(
   modelId: string,
-  interactionId?: string,
+  interactionId: string | undefined,
+  requestFingerprint: string,
 ): GoogleContinuationState | undefined {
   const nextInteractionId = interactionId?.trim();
   if (!nextInteractionId) return undefined;
@@ -75,6 +110,7 @@ function nextGoogleProviderState(
     model: modelId,
     interactionId: nextInteractionId,
     updatedAt: new Date().toISOString(),
+    requestFingerprint,
   };
 }
 
@@ -130,6 +166,12 @@ function buildGoogleStreamOptions(
   const toolChoice = asNonEmptyString(googleSection.toolChoice);
   if (toolChoice) options.toolChoice = toolChoice;
 
+  if (googleSection.responseFormat !== undefined) {
+    options.responseFormat = googleSection.responseFormat;
+  }
+  const responseMimeType = asNonEmptyString(googleSection.responseMimeType);
+  if (responseMimeType) options.responseMimeType = responseMimeType;
+
   if (getGoogleNativeWebSearchFromProviderOptions(providerOptions) === true) {
     options.nativeWebSearch = true;
   }
@@ -157,19 +199,6 @@ export function createGoogleInteractionsRuntime(
         const turnMessages: Array<Record<string, unknown>> = [];
         let usage = undefined as RuntimeRunTurnResult["usage"];
         let finalStopReason: string | undefined;
-        const activeProviderState = messagesHaveDisabledGoogleCodeExecution(
-          params.allMessages ?? params.messages,
-        )
-          ? null
-          : matchingGoogleProviderState(params, resolved.model.id);
-        let finalProviderState = undefined as GoogleContinuationState | undefined;
-        let previousInteractionId: string | undefined = activeProviderState?.interactionId;
-        let stepMessages: ModelMessage[] = activeProviderState
-          ? (() => {
-              const deltaMessages = messagesAfterLastAssistant(params.messages);
-              return deltaMessages.length > 0 ? deltaMessages : [...params.messages];
-            })()
-          : [...(params.allMessages ?? params.messages)];
         let stepProviderOptions: Record<string, unknown> | undefined =
           asRecord(params.providerOptions) ?? undefined;
         let nextInteractionInputStartIndex = 0;
@@ -191,6 +220,37 @@ export function createGoogleInteractionsRuntime(
           model: piModelCompat,
           apiKey: resolved.apiKey,
         };
+
+        const initialGoogleStreamOptions = buildGoogleStreamOptions(
+          resolved.model.id,
+          stepProviderOptions ?? asRecord(params.config.providerOptions) ?? undefined,
+          params.abortSignal,
+          resolved.apiKey,
+        );
+        const initialRequestFingerprint = buildGoogleRequestFingerprint({
+          modelId: resolved.model.id,
+          system: params.system,
+          tools: piTools,
+          streamOptions: initialGoogleStreamOptions,
+        });
+        const activeProviderState = messagesHaveDisabledGoogleCodeExecution(
+          params.allMessages ?? params.messages,
+        )
+          ? null
+          : matchingGoogleProviderState(params, resolved.model.id, initialRequestFingerprint);
+        if (isGoogleContinuationState(params.providerState) && !activeProviderState) {
+          params.log?.(
+            "google-interactions: Not reusing stored continuation because request context changed.",
+          );
+        }
+        let finalProviderState = undefined as GoogleContinuationState | undefined;
+        let previousInteractionId: string | undefined = activeProviderState?.interactionId;
+        let stepMessages: ModelMessage[] = activeProviderState
+          ? (() => {
+              const deltaMessages = messagesAfterLastAssistant(params.messages);
+              return deltaMessages.length > 0 ? deltaMessages : [...params.messages];
+            })()
+          : [...(params.allMessages ?? params.messages)];
 
         const maxSteps = Math.max(1, params.maxSteps);
         await emitPart({ type: "start" });
@@ -245,21 +305,25 @@ export function createGoogleInteractionsRuntime(
             "agent.runtime.google_interactions.model_call",
           );
 
-          let assistantRecord: Record<string, unknown> = {};
-          let interactionId: string | undefined;
-          try {
-            const requestStartIndex = Math.min(nextInteractionInputStartIndex, stepMessages.length);
-            const requestMessages = previousInteractionId
-              ? stepMessages.slice(requestStartIndex)
-              : stepMessages;
-            const result = await runStepImpl({
+          const requestFingerprint = buildGoogleRequestFingerprint({
+            modelId: resolved.model.id,
+            system: params.system,
+            tools: piTools,
+            streamOptions: mergedStreamOptions,
+          });
+          params.log?.(
+            `google-interactions: calling ${resolved.model.id} step=${step + 1} previous=${previousInteractionId ? "yes" : "no"} tools=${piTools.length}`,
+          );
+
+          const callGoogleStep = async (messages: ModelMessage[], previousId?: string) =>
+            await runStepImpl({
               model: resolved.model,
               apiKey: asNonEmptyString(mergedStreamOptions.apiKey as unknown) ?? resolved.apiKey,
               systemPrompt: params.system,
-              messages: requestMessages.length > 0 ? requestMessages : stepMessages,
+              messages,
               tools: piTools,
               streamOptions: mergedStreamOptions as any,
-              previousInteractionId,
+              previousInteractionId: previousId,
               onEvent: async (event) => {
                 if (!includeUnknownRawParts && event.type === "unknown") return;
                 await emitPart(event);
@@ -271,35 +335,50 @@ export function createGoogleInteractionsRuntime(
                 });
               },
             });
+
+          let assistantRecord: Record<string, unknown> = {};
+          let interactionId: string | undefined;
+          try {
+            const requestStartIndex = Math.min(nextInteractionInputStartIndex, stepMessages.length);
+            const requestMessages = previousInteractionId
+              ? stepMessages.slice(requestStartIndex)
+              : stepMessages;
+            let result: Awaited<ReturnType<RunGoogleNativeInteractionStep>> | undefined;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              try {
+                result = await callGoogleStep(
+                  requestMessages.length > 0 ? requestMessages : stepMessages,
+                  previousInteractionId,
+                );
+                break;
+              } catch (error) {
+                if (
+                  previousInteractionId ||
+                  attempt >= 2 ||
+                  !isRetryableGoogleInteractionError(error)
+                ) {
+                  throw error;
+                }
+                params.log?.(
+                  `google-interactions: transient model call failure (${classifyGoogleInteractionError(error)}), retrying attempt ${attempt + 2}/3`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+              }
+            }
+            if (!result) throw new Error("Google Interactions model call did not return a result.");
             assistantRecord = asRecord(result.assistant) ?? {};
             interactionId = result.interactionId;
             markModelCallSpanSuccess(span, telemetry, assistantRecord);
           } catch (error) {
             if (previousInteractionId && isInvalidGoogleContinuationError(error)) {
-              params.log?.("google-interactions: Stateful request failed. Retrying with clean state.");
+              params.log?.(
+                "google-interactions: Stateful request failed. Retrying with clean state.",
+              );
               previousInteractionId = undefined;
               const cleanStateMessages = activeProviderState
                 ? [...(params.allMessages ?? params.messages)]
                 : stepMessages;
-              const result = await runStepImpl({
-                model: resolved.model,
-                apiKey: asNonEmptyString(mergedStreamOptions.apiKey as unknown) ?? resolved.apiKey,
-                systemPrompt: params.system,
-                messages: cleanStateMessages,
-                tools: piTools,
-                streamOptions: mergedStreamOptions as any,
-                previousInteractionId: undefined,
-                onEvent: async (event) => {
-                  if (!includeUnknownRawParts && event.type === "unknown") return;
-                  await emitPart(event);
-                },
-                onRawEvent: async (event) => {
-                  await params.onModelRawEvent?.({
-                    format: "google-interactions-v1",
-                    event,
-                  });
-                },
-              });
+              const result = await callGoogleStep(cleanStateMessages, undefined);
               assistantRecord = asRecord(result.assistant) ?? {};
               interactionId = result.interactionId;
               markModelCallSpanSuccess(span, telemetry, assistantRecord);
@@ -312,7 +391,8 @@ export function createGoogleInteractionsRuntime(
           turnMessages.push(assistantRecord);
           usage = mergePiUsage(usage, assistantRecord.usage);
           finalProviderState =
-            nextGoogleProviderState(resolved.model.id, interactionId) ?? finalProviderState;
+            nextGoogleProviderState(resolved.model.id, interactionId, requestFingerprint) ??
+            finalProviderState;
           previousInteractionId = interactionId ?? previousInteractionId;
           const assistantModelMessages = googleTurnMessagesToModelMessages([assistantRecord]);
           stepMessages = [...stepMessages, ...assistantModelMessages];

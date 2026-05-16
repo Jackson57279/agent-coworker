@@ -1,7 +1,4 @@
-import {
-  loginCodexAppServerChatGpt,
-  logoutCodexAppServer,
-} from "./providers/codexAppServerAuth";
+import { loginCodexAppServerChatGpt, logoutCodexAppServer } from "./providers/codexAppServerAuth";
 import {
   type AiCoworkerPaths,
   type ConnectionMode,

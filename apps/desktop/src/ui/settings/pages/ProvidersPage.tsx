@@ -619,11 +619,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             onOpenChange={(nextOpen) => setExpandedSectionId(nextOpen ? sectionId : null)}
           >
             <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto w-full justify-between gap-3 rounded-none px-3 py-2.5 text-left hover:bg-transparent"
-            >
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-between gap-3 rounded-none px-3 py-2.5 text-left hover:bg-transparent"
+              >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-foreground">
                     {providerDisplayName}
@@ -638,10 +638,12 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                     className={cn(
                       lmStudioEnabled && connected
                         ? "bg-success/10 text-success border-success/20 hover:bg-success/10 gap-1.5 px-2.5 py-0.5 font-medium shadow-none"
-                        : "bg-muted/15 text-muted-foreground border-transparent shadow-none"
+                        : "bg-muted/15 text-muted-foreground border-transparent shadow-none",
                     )}
                   >
-                    {lmStudioEnabled && connected && <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />}
+                    {lmStudioEnabled && connected && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                    )}
                     {lmStudioCard.badgeLabel}
                   </Badge>
                   {isExpanded ? (
@@ -654,10 +656,10 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             </CollapsibleTrigger>
 
             <CollapsibleContent>
-            <CardContent
-              id={`provider-panel-${provider}`}
-              className="space-y-4 border-t border-border/70 px-3 py-3"
-            >
+              <CardContent
+                id={`provider-panel-${provider}`}
+                className="space-y-4 border-t border-border/70 px-3 py-3"
+              >
                 <div className="text-sm text-muted-foreground">
                   LM Studio runs on a local server. Connect it once to make its models available in
                   Cowork, then choose which discovered models should appear in the main chat UI.
@@ -719,10 +721,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                             key={model.id}
                             className="flex items-center justify-between gap-3 rounded-lg border border-border/40 px-2 py-1.5 hover:bg-muted/15"
                           >
-                            <label
-                              htmlFor={checkboxId}
-                              className="min-w-0 flex-1 cursor-pointer"
-                            >
+                            <label htmlFor={checkboxId} className="min-w-0 flex-1 cursor-pointer">
                               <div className="truncate text-xs font-medium text-foreground">
                                 {model.displayName || model.id}
                               </div>
@@ -748,11 +747,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                     </div>
                   )}
                 </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
-    );
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      );
     }
 
     return (
@@ -791,10 +790,12 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                   className={cn(
                     connected
                       ? "bg-success/10 text-success border-success/20 hover:bg-success/10 gap-1.5 px-2.5 py-0.5 font-medium shadow-none"
-                      : "bg-muted/15 text-muted-foreground border-transparent shadow-none"
+                      : "bg-muted/15 text-muted-foreground border-transparent shadow-none",
                   )}
                 >
-                  {connected && <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />}
+                  {connected && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                  )}
                   {label}
                 </Badge>
                 {isExpanded ? (
@@ -1076,10 +1077,12 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                   className={cn(
                     connected
                       ? "bg-success/10 text-success border-success/20 hover:bg-success/10 gap-1.5 px-2.5 py-0.5 font-medium shadow-none"
-                      : "bg-muted/15 text-muted-foreground border-transparent shadow-none"
+                      : "bg-muted/15 text-muted-foreground border-transparent shadow-none",
                   )}
                 >
-                  {connected && <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />}
+                  {connected && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                  )}
                   {connected ? "Connected" : "Not connected"}
                 </Badge>
                 {expanded ? (

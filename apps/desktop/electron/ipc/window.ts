@@ -8,9 +8,9 @@ import {
   type WindowDragPointInput,
 } from "../../src/lib/desktopApi";
 import {
+  showCanvasWindowInputSchema,
   showContextMenuInputSchema,
   showQuickChatWindowInputSchema,
-  showCanvasWindowInputSchema,
   windowDragPointInputSchema,
 } from "../../src/lib/desktopSchemas";
 import { getPlatformChrome } from "../services/windowChrome/platformChrome";
@@ -183,17 +183,14 @@ export function registerWindowIpc(context: DesktopIpcModuleContext): void {
     return deps.consumePendingMenuCommands();
   });
 
-  handleDesktopInvoke(
-    DESKTOP_IPC_CHANNELS.showCanvasWindow,
-    async (_event, args) => {
-      const input = parseWithSchema(
-        showCanvasWindowInputSchema,
-        args ?? {},
-        "showCanvasWindow options",
-      );
-      await deps.showCanvasWindow(input);
-    },
-  );
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.showCanvasWindow, async (_event, args) => {
+    const input = parseWithSchema(
+      showCanvasWindowInputSchema,
+      args ?? {},
+      "showCanvasWindow options",
+    );
+    await deps.showCanvasWindow(input);
+  });
 
   handleDesktopInvoke(
     DESKTOP_IPC_CHANNELS.showQuickChatWindow,

@@ -724,6 +724,9 @@ export class ResearchService {
           ? { previousInteractionId: opts.previousInteractionId }
           : {}),
         tools,
+        agentId: state.record.settings.agentId,
+        thinkingSummaries: state.record.settings.thinkingSummaries,
+        visualization: state.record.settings.visualization,
         collaborativePlanning: opts.collaborativePlanning,
       });
       await this.consumeInteractionStream(state, stream);

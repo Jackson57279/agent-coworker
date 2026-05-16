@@ -330,7 +330,7 @@ Requests:
 - `interactionId`
 - `lastEventId`
 - `inputs` (`fileSearchStoreName?`, attached files)
-- `settings` including plan-approval preference
+- `settings` including plan-approval preference, Deep Research `agentId`, `thinkingSummaries`, and `visualization`
 - `outputsMarkdown`
 - `thoughtSummaries`
 - `sources`
@@ -341,6 +341,9 @@ Requests:
 Current Google Deep Research wiring notes:
 
 - `background: true` is always used
+- `settings.agentId` selects the Deep Research agent (`deep-research-max-preview-04-2026` by default; `deep-research-preview-04-2026` and `deep-research-pro-preview-12-2025` are also accepted)
+- `settings.thinkingSummaries` controls Deep Research thought summaries (`auto` or `none`)
+- `settings.visualization` controls Deep Research visualizations (`auto` or `off`)
 - `google_search` and `url_context` remain effectively always on
 - attached files are forwarded through `file_search`
 
@@ -3063,6 +3066,8 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.providerOptions.codex-cli.webSearch.location` | `{ country?, region?, city?, timezone? }` | Codex native web-search approximate location forwarded to Codex app-server as `tools.web_search.location` |
 | `config.providerOptions.google.nativeWebSearch` | `boolean` | Current Gemini built-in Search + URL Context toggle |
 | `config.providerOptions.google.thinkingConfig.thinkingLevel` | `"minimal" \| "low" \| "medium" \| "high"` | Current explicit Gemini `thinking_level` override when set. Omitted means the workspace is using Gemini's dynamic default |
+| `config.providerOptions.google.responseFormat` | `unknown` | Optional Gemini Interactions `response_format` payload for structured responses |
+| `config.providerOptions.google.responseMimeType` | `string` | Optional Gemini Interactions `response_mime_type` such as `application/json` |
 | `config.providerOptions.lmstudio.baseUrl` | `string` | Current LM Studio base URL override |
 | `config.providerOptions.lmstudio.contextLength` | `number` | Current requested LM Studio context length override |
 | `config.providerOptions.lmstudio.autoLoad` | `boolean` | Current LM Studio eager-load toggle |

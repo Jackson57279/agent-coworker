@@ -388,9 +388,7 @@ export async function closePooledCodexAppServerClient(cwd: string | undefined): 
 
 export const __internal = {
   setClientFactoryForTests(
-    factory:
-      | ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>)
-      | undefined,
+    factory: ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>) | undefined,
   ): void {
     clientFactoryForTests = factory;
   },

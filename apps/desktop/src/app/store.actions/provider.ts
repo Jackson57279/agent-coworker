@@ -1,3 +1,4 @@
+import type { CodexAppServerInstallStatus } from "../../lib/wsProtocol";
 import {
   type AppStoreActions,
   ensureControlSocket,
@@ -13,7 +14,6 @@ import {
   type StoreGet,
   type StoreSet,
 } from "../store.helpers";
-import type { CodexAppServerInstallStatus } from "../../lib/wsProtocol";
 
 type RefreshProviderStatusHelperOverrides = {
   makeId?: typeof makeId;

@@ -1,3 +1,4 @@
+import { getSupportedModel, listSupportedModels } from "../models/registry";
 import {
   type CodexAppServerClient,
   type CodexAppServerJsonRpcNotification,
@@ -6,7 +7,6 @@ import {
   getPooledCodexAppServerClient,
 } from "../providers/codexAppServerClient";
 import type { CodexAppServerCommand } from "../providers/codexAppServerResolver";
-import { getSupportedModel, listSupportedModels } from "../models/registry";
 import { isCodexAppServerContinuationState } from "../shared/providerContinuation";
 import { isCodexDynamicCoworkToolName } from "../tools/codexBoundary";
 import type { ModelMessage, TodoItem } from "../types";
@@ -243,7 +243,9 @@ function normalizeWebSearchLocation(value: unknown): Record<string, string> | un
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function codexWebSearchToolConfig(codexOptions: Record<string, unknown>): Record<string, unknown> | undefined {
+function codexWebSearchToolConfig(
+  codexOptions: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const webSearch = asRecord(codexOptions.webSearch);
   if (!webSearch) return undefined;
 
@@ -334,7 +336,9 @@ function dynamicToolResponse(success: boolean, text: string): CodexDynamicToolCa
   };
 }
 
-function codexPayloadTurnId(payload: Record<string, unknown> | null | undefined): string | undefined {
+function codexPayloadTurnId(
+  payload: Record<string, unknown> | null | undefined,
+): string | undefined {
   return asString(payload?.turnId) ?? asString(asRecord(payload?.turn)?.id);
 }
 
@@ -384,19 +388,19 @@ function withCodexAppServerDiagnostics(error: unknown, command: CodexAppServerCo
 async function listAppServerModels(
   client: CodexAppServerClient,
 ): Promise<CodexAppServerModelListEntry[]> {
-    const models: CodexAppServerModelListEntry[] = [];
-    let cursor: string | undefined;
-    do {
-      const result = asRecord(
-        await client.request(
-          "model/list",
-          {
-            limit: 100,
-            cursor: cursor ?? null,
-          },
-          CODEX_STARTUP_RPC_TIMEOUT_MS,
-        ),
-      );
+  const models: CodexAppServerModelListEntry[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = asRecord(
+      await client.request(
+        "model/list",
+        {
+          limit: 100,
+          cursor: cursor ?? null,
+        },
+        CODEX_STARTUP_RPC_TIMEOUT_MS,
+      ),
+    );
     const items = Array.isArray(result?.data)
       ? result.data
       : Array.isArray(result?.items)
@@ -433,7 +437,8 @@ async function resolveEffectiveCodexModel(
   const defaultFromAppServer = appServerModels.find((model) => model.isDefault);
   const fallback =
     (defaultFromAppServer
-      ? (supportedById.get(defaultFromAppServer.model) ?? supportedById.get(defaultFromAppServer.id))
+      ? (supportedById.get(defaultFromAppServer.model) ??
+        supportedById.get(defaultFromAppServer.id))
       : undefined) ?? availableSupportedIds[0];
   if (!fallback) {
     throw new Error(
@@ -840,7 +845,6 @@ async function handleNotification(
       await params.onModelStreamPart?.({ type: "error", error: payload?.error ?? payload });
       break;
   }
-
 }
 
 function assistantTextFromTurn(turn: unknown): string {
@@ -954,37 +958,36 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const threadConfig = codexThreadConfig(params);
         const dynamicTools = codexDynamicToolSpecs(params.tools);
         const shouldResumeThread = currentState?.model === effectiveModel;
-        const threadResult =
-          shouldResumeThread
-            ? await client.request(
-                "thread/resume",
-                {
-                  threadId: currentState.threadId,
-                  cwd: params.config.workingDirectory,
-                  model: effectiveModel,
-                  modelProvider: "openai",
-                  approvalPolicy,
-                  sandbox: sandboxMode,
-                  ...(threadConfig ? { config: threadConfig } : {}),
-                  ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
-                },
-                CODEX_STARTUP_RPC_TIMEOUT_MS,
-              )
-            : await client.request(
-                "thread/start",
-                {
-                  cwd: params.config.workingDirectory,
-                  model: effectiveModel,
-                  modelProvider: "openai",
-                  approvalPolicy,
-                  sandbox: sandboxMode,
-                  ...(threadConfig ? { config: threadConfig } : {}),
-                  baseInstructions: codexBaseInstructions(params.system),
-                  experimentalRawEvents: params.includeRawChunks ?? true,
-                  ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
-                },
-                CODEX_STARTUP_RPC_TIMEOUT_MS,
-              );
+        const threadResult = shouldResumeThread
+          ? await client.request(
+              "thread/resume",
+              {
+                threadId: currentState.threadId,
+                cwd: params.config.workingDirectory,
+                model: effectiveModel,
+                modelProvider: "openai",
+                approvalPolicy,
+                sandbox: sandboxMode,
+                ...(threadConfig ? { config: threadConfig } : {}),
+                ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
+              },
+              CODEX_STARTUP_RPC_TIMEOUT_MS,
+            )
+          : await client.request(
+              "thread/start",
+              {
+                cwd: params.config.workingDirectory,
+                model: effectiveModel,
+                modelProvider: "openai",
+                approvalPolicy,
+                sandbox: sandboxMode,
+                ...(threadConfig ? { config: threadConfig } : {}),
+                baseInstructions: codexBaseInstructions(params.system),
+                experimentalRawEvents: params.includeRawChunks ?? true,
+                ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
+              },
+              CODEX_STARTUP_RPC_TIMEOUT_MS,
+            );
         params.abortSignal?.throwIfAborted();
         const thread = asRecord(asRecord(threadResult)?.thread);
         threadId = asString(thread?.id);
@@ -1003,7 +1006,8 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const input = buildCodexTurnInput(params.allMessages ?? params.messages, {
           resumedThread: shouldResumeThread,
         });
-        if (input.length === 0) throw new Error("codex app-server runtime requires a user message.");
+        if (input.length === 0)
+          throw new Error("codex app-server runtime requires a user message.");
         params.abortSignal?.throwIfAborted();
         const completion = waitForTurnCompletion(
           client,
@@ -1032,7 +1036,9 @@ export function createCodexAppServerRuntime(): LlmRuntime {
             model: effectiveModel,
             approvalPolicy,
             sandboxPolicy,
-            effort: normalizeEffort(providerOptionString(params.providerOptions, "reasoningEffort")),
+            effort: normalizeEffort(
+              providerOptionString(params.providerOptions, "reasoningEffort"),
+            ),
             summary: normalizeSummary(
               providerOptionString(params.providerOptions, "reasoningSummary"),
             ),

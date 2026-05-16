@@ -3,6 +3,7 @@ import type {
   ResearchRecord,
   ResearchSettings,
 } from "../../../../src/server/research/types";
+import { DEFAULT_RESEARCH_AGENT_ID } from "../../../../src/server/research/types";
 import type { DesktopFeatureFlagOverrides } from "../../../../src/shared/featureFlags";
 import type { SessionFeedItem } from "../../../../src/shared/sessionSnapshot";
 import { normalizeQuickChatShortcutAccelerator } from "../lib/quickChatShortcut";
@@ -221,6 +222,9 @@ export type ResearchDetail = ResearchRecord;
 
 export const DEFAULT_RESEARCH_SETTINGS: ResearchSettingsState = {
   planApproval: false,
+  agentId: DEFAULT_RESEARCH_AGENT_ID,
+  thinkingSummaries: "auto",
+  visualization: "auto",
 };
 
 export type ResearchExportRequest = {

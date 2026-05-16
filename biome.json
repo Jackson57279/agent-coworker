@@ -349,6 +349,21 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/desktop/src/ui/Canvas.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useFocusableInteractive": "off",
+            "noStaticElementInteractions": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
     }
   ],
   "assist": {

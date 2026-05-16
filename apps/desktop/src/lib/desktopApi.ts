@@ -91,7 +91,6 @@ export type ShowCanvasWindowInput = {
   path: string;
 };
 
-
 export type ShowQuickChatWindowInput = {
   threadId?: string;
   newThread?: boolean;

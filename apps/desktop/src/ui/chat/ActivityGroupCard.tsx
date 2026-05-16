@@ -12,7 +12,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolFeedState } from "../../app/types";
 import { MessageResponse } from "../../components/ai-elements/message";
 import { Badge } from "../../components/ui/badge";
@@ -94,9 +94,18 @@ function TimelineNode({
   );
 }
 
-function ActivityTimeline({ summary }: { summary: ActivityGroupSummary }) {
+function ActivityTimeline({ summary, live }: { summary: ActivityGroupSummary; live?: boolean }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (live && containerRef.current && summary) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [live, summary]);
+
   return (
     <div
+      ref={containerRef}
       className="max-h-[26rem] overflow-y-auto pr-0.5"
       style={{
         maskImage: "linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)",
@@ -191,6 +200,7 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
 
   const summary = useMemo(() => summarizeActivityGroup(props.items), [props.items]);
   const displayStatus = props.live && summary.status === "done" ? "running" : summary.status;
+  const isComplete = displayStatus === "done";
   const liveStartedAtMs =
     props.liveStartedAt !== null && props.liveStartedAt !== undefined
       ? activityTimestampMs(props.liveStartedAt)
@@ -202,19 +212,23 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
         )
       : null;
   const displayElapsedLabel = liveElapsedLabel ?? summary.elapsedLabel;
-  const shouldAutoExpand = displayStatus === "approval" || displayStatus === "issue";
+  const shouldAutoExpand =
+    displayStatus === "approval" || displayStatus === "issue" || displayStatus === "running";
   const [expanded, setExpanded] = useState(shouldAutoExpand);
 
   useEffect(() => {
-    if (shouldAutoExpand) setExpanded(true);
-  }, [shouldAutoExpand]);
+    if (shouldAutoExpand) {
+      setExpanded(true);
+    } else if (isComplete) {
+      setExpanded(false);
+    }
+  }, [shouldAutoExpand, isComplete]);
 
   const showStateBadge = displayStatus === "approval" || displayStatus === "issue";
   const isPendingReasoning = displayStatus === "running" && summary.preview === "Thinking...";
   const useThinkingTreatment =
     isPendingReasoning ||
     (summary.reasoningCount > 0 && summary.toolCount === 0 && !showStateBadge);
-  const isComplete = displayStatus === "done";
   const useCompactElapsedHeader = isComplete || (props.live === true && !showStateBadge);
 
   if (useCompactElapsedHeader) {
@@ -235,7 +249,7 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
 
         <CollapsibleContent className="max-w-3xl overflow-hidden">
           <div className="border-b border-border/25 px-1 pb-2.5 pt-3">
-            <ActivityTimeline summary={summary} />
+            <ActivityTimeline summary={summary} live={props.live} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -258,9 +272,7 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
               <span
                 className={cn(
                   "min-w-0 truncate text-[13.5px] font-normal italic leading-6",
-                  useThinkingTreatment
-                    ? "activity-thinking-shimmer"
-                    : "text-muted-foreground",
+                  useThinkingTreatment ? "activity-thinking-shimmer" : "text-muted-foreground",
                 )}
               >
                 {isPendingReasoning ? "Thinking" : summary.preview}
@@ -293,7 +305,7 @@ export const ActivityGroupCard = memo(function ActivityGroupCard(props: {
         {/* ── Expanded timeline ─────────────────────────────────────────────── */}
         <CollapsibleContent className="overflow-hidden">
           <CardContent className="border-t border-border/35 px-3 pb-2.5 pt-2">
-            <ActivityTimeline summary={summary} />
+            <ActivityTimeline summary={summary} live={props.live} />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>

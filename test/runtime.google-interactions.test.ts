@@ -2,16 +2,18 @@ import { describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { Interactions } from "@google/genai";
 import { buildGooglePrepareStep } from "../src/providers/googleReplay";
 import { createGoogleInteractionsRuntime } from "../src/runtime/googleInteractionsRuntime";
 import {
   type GoogleNativeStepRequest,
   type GoogleNativeStepResult,
   __internal as googleNativeInternal,
+  runGoogleNativeInteractionStep,
 } from "../src/runtime/googleNativeInteractions";
-import { isInvalidGoogleContinuationError } from "../src/shared/providerContinuation";
 import type { RuntimeRunTurnParams } from "../src/runtime/types";
 import { __internal as citationMetadataInternal } from "../src/server/citationMetadata";
+import { isInvalidGoogleContinuationError } from "../src/shared/providerContinuation";
 import type { AgentConfig, ModelMessage } from "../src/types";
 
 function makeConfig(homeDir: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -56,6 +58,19 @@ function makeParams(
   };
 }
 
+function googleSseResponse(events: Array<Record<string, unknown>>): Response {
+  return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+const liveGoogleApiKey =
+  process.env.GOOGLE_INTERACTIONS_LIVE === "1"
+    ? (process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY)
+    : undefined;
+const liveGoogleTest = liveGoogleApiKey ? test : test.skip;
+
 // ---------------------------------------------------------------------------
 // Runtime tests
 // ---------------------------------------------------------------------------
@@ -89,6 +104,7 @@ describe("google interactions runtime", () => {
       model: "gemini-3-flash-preview",
       interactionId: "interaction_abc123",
       updatedAt: expect.any(String),
+      requestFingerprint: expect.any(String),
     });
   });
 
@@ -435,7 +451,88 @@ describe("google interactions runtime", () => {
       model: "gemini-3-flash-preview",
       interactionId: "interaction_next",
       updatedAt: expect.any(String),
+      requestFingerprint: expect.any(String),
     });
+  });
+
+  test("does not reuse Google continuation when the request fingerprint changes", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-fingerprint-"));
+    const seenRequests: GoogleNativeStepRequest[] = [];
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async (opts) => {
+        seenRequests.push(opts);
+        return {
+          assistant: {
+            role: "assistant",
+            api: "google-interactions",
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            content: [{ type: "text", text: "fresh context" }],
+            usage: { input: 1, output: 1, totalTokens: 2 },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+          interactionId: "interaction_fresh",
+        };
+      },
+    });
+    const history = [
+      { role: "user", content: "old" },
+      { role: "assistant", content: [{ type: "text", text: "old answer" }] },
+      { role: "user", content: "new" },
+    ] as ModelMessage[];
+
+    await runtime.runTurn(
+      makeParams(makeConfig(homeDir), {
+        messages: history,
+        allMessages: history,
+        providerState: {
+          provider: "google",
+          model: "gemini-3-flash-preview",
+          interactionId: "interaction_old",
+          requestFingerprint: "outdated-fingerprint",
+          updatedAt: "2026-03-18T12:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(seenRequests).toHaveLength(1);
+    expect(seenRequests[0]?.previousInteractionId).toBeUndefined();
+    expect(seenRequests[0]?.messages).toEqual(history);
+  });
+
+  test("retries transient Google failures before succeeding without continuation", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-retry-"));
+    let calls = 0;
+    const logs: string[] = [];
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async () => {
+        calls += 1;
+        if (calls < 3) throw new Error("503 service unavailable");
+        return {
+          assistant: {
+            role: "assistant",
+            api: "google-interactions",
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            content: [{ type: "text", text: "ok" }],
+            usage: { input: 1, output: 1, totalTokens: 2 },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+          interactionId: "interaction_after_retry",
+        };
+      },
+    });
+
+    await runtime.runTurn(
+      makeParams(makeConfig(homeDir), {
+        log: (message) => logs.push(message),
+      }),
+    );
+
+    expect(calls).toBe(3);
+    expect(logs.some((message) => message.includes("transient model call failure"))).toBe(true);
   });
 
   test("does not reuse Google continuation after disabled native code execution", async () => {
@@ -921,6 +1018,131 @@ describe("google continuation error detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("google native interactions request building", () => {
+  test("SDK Interactions contract stays aligned with request and stream shapes", () => {
+    const userStep = {
+      type: "user_input",
+      content: [{ type: "text", text: "Hello" }],
+    } satisfies Interactions.UserInputStep;
+    const modelStep = {
+      type: "model_output",
+      content: [{ type: "text", text: "Hi" }],
+    } satisfies Interactions.ModelOutputStep;
+    const request = {
+      model: "gemini-3-flash-preview",
+      input: [userStep, modelStep],
+      stream: true,
+      generation_config: { thinking_summaries: "auto" },
+      response_mime_type: "application/json",
+      response_format: { type: "json_schema" },
+    } satisfies Interactions.CreateModelInteractionParamsStreaming;
+    const event = {
+      event_type: "step.start",
+      index: 0,
+      step: modelStep,
+    } satisfies Interactions.InteractionSSEEvent;
+
+    expect(request.input).toHaveLength(2);
+    expect(event.event_type).toBe("step.start");
+  });
+
+  test("runGoogleNativeInteractionStep posts the expected Interactions body through the SDK", async () => {
+    const realFetch = globalThis.fetch;
+    const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
+    googleNativeInternal.__testResetGoogleInteractionsClientCache();
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const bodyText =
+        typeof init?.body === "string" ? init.body : await new Response(init?.body).text();
+      seen.push({ url: String(input), body: JSON.parse(bodyText) as Record<string, unknown> });
+      return googleSseResponse([
+        {
+          event_type: "interaction.created",
+          interaction: { id: "mock-interaction", status: "in_progress" },
+        },
+        {
+          event_type: "step.start",
+          index: 0,
+          step: { type: "model_output", content: [{ type: "text", text: "Hello" }] },
+        },
+        { event_type: "step.delta", index: 0, delta: { type: "text", text: " world" } },
+        { event_type: "step.stop", index: 0 },
+        {
+          event_type: "interaction.completed",
+          interaction: {
+            id: "mock-interaction",
+            status: "completed",
+            usage: { total_input_tokens: 1, total_output_tokens: 2, total_tokens: 3 },
+          },
+        },
+      ]);
+    }) as typeof fetch;
+
+    try {
+      const result = await runGoogleNativeInteractionStep({
+        model: {
+          id: "gemini-3-flash-preview",
+          name: "Gemini 3 Flash Preview",
+          reasoning: true,
+          input: ["text", "image"],
+          contextWindow: 1_048_576,
+          maxTokens: 65_536,
+        },
+        apiKey: "test-google-api-key",
+        systemPrompt: "You are helpful.",
+        messages: [{ role: "user", content: "Hello" }] as ModelMessage[],
+        tools: [{ name: "bash", description: "Run bash", parameters: { type: "object" } }],
+        streamOptions: {
+          thinkingSummaries: "auto",
+          responseMimeType: "application/json",
+          responseFormat: { type: "json_schema" },
+        },
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.url).toContain("/v1beta/interactions");
+      expect(seen[0]?.body).toMatchObject({
+        model: "gemini-3-flash-preview",
+        stream: true,
+        store: true,
+        system_instruction: "You are helpful.",
+        response_mime_type: "application/json",
+        response_format: { type: "json_schema" },
+        generation_config: { thinking_summaries: "auto" },
+      });
+      expect(seen[0]?.body.input).toEqual([
+        { type: "user_input", content: [{ type: "text", text: "Hello" }] },
+      ]);
+      expect(result.interactionId).toBe("mock-interaction");
+      expect(result.assistant.content).toEqual([{ type: "text", text: "Hello world" }]);
+    } finally {
+      globalThis.fetch = realFetch;
+      googleNativeInternal.__testResetGoogleInteractionsClientCache();
+    }
+  });
+
+  liveGoogleTest(
+    "live Google Interactions smoke streams text when explicitly enabled",
+    async () => {
+      const result = await runGoogleNativeInteractionStep({
+        model: {
+          id: "gemini-3-flash-preview",
+          name: "Gemini 3 Flash Preview",
+          reasoning: true,
+          input: ["text", "image"],
+          contextWindow: 1_048_576,
+          maxTokens: 65_536,
+        },
+        apiKey: liveGoogleApiKey,
+        systemPrompt: "Reply with exactly: pong",
+        messages: [{ role: "user", content: "ping" }] as ModelMessage[],
+        tools: [],
+        streamOptions: { thinkingSummaries: "none" },
+      });
+
+      expect(result.interactionId).toBeTruthy();
+      expect(Array.isArray(result.assistant.content)).toBe(true);
+    },
+  );
+
   test("buildGoogleNativeRequest produces correct structure", () => {
     const request = googleNativeInternal.buildGoogleNativeRequest({
       model: {
@@ -1481,6 +1703,122 @@ describe("google native interactions request building", () => {
     expect(block).toBeDefined();
     expect(block.type).toBe("text");
     expect(block.text).toBe("Hello world");
+  });
+
+  test("processStreamEvent handles current SDK model_output and media steps", () => {
+    const blocks = new Map();
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.start",
+        index: 0,
+        step: { type: "model_output", content: [{ type: "text", text: "Hello" }] },
+      },
+      blocks,
+    );
+    googleNativeInternal.processStreamEvent(
+      { event_type: "step.delta", index: 0, delta: { type: "text", text: " world" } },
+      blocks,
+    );
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.start",
+        index: 1,
+        step: { type: "image", uri: "gs://bucket/image.png", mime_type: "image/png" },
+      },
+      blocks,
+    );
+
+    expect(blocks.get(0)).toEqual({ type: "text", text: "Hello world" });
+    expect(blocks.get(1)).toEqual({
+      type: "image",
+      uri: "gs://bucket/image.png",
+      mime_type: "image/png",
+    });
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        { event_type: "step.stop", index: 1 },
+        blocks,
+      ),
+    ).toEqual([
+      { type: "file", mediaType: "image", uri: "gs://bucket/image.png", mime_type: "image/png" },
+    ]);
+  });
+
+  test("processStreamEvent normalizes additional provider-executed Google tools", () => {
+    const blocks = new Map();
+    const providerToolCallsById = new Map();
+
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.start",
+        index: 0,
+        step: {
+          type: "mcp_server_tool_call",
+          id: "mcp_1",
+          name: "lookup",
+          server_name: "docs",
+          arguments: { query: "Gemini" },
+        },
+      },
+      blocks,
+      providerToolCallsById,
+    );
+    googleNativeInternal.processStreamEvent(
+      {
+        event_type: "step.start",
+        index: 1,
+        step: {
+          type: "mcp_server_tool_result",
+          call_id: "mcp_1",
+          result: { ok: true },
+        },
+      },
+      blocks,
+      providerToolCallsById,
+    );
+
+    expect(blocks.get(0)).toMatchObject({
+      type: "providerToolCall",
+      id: "mcp_1",
+      name: "nativeMcpServerTool",
+      arguments: { query: "Gemini", name: "lookup", server_name: "docs" },
+    });
+    expect(
+      googleNativeInternal.mapGoogleEventToStreamParts(
+        { event_type: "step.stop", index: 1 },
+        blocks,
+        providerToolCallsById,
+      ),
+    ).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "mcp_1",
+        toolName: "nativeMcpServerTool",
+        output: {
+          provider: "google",
+          status: "completed",
+          callId: "mcp_1",
+          serverName: "docs",
+          name: "lookup",
+          result: { ok: true },
+          raw: { ok: true },
+        },
+        providerExecuted: true,
+      },
+    ]);
+  });
+
+  test("Google interaction error classification distinguishes retryable and schema failures", () => {
+    expect(googleNativeInternal.classifyGoogleInteractionError(new Error("503 unavailable"))).toBe(
+      "retryable",
+    );
+    expect(googleNativeInternal.isRetryableGoogleInteractionError(new Error("429 quota"))).toBe(
+      true,
+    );
+    expect(googleNativeInternal.classifyGoogleInteractionError(new Error("400 schema error"))).toBe(
+      "schema",
+    );
   });
 
   test("enrichTextBlockAnnotations resolves Google grounding redirects for final text blocks", async () => {

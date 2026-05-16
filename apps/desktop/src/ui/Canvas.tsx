@@ -1,15 +1,9 @@
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import {
   BoldIcon,
   CheckIcon,
-  CodeIcon,
   ExternalLinkIcon,
   EyeIcon,
   FileTextIcon,
-  HeadingIcon,
   ItalicIcon,
   ListIcon,
   Loader2Icon,
@@ -34,7 +28,7 @@ import { ScrollArea } from "../components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Textarea } from "../components/ui/textarea";
 import { readFile, showCanvasWindow, writeFile } from "../lib/desktopCommands";
-import { getExtensionLower, getFilePreviewKind } from "../lib/filePreviewKind";
+import { getFilePreviewKind } from "../lib/filePreviewKind";
 import { cn } from "../lib/utils";
 import { getDesktopWindowMode } from "../lib/windowMode";
 
@@ -59,7 +53,10 @@ function parseInlineMarkdown(text: string): string {
   html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
   html = html.replace(/_(.*?)_/g, "<em>$1</em>");
   html = html.replace(/`(.*?)`/g, "<code>$1</code>");
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="underline text-primary">$1</a>');
+  html = html.replace(
+    /\[(.*?)\]\((.*?)\)/g,
+    '<a href="$2" target="_blank" class="underline text-primary">$1</a>',
+  );
   return html;
 }
 
@@ -75,7 +72,7 @@ function markdownToHtml(md: string): string {
 
   const flushParagraph = () => {
     if (currentParagraph.length > 0) {
-      html += `<p>${currentParagraph.map(l => parseInlineMarkdown(l)).join("<br>")}</p>`;
+      html += `<p>${currentParagraph.map((l) => parseInlineMarkdown(l)).join("<br>")}</p>`;
       currentParagraph = [];
     }
   };
@@ -178,7 +175,7 @@ function nodeToMarkdown(node: Node): string {
 
       switch (tagName) {
         case "p":
-          result += nodeToMarkdown(el) + "\n\n";
+          result += `${nodeToMarkdown(el)}\n\n`;
           break;
         case "strong":
         case "b":
@@ -207,10 +204,10 @@ function nodeToMarkdown(node: Node): string {
           result += `###### ${nodeToMarkdown(el)}\n\n`;
           break;
         case "ul":
-          result += nodeToMarkdown(el) + "\n";
+          result += `${nodeToMarkdown(el)}\n`;
           break;
         case "ol":
-          result += nodeToMarkdown(el) + "\n";
+          result += `${nodeToMarkdown(el)}\n`;
           break;
         case "li":
           result += `- ${nodeToMarkdown(el)}\n`;
@@ -234,7 +231,7 @@ function nodeToMarkdown(node: Node): string {
           result += "\n";
           break;
         case "div":
-          result += nodeToMarkdown(el) + "\n";
+          result += `${nodeToMarkdown(el)}\n`;
           break;
         default:
           result += nodeToMarkdown(el);
@@ -324,8 +321,7 @@ export function Canvas({ path }: { path: string }) {
             editorRef.current.innerHTML = markdownToHtml(diskContent);
           }
         }
-      } catch {
-      }
+      } catch {}
     }, 1500);
 
     return () => {
@@ -351,10 +347,10 @@ export function Canvas({ path }: { path: string }) {
 
   useEffect(() => {
     if (!floatingCoords) {
-      if ('Highlight' in window) {
+      if ("Highlight" in window) {
         try {
-          (CSS as any).highlights.delete('canvas-temp-highlight');
-        } catch (e) {}
+          (CSS as any).highlights.delete("canvas-temp-highlight");
+        } catch (_e) {}
       }
       savedSelectionRangeRef.current = null;
     }
@@ -362,7 +358,7 @@ export function Canvas({ path }: { path: string }) {
 
   const handleInput = () => {
     if (!editorRef.current) return;
-    const html = editorRef.current.innerHTML;
+    const _html = editorRef.current.innerHTML;
     const md = cleanMarkdown(nodeToMarkdown(editorRef.current));
     setContent(md);
     contentRef.current = md;
@@ -402,10 +398,10 @@ export function Canvas({ path }: { path: string }) {
       const range = selection.getRangeAt(0);
       savedSelectionRangeRef.current = range.cloneRange();
 
-      if ('Highlight' in window) {
+      if ("Highlight" in window) {
         try {
           const highlight = new (window as any).Highlight(range);
-          (CSS as any).highlights.set('canvas-temp-highlight', highlight);
+          (CSS as any).highlights.set("canvas-temp-highlight", highlight);
         } catch (e) {
           console.error(e);
         }
@@ -414,10 +410,10 @@ export function Canvas({ path }: { path: string }) {
   }, []);
 
   const removeTempHighlight = useCallback(() => {
-    if ('Highlight' in window) {
+    if ("Highlight" in window) {
       try {
-        (CSS as any).highlights.delete('canvas-temp-highlight');
-      } catch (e) {}
+        (CSS as any).highlights.delete("canvas-temp-highlight");
+      } catch (_e) {}
     }
 
     if (savedSelectionRangeRef.current && editorRef.current) {
@@ -439,19 +435,20 @@ export function Canvas({ path }: { path: string }) {
 
       const selection = window.getSelection();
       const activeElement = document.activeElement;
-      const isFocusedInInputs = activeElement && (
-        activeElement.tagName === "INPUT" || 
-        activeElement.tagName === "TEXTAREA" || 
-        floatingRef.current?.contains(activeElement)
-      );
+      const isFocusedInInputs =
+        activeElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          floatingRef.current?.contains(activeElement));
 
       // Only show the floating bar if there's an actual text selection
       if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
         const text = selection.toString().trim();
         const canvasEl = document.querySelector(".app-canvas");
-        
+
         // Ensure the selection is actually inside our canvas
-        const selectionInCanvas = canvasEl?.contains(activeElement || null) || 
+        const selectionInCanvas =
+          canvasEl?.contains(activeElement || null) ||
           (selection.anchorNode && canvasEl?.contains(selection.anchorNode)) ||
           (selection.focusNode && canvasEl?.contains(selection.focusNode));
 
@@ -482,10 +479,10 @@ export function Canvas({ path }: { path: string }) {
       // If selection is lost/collapsed, and we are not focused on our inputs,
       // fully clear the saved selection and temp highlight so they don't stick or leak!
       if (!isFocusedInInputs) {
-        if ('Highlight' in window) {
+        if ("Highlight" in window) {
           try {
-            (CSS as any).highlights.delete('canvas-temp-highlight');
-          } catch (e) {}
+            (CSS as any).highlights.delete("canvas-temp-highlight");
+          } catch (_e) {}
         }
         savedSelectionRangeRef.current = null;
       }
@@ -497,17 +494,17 @@ export function Canvas({ path }: { path: string }) {
 
     document.addEventListener("selectionchange", handleSelection);
     return () => document.removeEventListener("selectionchange", handleSelection);
-  }, [activeTab, showFormattingBar]);
+  }, [activeTab]);
 
   const clearSelectionState = useCallback(() => {
     setSelectedText("");
     setFloatingCoords(null);
     isInteractingRef.current = false;
     // Always remove temp highlight when clearing selection state
-    if ('Highlight' in window) {
+    if ("Highlight" in window) {
       try {
-        (CSS as any).highlights.delete('canvas-temp-highlight');
-      } catch (e) {}
+        (CSS as any).highlights.delete("canvas-temp-highlight");
+      } catch (_e) {}
     }
     savedSelectionRangeRef.current = null;
   }, []);
@@ -526,7 +523,7 @@ export function Canvas({ path }: { path: string }) {
         isInteractingRef.current = true;
         return;
       }
-      
+
       // If clicking anywhere else, we are no longer interacting with the floating portal.
       isInteractingRef.current = false;
 
@@ -552,8 +549,9 @@ export function Canvas({ path }: { path: string }) {
         const text = selection.toString().trim();
         if (!text) return;
         const canvasEl = document.querySelector(".app-canvas");
-        const inCanvas = (selection.anchorNode && canvasEl?.contains(selection.anchorNode)) ||
-                         (selection.focusNode && canvasEl?.contains(selection.focusNode));
+        const inCanvas =
+          (selection.anchorNode && canvasEl?.contains(selection.anchorNode)) ||
+          (selection.focusNode && canvasEl?.contains(selection.focusNode));
         if (!inCanvas) return;
         setSelectedText(text);
         try {
@@ -628,11 +626,13 @@ ${textToSend}`;
   const isAgentBusy = threadRuntime?.busy === true;
 
   return (
-    <div className={cn(
-      "app-canvas flex h-full w-full flex-col text-foreground overflow-hidden",
-      isCanvasMode ? "bg-transparent" : "bg-background",
-      !isCanvasMode && "border-l border-border/50"
-    )}>
+    <div
+      className={cn(
+        "app-canvas flex h-full w-full flex-col text-foreground overflow-hidden",
+        isCanvasMode ? "bg-transparent" : "bg-background",
+        !isCanvasMode && "border-l border-border/50",
+      )}
+    >
       <style>{`
         ::highlight(canvas-temp-highlight) {
           background-color: var(--canvas-highlight);
@@ -650,14 +650,18 @@ ${textToSend}`;
         <div
           className={cn(
             "flex shrink-0 items-center justify-between border-b border-border/40 h-[52px] px-3 gap-3 select-none",
-            isCanvasMode ? "bg-transparent" : "bg-background"
+            isCanvasMode ? "bg-transparent" : "bg-background",
           )}
-          style={isCanvasMode ? {
-            height: "var(--platform-titlebar-height, 38px)",
-            paddingLeft: "calc(var(--platform-left-native-reserve, 0px) + 12px)",
-            paddingRight: "calc(var(--platform-right-native-reserve, 0px) + 12px)",
-            WebkitAppRegion: "drag",
-          } as React.CSSProperties : undefined}
+          style={
+            isCanvasMode
+              ? ({
+                  height: "var(--platform-titlebar-height, 38px)",
+                  paddingLeft: "calc(var(--platform-left-native-reserve, 0px) + 12px)",
+                  paddingRight: "calc(var(--platform-right-native-reserve, 0px) + 12px)",
+                  WebkitAppRegion: "drag",
+                } as React.CSSProperties)
+              : undefined
+          }
         >
           {isCanvasMode ? (
             <div className="flex min-w-0 items-center gap-1.5 flex-1">
@@ -672,7 +676,10 @@ ${textToSend}`;
                 </span>
               </div>
               {isAgentBusy ? (
-                <Badge variant="secondary" className="gap-1 animate-pulse bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0 px-1 h-4 text-[9px]">
+                <Badge
+                  variant="secondary"
+                  className="gap-1 animate-pulse bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0 px-1 h-4 text-[9px]"
+                >
                   <Loader2Icon className="size-2.5 animate-spin" />
                 </Badge>
               ) : null}
@@ -680,11 +687,17 @@ ${textToSend}`;
           ) : (
             <div className="flex min-w-0 items-center gap-2 flex-1">
               <FileTextIcon className="size-4.5 text-muted-foreground shrink-0" />
-              <span className="truncate text-sm font-semibold tracking-wide text-foreground" title={fileName}>
+              <span
+                className="truncate text-sm font-semibold tracking-wide text-foreground"
+                title={fileName}
+              >
                 {fileName}
               </span>
               {isAgentBusy ? (
-                <Badge variant="secondary" className="gap-1 animate-pulse bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0">
+                <Badge
+                  variant="secondary"
+                  className="gap-1 animate-pulse bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0"
+                >
                   <Loader2Icon className="size-3 animate-spin" />
                 </Badge>
               ) : null}
@@ -707,7 +720,10 @@ ${textToSend}`;
           )}
 
           {isCanvasMode ? (
-            <div className="flex items-center gap-1 shrink-0 flex-1 justify-end" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+            <div
+              className="flex items-center gap-1 shrink-0 flex-1 justify-end"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            >
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -723,16 +739,20 @@ ${textToSend}`;
                 <DropdownMenuContent align="end" className="w-44 outline-none">
                   {isMarkdown && (
                     <>
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => setActiveTab("preview")}
-                        className={cn(activeTab === "preview" && "font-semibold text-primary bg-primary/5")}
+                        className={cn(
+                          activeTab === "preview" && "font-semibold text-primary bg-primary/5",
+                        )}
                       >
                         <EyeIcon className="mr-2 size-3.5" />
                         <span>Document</span>
                       </DropdownMenuItem>
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => setActiveTab("edit")}
-                        className={cn(activeTab === "edit" && "font-semibold text-primary bg-primary/5")}
+                        className={cn(
+                          activeTab === "edit" && "font-semibold text-primary bg-primary/5",
+                        )}
                       >
                         <PenIcon className="mr-2 size-3.5" />
                         <span>Raw Source</span>
@@ -909,70 +929,77 @@ ${textToSend}`;
               <div className="font-semibold mb-1">Failed to load content</div>
               <p>{error}</p>
             </div>
-          ) : (
+          ) : isMarkdown ? (
             <>
-              {isMarkdown ? (
-                <>
-                  <TabsContent value="preview" className="h-full m-0 p-0 outline-none">
-                    <ScrollArea className="h-full">
-                      <div className="mx-auto w-full max-w-[840px] px-4 py-8">
-                        <div
-                          ref={(el) => {
-                            editorRef.current = el;
-                            if (el && !el.innerHTML) {
-                              el.innerHTML = markdownToHtml(content);
-                            }
-                          }}
-                          contentEditable
-                          suppressContentEditableWarning
-                          onInput={handleInput}
-                          onKeyDown={handleKeyDown}
-                          onBlur={handleBlur}
-                          className="mx-auto w-full min-h-[1056px] p-12 md:p-16 focus:outline-none focus:ring-0 max-w-none text-left select-text leading-relaxed [&_p]:mb-4 [&_h1]:text-4xl [&_h1]:font-bold [&_h1]:mb-6 [&_h1]:mt-8 [&_h2]:text-3xl [&_h2]:font-bold [&_h2]:mb-4 [&_h2]:mt-8 [&_h3]:text-2xl [&_h3]:font-semibold [&_h3]:mb-4 [&_h3]:mt-6 [&_h4]:text-xl [&_h4]:font-semibold [&_h4]:mb-3 [&_h4]:mt-6 [&_h5]:text-lg [&_h5]:font-semibold [&_h5]:mb-2 [&_h5]:mt-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-border/80 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:mb-4 [&_hr]:my-8 [&_hr]:border-border/60 [&_pre]:bg-muted/40 [&_pre]:p-4 [&_pre]:rounded-md [&_pre]:mb-4 [&_code]:bg-muted/70 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-sm"
-                        />
-                      </div>
-                    </ScrollArea>
-                  </TabsContent>
-
-                  <TabsContent value="edit" className="h-full m-0 p-0 outline-none bg-background">
-                    <div className={cn("flex h-full flex-col pb-2.5 pt-1.5 gap-2", pxClass)}>
-                      <div className="text-[10px] text-muted-foreground px-1 flex items-center justify-between shrink-0">
-                        <span>Markdown Source</span>
-                        <span className="tabular-nums font-mono">{content.length} characters</span>
-                      </div>
-                      <Textarea
-                        value={content}
-                        onChange={(e) => handleContentChange(e.target.value)}
-                        onBlur={handleBlur}
-                        placeholder="Type your markdown here..."
-                        className="flex-1 min-h-0 resize-none font-mono text-sm leading-relaxed p-4 bg-background/50 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary/80"
-                      />
-                    </div>
-                  </TabsContent>
-                </>
-              ) : (
-                <div className="h-full flex flex-col pb-2.5 pt-1.5 gap-2 bg-background">
-                  <div className={cn("text-[10px] text-muted-foreground px-1 flex items-center justify-between shrink-0", pxClass)}>
-                    <span>Source Editor (Auto-saving)</span>
-                    <span className="tabular-nums font-mono">{content.length} characters</span>
-                  </div>
-                  <div className={cn("flex-1 min-h-0", pxClass)}>
-                    <Textarea
-                      value={content}
-                      onChange={(e) => handleContentChange(e.target.value)}
+              <TabsContent value="preview" className="h-full m-0 p-0 outline-none">
+                <ScrollArea className="h-full">
+                  <div className="mx-auto w-full max-w-[840px] px-4 py-8">
+                    <div
+                      ref={(el) => {
+                        editorRef.current = el;
+                        if (el && !el.innerHTML) {
+                          el.innerHTML = markdownToHtml(content);
+                        }
+                      }}
+                      role="textbox"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onInput={handleInput}
+                      onKeyDown={handleKeyDown}
                       onBlur={handleBlur}
-                      placeholder="Type your text here..."
-                      className="w-full h-full resize-none font-mono text-sm leading-relaxed p-4 bg-background/50 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary/80"
+                      className="mx-auto w-full min-h-[1056px] p-12 md:p-16 focus:outline-none focus:ring-0 max-w-none text-left select-text leading-relaxed [&_p]:mb-4 [&_h1]:text-4xl [&_h1]:font-bold [&_h1]:mb-6 [&_h1]:mt-8 [&_h2]:text-3xl [&_h2]:font-bold [&_h2]:mb-4 [&_h2]:mt-8 [&_h3]:text-2xl [&_h3]:font-semibold [&_h3]:mb-4 [&_h3]:mt-6 [&_h4]:text-xl [&_h4]:font-semibold [&_h4]:mb-3 [&_h4]:mt-6 [&_h5]:text-lg [&_h5]:font-semibold [&_h5]:mb-2 [&_h5]:mt-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-border/80 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:mb-4 [&_hr]:my-8 [&_hr]:border-border/60 [&_pre]:bg-muted/40 [&_pre]:p-4 [&_pre]:rounded-md [&_pre]:mb-4 [&_code]:bg-muted/70 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-sm"
                     />
                   </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="edit" className="h-full m-0 p-0 outline-none bg-background">
+                <div className={cn("flex h-full flex-col pb-2.5 pt-1.5 gap-2", pxClass)}>
+                  <div className="text-[10px] text-muted-foreground px-1 flex items-center justify-between shrink-0">
+                    <span>Markdown Source</span>
+                    <span className="tabular-nums font-mono">{content.length} characters</span>
+                  </div>
+                  <Textarea
+                    value={content}
+                    onChange={(e) => handleContentChange(e.target.value)}
+                    onBlur={handleBlur}
+                    placeholder="Type your markdown here..."
+                    className="flex-1 min-h-0 resize-none font-mono text-sm leading-relaxed p-4 bg-background/50 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary/80"
+                  />
                 </div>
-              )}
+              </TabsContent>
             </>
+          ) : (
+            <div className="h-full flex flex-col pb-2.5 pt-1.5 gap-2 bg-background">
+              <div
+                className={cn(
+                  "text-[10px] text-muted-foreground px-1 flex items-center justify-between shrink-0",
+                  pxClass,
+                )}
+              >
+                <span>Source Editor (Auto-saving)</span>
+                <span className="tabular-nums font-mono">{content.length} characters</span>
+              </div>
+              <div className={cn("flex-1 min-h-0", pxClass)}>
+                <Textarea
+                  value={content}
+                  onChange={(e) => handleContentChange(e.target.value)}
+                  onBlur={handleBlur}
+                  placeholder="Type your text here..."
+                  className="w-full h-full resize-none font-mono text-sm leading-relaxed p-4 bg-background/50 border border-border/60 focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary/80"
+                />
+              </div>
+            </div>
           )}
         </div>
       </Tabs>
 
-      <div className={cn("shrink-0 border-t border-border/45 bg-muted/20 pb-3 pt-2 flex flex-col gap-2 select-none", pxClass)}>
+      <div
+        className={cn(
+          "shrink-0 border-t border-border/45 bg-muted/20 pb-3 pt-2 flex flex-col gap-2 select-none",
+          pxClass,
+        )}
+      >
         <div className="relative flex items-center bg-background border border-border/65 rounded-xl shadow-sm hover:border-border/80 transition focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/30">
           <Input
             value={promptText}
@@ -999,7 +1026,7 @@ ${textToSend}`;
               "absolute right-1.5 size-8.5 rounded-lg transition-all duration-150 shrink-0",
               promptText.trim()
                 ? "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-97 shadow-sm"
-                : "text-muted-foreground/45"
+                : "text-muted-foreground/45",
             )}
           >
             <SparklesIcon className="size-4" />
@@ -1007,103 +1034,104 @@ ${textToSend}`;
         </div>
       </div>
 
-      {floatingCoords && createPortal(
-        <div
-          ref={floatingRef}
-          className="fixed bg-popover text-popover-foreground border border-border shadow-lg rounded-xl p-1.5 flex flex-col gap-1.5 min-w-[320px] max-w-[420px] animate-in fade-in zoom-in-95 duration-100 select-none"
-          style={{
-            left: `${floatingCoords.x}px`,
-            top: `${floatingCoords.y}px`,
-            transform: "translate(-50%, -100%) translateY(-10px)",
-            zIndex: 100,
-          }}
-        >
-          {showFormattingBar && isMarkdown && (
-            <div className="flex items-center gap-1 border-b border-border/45 pb-1 px-1">
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onPointerDown={(e) => e.preventDefault()}
-                className="h-6 px-1.5 text-[10px] font-bold"
-                onClick={() => executeCommand("bold")}
-              >
-                <BoldIcon className="size-3" />
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onPointerDown={(e) => e.preventDefault()}
-                className="h-6 px-1.5 text-[10px] italic"
-                onClick={() => executeCommand("italic")}
-              >
-                <ItalicIcon className="size-3" />
-              </Button>
-              <div className="h-3 w-px bg-border/40 mx-0.5" />
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onPointerDown={(e) => e.preventDefault()}
-                className="h-6 px-1.5 text-[10px] font-bold"
-                onClick={() => executeCommand("formatBlock", "H1")}
-              >
-                H1
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onPointerDown={(e) => e.preventDefault()}
-                className="h-6 px-1.5 text-[10px] font-bold"
-                onClick={() => executeCommand("formatBlock", "H2")}
-              >
-                H2
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                onPointerDown={(e) => e.preventDefault()}
-                className="h-6 px-1.5 text-[10px]"
-                onClick={() => executeCommand("insertUnorderedList")}
-              >
-                <ListIcon className="size-3" />
-              </Button>
-              <div className="ml-auto text-[9px] text-muted-foreground/60 px-1 font-medium">
-                Format
+      {floatingCoords &&
+        createPortal(
+          <div
+            ref={floatingRef}
+            className="fixed bg-popover text-popover-foreground border border-border shadow-lg rounded-xl p-1.5 flex flex-col gap-1.5 min-w-[320px] max-w-[420px] animate-in fade-in zoom-in-95 duration-100 select-none"
+            style={{
+              left: `${floatingCoords.x}px`,
+              top: `${floatingCoords.y}px`,
+              transform: "translate(-50%, -100%) translateY(-10px)",
+              zIndex: 100,
+            }}
+          >
+            {showFormattingBar && isMarkdown && (
+              <div className="flex items-center gap-1 border-b border-border/45 pb-1 px-1">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onPointerDown={(e) => e.preventDefault()}
+                  className="h-6 px-1.5 text-[10px] font-bold"
+                  onClick={() => executeCommand("bold")}
+                >
+                  <BoldIcon className="size-3" />
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onPointerDown={(e) => e.preventDefault()}
+                  className="h-6 px-1.5 text-[10px] italic"
+                  onClick={() => executeCommand("italic")}
+                >
+                  <ItalicIcon className="size-3" />
+                </Button>
+                <div className="h-3 w-px bg-border/40 mx-0.5" />
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onPointerDown={(e) => e.preventDefault()}
+                  className="h-6 px-1.5 text-[10px] font-bold"
+                  onClick={() => executeCommand("formatBlock", "H1")}
+                >
+                  H1
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onPointerDown={(e) => e.preventDefault()}
+                  className="h-6 px-1.5 text-[10px] font-bold"
+                  onClick={() => executeCommand("formatBlock", "H2")}
+                >
+                  H2
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onPointerDown={(e) => e.preventDefault()}
+                  className="h-6 px-1.5 text-[10px]"
+                  onClick={() => executeCommand("insertUnorderedList")}
+                >
+                  <ListIcon className="size-3" />
+                </Button>
+                <div className="ml-auto text-[9px] text-muted-foreground/60 px-1 font-medium">
+                  Format
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="flex items-center gap-1">
-            <Input
-              value={floatingPromptText}
-              onChange={(e) => setFloatingPromptText(e.target.value)}
-              onFocus={applyTempHighlight}
-              onBlur={removeTempHighlight}
-              onPointerDown={(e) => {
-                // Clicking inside the input should NOT trigger the global window pointer down
-                // handler to close the floating bar, but we DO want the browser to natively
-                // place the cursor inside this input, so we use stopPropagation instead of preventDefault
-                e.stopPropagation();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void handleSendPrompt(floatingPromptText);
-                } else if (e.key === "Escape") {
-                  clearSelection();
-                }
-              }}
-              placeholder="How should the model edit this selection?"
-              className="flex-1 border-none shadow-none h-8 text-xs px-2 focus-visible:ring-0 bg-transparent"
-            />
-          </div>
-        </div>,
-        document.body
-      )}
+            <div className="flex items-center gap-1">
+              <Input
+                value={floatingPromptText}
+                onChange={(e) => setFloatingPromptText(e.target.value)}
+                onFocus={applyTempHighlight}
+                onBlur={removeTempHighlight}
+                onPointerDown={(e) => {
+                  // Clicking inside the input should NOT trigger the global window pointer down
+                  // handler to close the floating bar, but we DO want the browser to natively
+                  // place the cursor inside this input, so we use stopPropagation instead of preventDefault
+                  e.stopPropagation();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSendPrompt(floatingPromptText);
+                  } else if (e.key === "Escape") {
+                    clearSelection();
+                  }
+                }}
+                placeholder="How should the model edit this selection?"
+                className="flex-1 border-none shadow-none h-8 text-xs px-2 focus-visible:ring-0 bg-transparent"
+              />
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

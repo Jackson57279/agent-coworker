@@ -503,8 +503,28 @@ describe("settings nav (store)", () => {
     expect(last?.title).toBe("Skills need a workspace");
   });
 
+  test("openResearch requires a saved Google API key", async () => {
+    await useAppStore.getState().openResearch();
+
+    const state = useAppStore.getState();
+    expect(state.view).toBe("chat");
+    expect(state.notifications.at(-1)?.title).toBe("Google API key required");
+  });
+
   test("openResearch switches to the research view before transport refresh completes", async () => {
     useAppStore.setState({
+      providerStatusByName: {
+        google: {
+          provider: "google",
+          authorized: true,
+          verified: false,
+          mode: "api_key",
+          account: null,
+          message: "API key saved.",
+          checkedAt: "2026-05-15T00:00:00.000Z",
+          savedApiKeyMasks: { api_key: "goog...1234" },
+        },
+      },
       workspaces: [
         {
           id: "ws-1",

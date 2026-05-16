@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import path from "node:path";
 import * as REAL_AGENT from "../src/agent";
 import { __internal as observabilityRuntimeInternal } from "../src/observability/runtime";
-import type { PersistedModelStreamChunk, SessionDb } from "../src/server/sessionDb";
 import type { SessionEvent } from "../src/server/protocol";
+import type { PersistedModelStreamChunk, SessionDb } from "../src/server/sessionDb";
 import type { AgentConfig } from "../src/types";
 
 const mockRunTurn = mock(async () => ({

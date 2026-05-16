@@ -7,7 +7,7 @@ import {
   revealPath,
   trashPath,
 } from "../../lib/desktopCommands";
-import { getFilePreviewKind, isCanvasSupportedFile } from "../../lib/filePreviewKind";
+import { isCanvasSupportedFile } from "../../lib/filePreviewKind";
 
 import type { AppStoreActions, StoreGet, StoreSet } from "../store.helpers";
 

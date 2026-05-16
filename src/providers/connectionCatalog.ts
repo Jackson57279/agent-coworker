@@ -124,8 +124,10 @@ async function codexCatalogEntry(opts: {
   const defaultFromAppServer = appServerModels.find((model) => model.isDefault);
   const defaultModel =
     (defaultFromAppServer
-      ? (supportedById.get(defaultFromAppServer.model) ?? supportedById.get(defaultFromAppServer.id))
-      : null)?.id ??
+      ? (supportedById.get(defaultFromAppServer.model) ??
+        supportedById.get(defaultFromAppServer.id))
+      : null
+    )?.id ??
     models[0]?.id ??
     "";
 

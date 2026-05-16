@@ -145,9 +145,7 @@ function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
   const output: Record<string, unknown> = {};
   const tupleItems = Array.isArray(input.items) ? normalizeMcpSchemaArray(input.items) : [];
   const prefixItems = normalizeMcpSchemaArray(input.prefixItems);
-  const normalizedItems = collapseMcpTupleSchemas(
-    tupleItems.length > 0 ? tupleItems : prefixItems,
-  );
+  const normalizedItems = collapseMcpTupleSchemas(tupleItems.length > 0 ? tupleItems : prefixItems);
   for (const [key, entry] of Object.entries(input)) {
     if (key === "$schema" || key === "additionalItems" || key === "prefixItems") continue;
     if (

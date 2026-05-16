@@ -167,7 +167,6 @@ export async function showCanvasWindow(opts: { path: string }): Promise<void> {
   await requireDesktopApi().showCanvasWindow(opts);
 }
 
-
 export async function showQuickChatWindow(opts?: ShowQuickChatWindowInput): Promise<void> {
   await requireDesktopApi().showQuickChatWindow(opts);
 }

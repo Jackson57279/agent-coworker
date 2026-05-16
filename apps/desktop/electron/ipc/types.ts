@@ -2,7 +2,11 @@ import type { IpcMainInvokeEvent } from "electron";
 import type { z } from "zod";
 
 import type { PersistedState } from "../../src/app/types";
-import type { DesktopMenuCommand, ShowQuickChatWindowInput, ShowCanvasWindowInput } from "../../src/lib/desktopApi";
+import type {
+  DesktopMenuCommand,
+  ShowCanvasWindowInput,
+  ShowQuickChatWindowInput,
+} from "../../src/lib/desktopApi";
 import type { MobileRelayBridge } from "../services/mobileRelayBridge";
 import type { PersistenceService } from "../services/persistence";
 import type { ServerManager } from "../services/serverManager";

@@ -14,11 +14,11 @@ import {
   checkForUpdates as runUpdateCheck,
   stopMobileRelay,
 } from "../../lib/desktopCommands";
+import { isCanvasSupportedFile } from "../../lib/filePreviewKind";
 import { normalizeQuickChatShortcutAccelerator } from "../../lib/quickChatShortcut";
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
 import { type ProviderName, safeParseSessionEvent } from "../../lib/wsProtocol";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
-import { getFilePreviewKind, isCanvasSupportedFile } from "../../lib/filePreviewKind";
 import {
   deriveConnectedProviders,
   normalizePersistedProviderState,
@@ -1173,7 +1173,8 @@ export function createBootstrapActions(
     setContextSidebarWidth: (width: number) => {
       const state = get();
       const canvasEnabled = state.desktopFeatureFlags.canvas === true;
-      const isCanvasSupported = state.filePreview?.path && isCanvasSupportedFile(state.filePreview.path);
+      const isCanvasSupported =
+        state.filePreview?.path && isCanvasSupportedFile(state.filePreview.path);
       const isCanvasOpen = canvasEnabled && isCanvasSupported;
 
       if (isCanvasOpen) {

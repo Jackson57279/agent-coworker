@@ -14,7 +14,10 @@ function parseInlineMarkdown(text: string): string {
   html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
   html = html.replace(/_(.*?)_/g, "<em>$1</em>");
   html = html.replace(/`(.*?)`/g, "<code>$1</code>");
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="underline text-primary">$1</a>');
+  html = html.replace(
+    /\[(.*?)\]\((.*?)\)/g,
+    '<a href="$2" target="_blank" class="underline text-primary">$1</a>',
+  );
   return html;
 }
 
@@ -30,7 +33,7 @@ function markdownToHtml(md: string): string {
 
   const flushParagraph = () => {
     if (currentParagraph.length > 0) {
-      html += `<p>${currentParagraph.map(l => parseInlineMarkdown(l)).join("<br>")}</p>`;
+      html += `<p>${currentParagraph.map((l) => parseInlineMarkdown(l)).join("<br>")}</p>`;
       currentParagraph = [];
     }
   };

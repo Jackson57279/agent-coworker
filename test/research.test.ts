@@ -250,6 +250,42 @@ describe("research service", () => {
     }
   });
 
+  test("passes configurable Deep Research agent settings to the Interactions runtime", async () => {
+    const paths = await makeTmpCoworkHome();
+    const sessionDb = await SessionDb.create({ paths });
+
+    const service = new ResearchService({
+      rootDir: paths.rootDir,
+      sessionDb,
+      getConfig: () => ({ skillsDirs: [] }) as any,
+      sendJsonRpc: () => {},
+    });
+
+    try {
+      await service.start({
+        input: "Compare releases.",
+        settings: {
+          agentId: "deep-research-max-preview-04-2026",
+          thinkingSummaries: "none",
+          visualization: "off",
+        },
+      });
+      await waitFor(
+        () => createResearchInteractionStreamMock.mock.calls.length,
+        (count) => count > 0,
+      );
+
+      expect(createResearchInteractionStreamMock.mock.calls[0]?.[0]).toMatchObject({
+        agentId: "deep-research-max-preview-04-2026",
+        thinkingSummaries: "none",
+        visualization: "off",
+      });
+    } finally {
+      sessionDb.close();
+      await fs.rm(paths.home, { recursive: true, force: true });
+    }
+  });
+
   test("preserves whitespace-only and leading-space streamed text chunks", async () => {
     const paths = await makeTmpCoworkHome();
     const sessionDb = await SessionDb.create({ paths });

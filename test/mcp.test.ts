@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import {
   DEFAULT_MCP_SERVERS_DOCUMENT,
-  __internal as mcpInternal,
   loadMCPServers,
   loadMCPTools,
+  __internal as mcpInternal,
   parseMCPServersDocument,
   readMCPServersSnapshot,
   readProjectMCPServersDocument,

@@ -543,8 +543,8 @@ export function SearchSettingsCard({
               <div className="grid gap-3 rounded-lg border border-border/60 bg-background/35 p-3">
                 <div className={MODEL_CARD_FIELD_CLASS}>
                   <div className="text-[13px] font-medium text-foreground">
-                    For non-Codex models without native search, which local search tool do you
-                    want to use?
+                    For non-Codex models without native search, which local search tool do you want
+                    to use?
                   </div>
                   <Select
                     value={localFallbackProvider}

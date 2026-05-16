@@ -2,7 +2,7 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppStore } from "../../app/store";
-import { getFilePreviewKind, isCanvasSupportedFile } from "../../lib/filePreviewKind";
+import { isCanvasSupportedFile } from "../../lib/filePreviewKind";
 import { cn } from "../../lib/utils";
 
 export function ContextSidebarResizer() {

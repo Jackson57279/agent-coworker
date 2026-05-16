@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  __internal,
   getCodexAppServerInstallStatus,
   resolveCodexAppServerCommand,
   updateManagedCodexAppServer,
-  __internal,
 } from "../../src/providers/codexAppServerResolver";
 
 const previousCommand = process.env.COWORK_CODEX_APP_SERVER_COMMAND;

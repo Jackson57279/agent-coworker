@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { resolvePluginCatalogWorkspaceSelection } from "../app/pluginManagement";
+import { hasGoogleApiKeyForResearch } from "../app/researchAvailability";
 import { useAppStore } from "../app/store";
 import type { ThreadRecord, ThreadRuntime, WorkspaceRecord } from "../app/types";
 import { Button } from "../components/ui/button";
@@ -410,6 +411,9 @@ export const Sidebar = memo(function Sidebar() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
   const desktopFeatures = useAppStore((s) => s.desktopFeatureFlags);
+  const googleResearchAvailable = useAppStore((s) =>
+    hasGoogleApiKeyForResearch(s.providerStatusByName.google),
+  );
 
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const removeWorkspace = useAppStore((s) => s.removeWorkspace);
@@ -445,13 +449,14 @@ export const Sidebar = memo(function Sidebar() {
   );
   const workspacePickerEnabled = desktopFeatures.workspacePicker !== false;
   const workspaceLifecycleEnabled = desktopFeatures.workspaceLifecycle !== false;
+  const effectiveView = view === "research" && !googleResearchAvailable ? "chat" : view;
   const activeWorkspaceId =
-    view === "skills"
+    effectiveView === "skills"
       ? pluginSelection.displayWorkspaceId
-      : view === "research"
+      : effectiveView === "research"
         ? null
         : selectedWorkspaceId;
-  const sidebarSelectedThreadId = view === "research" ? null : selectedThreadId;
+  const sidebarSelectedThreadId = effectiveView === "research" ? null : selectedThreadId;
   const visibleWorkspaces = useMemo(() => {
     if (workspacePickerEnabled || workspaces.length <= 1) {
       return workspaces;
@@ -572,11 +577,11 @@ export const Sidebar = memo(function Sidebar() {
 
   const handleSelectWorkspace = useCallback(
     (workspaceId: string) => {
-      void (view === "skills"
+      void (effectiveView === "skills"
         ? setPluginManagementWorkspace(workspaceId)
         : selectWorkspace(workspaceId));
     },
-    [selectWorkspace, setPluginManagementWorkspace, view],
+    [effectiveView, selectWorkspace, setPluginManagementWorkspace],
   );
 
   const handleWorkspaceContextMenu = async (
@@ -593,7 +598,9 @@ export const Sidebar = memo(function Sidebar() {
     ]);
 
     if (result === "select") {
-      void (view === "skills" ? setPluginManagementWorkspace(wsId) : selectWorkspace(wsId));
+      void (effectiveView === "skills"
+        ? setPluginManagementWorkspace(wsId)
+        : selectWorkspace(wsId));
     } else if (result === "remove") {
       const confirmed = await confirmAction({
         title: "Remove workspace",
@@ -742,26 +749,28 @@ export const Sidebar = memo(function Sidebar() {
         </Button>
       ) : null}
       <nav className="grid w-full gap-1.5">
+        {googleResearchAvailable ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "sidebar-lift h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/80",
+              "hover:bg-foreground/[0.045] hover:text-foreground",
+              effectiveView === "research" && "bg-foreground/[0.055] text-foreground",
+            )}
+            onClick={() => void openResearch()}
+          >
+            <BookOpenIcon className="h-4 w-4 text-muted-foreground" />
+            Research
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
           className={cn(
             "sidebar-lift h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/80",
             "hover:bg-foreground/[0.045] hover:text-foreground",
-            view === "research" && "bg-foreground/[0.055] text-foreground",
-          )}
-          onClick={() => void openResearch()}
-        >
-          <BookOpenIcon className="h-4 w-4 text-muted-foreground" />
-          Research
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "sidebar-lift h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/80",
-            "hover:bg-foreground/[0.045] hover:text-foreground",
-            view === "skills" && "bg-foreground/[0.055] text-foreground",
+            effectiveView === "skills" && "bg-foreground/[0.055] text-foreground",
           )}
           onClick={() => void openSkills()}
         >

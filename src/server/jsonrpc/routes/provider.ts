@@ -1,8 +1,8 @@
-import type { AgentConfig } from "../../../types";
 import {
   getCodexAppServerInstallStatus,
   updateManagedCodexAppServer,
 } from "../../../providers/codexAppServerResolver";
+import type { AgentConfig } from "../../../types";
 import type { SessionEvent } from "../../protocol";
 import { JSONRPC_ERROR_CODES } from "../protocol";
 
