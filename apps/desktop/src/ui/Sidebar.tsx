@@ -51,7 +51,7 @@ import {
 } from "./sidebarHelpers";
 
 const MAX_VISIBLE_THREADS = 5;
-const WORKSPACE_ITEM_CLASSNAME = "sidebar-workspace-item [&:not(:last-child)]:mb-3";
+const WORKSPACE_ITEM_CLASSNAME = "sidebar-workspace-item min-w-0 [&:not(:last-child)]:mb-3";
 /** Matches `.sidebar-thread-region` transition duration in styles.css (fallback when transitionend does not fire). */
 const SIDEBAR_THREAD_REGION_DURATION_MS = 240;
 
@@ -214,7 +214,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
 
   const content = (
     <Collapsible
-      className="flex flex-col"
+      className="flex min-w-0 flex-col"
       onContextMenu={(event) => onWorkspaceContextMenu(event, workspace.id, workspace.name)}
       onOpenChange={(nextOpen) => onWorkspaceOpenChange(workspace.id, nextOpen)}
       open={expanded}
@@ -303,7 +303,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
           data-state={threadRegionOpen ? "open" : "closed"}
         >
           <div className="min-h-0 overflow-hidden">
-            <div className="ml-3 space-y-1 border-l border-border/45 pl-3 pt-1">
+            <div className="ml-3 min-w-0 space-y-1 border-l border-border/45 pl-3 pt-1">
               {workspaceThreads.length === 0 ? (
                 <div className="px-3 py-2 text-[12px] text-muted-foreground">No sessions yet</div>
               ) : (
@@ -341,7 +341,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
                         />
                       </div>
                     ) : (
-                      <div key={thread.id} className="relative group">
+                      <div key={thread.id} className="relative group min-w-0">
                         <Button
                           className={cn(
                             "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left",
@@ -446,7 +446,7 @@ const SidebarSectionFrame = memo(function SidebarSectionFrame({
   sectionKey,
 }: SidebarSectionFrameProps) {
   const controls = useDragControls();
-  const className = cn("flex flex-col");
+  const className = cn("flex min-w-0 flex-col");
 
   if (!reorderEnabled) {
     return (
@@ -548,7 +548,7 @@ const SidebarOneOffChatItem = memo(function SidebarOneOffChatItem({
   }
 
   return (
-    <div className="relative group">
+    <div className="relative group min-w-0">
       <Button
         className={cn(
           "sidebar-thread-item sidebar-lift flex min-w-0 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left",
@@ -1130,7 +1130,7 @@ export const Sidebar = memo(function Sidebar() {
   };
 
   return (
-    <aside className="app-sidebar sidebar-rail-enter relative flex h-full w-full flex-col gap-1.5 px-2 pt-1.5 pb-3">
+    <aside className="app-sidebar sidebar-rail-enter relative flex h-full w-full min-w-0 flex-col gap-1.5 overflow-hidden px-2 pt-1.5 pb-3">
       <div className="app-sidebar__titleband">
         <div className="app-sidebar__titleband-drag-zone" aria-hidden="true" />
         <div className="app-sidebar__titleband-row flex w-full items-center gap-1">
@@ -1164,7 +1164,7 @@ export const Sidebar = memo(function Sidebar() {
           New Chat
         </Button>
       ) : null}
-      <nav className="grid w-full gap-1.5">
+      <nav className="grid w-full min-w-0 gap-1.5">
         {googleResearchAvailable ? (
           <Button
             variant="ghost"
@@ -1198,7 +1198,7 @@ export const Sidebar = memo(function Sidebar() {
       <Reorder.Group
         as="section"
         axis="y"
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-1"
         onReorder={handleSectionReorder}
         values={orderedSectionKeys}
       >

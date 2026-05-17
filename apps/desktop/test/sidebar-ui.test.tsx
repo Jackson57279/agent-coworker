@@ -267,6 +267,53 @@ describe("desktop sidebar", () => {
     },
   );
 
+  test.serial("keeps long chat titles clipped inside the sidebar", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          workspaces: [makeWorkspace()],
+          threads: [
+            {
+              ...makeThreads(1)[0],
+              title:
+                "This is a very long chat title that should never make the left sidebar horizontally scroll",
+            },
+          ],
+          selectedWorkspaceId: "ws-1",
+          selectedThreadId: "thread-1",
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      const sidebar = container.querySelector(".app-sidebar");
+      const scroller = container.querySelector("section");
+      const threadRow = container.querySelector(".sidebar-thread-item");
+      const threadRowWrapper = threadRow?.parentElement;
+      const title = threadRow?.querySelector(".block.truncate");
+
+      expect(sidebar?.className).toContain("overflow-hidden");
+      expect(sidebar?.className).toContain("min-w-0");
+      expect(scroller?.className).toContain("overflow-x-hidden");
+      expect(scroller?.className).toContain("min-w-0");
+      expect(threadRowWrapper?.className).toContain("min-w-0");
+      expect(title?.className).toContain("truncate");
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
   test.serial("groups one-off chats separately from project workspaces", async () => {
     const harness = setupSidebarJsdom();
     let root: ReturnType<typeof createRoot> | null = null;
