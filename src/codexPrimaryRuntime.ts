@@ -48,9 +48,8 @@ export type CodexPrimaryRuntimeSetupResult = {
     nodeModulesPath?: string;
   };
   artifactTool: {
-    status: "installed" | "already_installed" | "missing" | "skipped";
+    status: "available" | "missing" | "skipped";
     source?: string;
-    destination?: string;
     reason?: string;
   };
   skills: CodexPrimaryRuntimeSkillResult[];
@@ -419,6 +418,17 @@ function prependToolPath(
   return { ...runtimeEnv, [pathKey]: nextParts.join(path.delimiter) };
 }
 
+function prependNodePath(
+  env: Record<string, string | undefined>,
+  runtimeEnv: Record<string, string>,
+  nodeModulesPath?: string,
+): Record<string, string> {
+  if (!nodeModulesPath) return runtimeEnv;
+  const existingParts = env.NODE_PATH ? env.NODE_PATH.split(path.delimiter) : [];
+  const nextParts = dedupePathEntries([nodeModulesPath, ...existingParts]);
+  return { ...runtimeEnv, NODE_PATH: nextParts.join(path.delimiter) };
+}
+
 async function copyDirectory(source: string, destination: string): Promise<void> {
   await fs.rm(destination, { recursive: true, force: true });
   await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -441,32 +451,20 @@ async function normalizeInstalledSkillName(skillRoot: string, name: string): Pro
   await fs.writeFile(skillFile, nextRaw, "utf-8");
 }
 
-async function installArtifactTool(opts: {
+async function resolveArtifactTool(opts: {
   home: string;
   runtimeRoots: readonly string[];
-  workspaceDir?: string;
-  force: boolean;
-  log?: (line: string) => void;
 }): Promise<CodexPrimaryRuntimeSetupResult["artifactTool"]> {
-  if (!opts.workspaceDir) return { status: "skipped", reason: "No workspace directory provided." };
   const source = await findLocalOaiNamespace(opts.home, opts.runtimeRoots);
-  const destination = path.join(opts.workspaceDir, "node_modules", "@oai");
 
   if (!source) {
     return {
       status: "missing",
-      destination,
       reason: "@oai/artifact-tool was not found in the local Codex primary runtime cache.",
     };
   }
 
-  if (!opts.force && (await pathExists(path.join(destination, "artifact-tool", "package.json")))) {
-    return { status: "already_installed", source, destination };
-  }
-
-  opts.log?.(`Installing @oai/artifact-tool into ${destination}`);
-  await copyDirectory(source, destination);
-  return { status: "installed", source, destination };
+  return { status: "available", source };
 }
 
 function skillSourceFromCuratedRepo(repoRoot: string, spec: SkillSourceSpec): string {
@@ -652,7 +650,11 @@ export async function ensureCodexPrimaryRuntimeReady(
     runtime.pythonPath ? path.dirname(runtime.pythonPath) : "",
     runtime.pythonPath ? path.join(path.dirname(runtime.pythonPath), "Scripts") : "",
   ];
-  const runtimeEnv = prependToolPath(env, runtime.runtimeEnv, runtimePathDirs);
+  const runtimeEnv = prependNodePath(
+    env,
+    prependToolPath(env, runtime.runtimeEnv, runtimePathDirs),
+    runtime.nodeModulesPath,
+  );
   let archive: CodexPrimaryRuntimeSetupResult["archive"] = {
     status: "skipped",
     endpoint: CODEX_CURATED_PLUGINS_EXPORT_URL,
@@ -690,12 +692,9 @@ export async function ensureCodexPrimaryRuntimeReady(
       };
     }
 
-    const artifactTool = await installArtifactTool({
+    const artifactTool = await resolveArtifactTool({
       home,
       runtimeRoots,
-      workspaceDir: opts.workspaceDir,
-      force,
-      log: opts.log,
     });
     const builtInSkillResults = await installSkills({
       home,

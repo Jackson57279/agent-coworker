@@ -124,7 +124,7 @@ async function writeFakeBundledRuntime(runtimeRoot: string): Promise<string> {
 }
 
 describe("Codex primary runtime bootstrap", () => {
-  test("downloads curated Codex skills and installs artifact-tool into the workspace", async () => {
+  test("downloads curated Codex skills and exposes artifact-tool from the runtime cache", async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-runtime-home-"));
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-runtime-workspace-"));
     const builtInSkillsDir = path.join(workspace, "built-in-skills");
@@ -157,16 +157,10 @@ describe("Codex primary runtime bootstrap", () => {
 
       expect(result?.archive.status).toBe("downloaded");
       expect(result?.artifactTool).toMatchObject({
-        status: "installed",
+        status: "available",
         source: oaiSource,
-        destination: path.join(workspace, "node_modules", "@oai"),
       });
-      expect(
-        await fs.readFile(
-          path.join(workspace, "node_modules", "@oai", "artifact-tool", "package.json"),
-          "utf-8",
-        ),
-      ).toContain("@oai/artifact-tool");
+      await expect(fs.stat(path.join(workspace, "node_modules"))).rejects.toThrow();
       expect(await fs.readFile(path.join(builtInSkillsDir, "doc", "SKILL.md"), "utf-8")).toContain(
         "doc body",
       );
@@ -242,11 +236,17 @@ describe("Codex primary runtime bootstrap", () => {
       expect(result?.runtimeEnv.COWORK_CODEX_RUNTIME_PYTHON).toBe(
         path.join(bundledRuntimeDir, "python", executableBasename("python")),
       );
+      expect(result?.runtimeEnv.COWORK_CODEX_RUNTIME_NODE_MODULES).toBe(
+        path.join(bundledRuntimeDir, "node", "node_modules"),
+      );
+      expect(result?.runtimeEnv.NODE_PATH?.split(path.delimiter)[0]).toBe(
+        path.join(bundledRuntimeDir, "node", "node_modules"),
+      );
       expect(result?.artifactTool).toMatchObject({
-        status: "installed",
+        status: "available",
         source: oaiSource,
-        destination: path.join(workspace, "node_modules", "@oai"),
       });
+      await expect(fs.stat(path.join(workspace, "node_modules"))).rejects.toThrow();
       expect(
         await fs.readFile(path.join(builtInRoot, "skills", "slides", "SKILL.md"), "utf-8"),
       ).toContain("name: slides");

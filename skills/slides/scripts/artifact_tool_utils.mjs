@@ -57,6 +57,10 @@ export function slideNumberFromModuleName(filePath) {
 }
 
 function defaultRuntimeNodeModules() {
+  if (process.env.COWORK_CODEX_RUNTIME_NODE_MODULES) {
+    return process.env.COWORK_CODEX_RUNTIME_NODE_MODULES;
+  }
+
   return path.join(
     process.env.HOME || process.cwd(),
     ".cache",
