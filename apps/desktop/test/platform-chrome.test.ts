@@ -64,6 +64,48 @@ describe("getPlatformChrome", () => {
     expect(chrome.captionButtonReserve).toBe(0);
     expect(chrome.usesNativeGlass).toBe(false);
   });
+
+  test("reserves native control regions for each desktop platform", () => {
+    const expectations: Array<{
+      platform: NodeJS.Platform;
+      leftNativeReserve: number;
+      rightNativeReserve: number;
+      captionButtonReserve: number;
+    }> = [
+      {
+        platform: "darwin",
+        leftNativeReserve: 86,
+        rightNativeReserve: 0,
+        captionButtonReserve: 0,
+      },
+      {
+        platform: "win32",
+        leftNativeReserve: 0,
+        rightNativeReserve: 136,
+        captionButtonReserve: 136,
+      },
+      {
+        platform: "linux",
+        leftNativeReserve: 0,
+        rightNativeReserve: 192,
+        captionButtonReserve: 0,
+      },
+      {
+        platform: "freebsd",
+        leftNativeReserve: 0,
+        rightNativeReserve: 0,
+        captionButtonReserve: 0,
+      },
+    ];
+
+    for (const expectation of expectations) {
+      expect(getPlatformChrome(expectation.platform)).toMatchObject({
+        leftNativeReserve: expectation.leftNativeReserve,
+        rightNativeReserve: expectation.rightNativeReserve,
+        captionButtonReserve: expectation.captionButtonReserve,
+      });
+    }
+  });
 });
 
 describe("getCurrentPlatformChrome", () => {
