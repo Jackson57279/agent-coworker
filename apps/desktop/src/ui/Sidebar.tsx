@@ -1009,7 +1009,7 @@ export const Sidebar = memo(function Sidebar() {
             variant="ghost"
             className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
             data-sidebar-section-action="true"
-            onClick={() => void openNewChatLanding()}
+            onClick={() => void openNewChatLanding({ defaultTargetKind: "oneOff" })}
             aria-label="New chat"
           >
             <PlusIcon className="h-4 w-4" />

@@ -921,11 +921,12 @@ export function createThreadActions(
       return true;
     },
 
-    openNewChatLanding: async () => {
+    openNewChatLanding: async (opts?: { defaultTargetKind?: "project" | "oneOff" }) => {
       set({
         selectedThreadId: null,
         view: "chat",
         composerText: "",
+        newChatLandingTargetKind: opts?.defaultTargetKind ?? null,
       });
       syncDesktopStateCache(get);
       await persistNow(get);

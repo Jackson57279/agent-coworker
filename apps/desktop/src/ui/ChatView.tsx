@@ -942,9 +942,13 @@ function NewChatLanding() {
   const setComposerText = useAppStore((s) => s.setComposerText);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const newThread = useAppStore((s) => s.newThread);
-  const [target, setTarget] = useState<NewChatTarget>(() =>
-    resolveDefaultNewChatTarget(workspaces, selectedWorkspaceId),
-  );
+  const newChatLandingTargetKind = useAppStore((s) => s.newChatLandingTargetKind);
+  const [target, setTarget] = useState<NewChatTarget>(() => {
+    if (newChatLandingTargetKind === "oneOff") {
+      return { kind: "oneOff" };
+    }
+    return resolveDefaultNewChatTarget(workspaces, selectedWorkspaceId);
+  });
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [modelTouched, setModelTouched] = useState(false);
@@ -1063,9 +1067,26 @@ function NewChatLanding() {
                 placeholder="Message Cowork..."
                 onChange={(event) => setComposerText(event.currentTarget.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.altKey
+                  ) {
                     event.preventDefault();
                     void submitNewChat();
+                  } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    const textarea = event.currentTarget;
+                    const start = textarea.selectionStart;
+                    const end = textarea.selectionEnd;
+                    const value = textarea.value;
+                    const newValue = `${value.substring(0, start)}\n${value.substring(end)}`;
+                    setComposerText(newValue);
+                    requestAnimationFrame(() => {
+                      textarea.selectionStart = textarea.selectionEnd = start + 1;
+                    });
                   }
                 }}
                 aria-label="New chat message"
@@ -1713,12 +1734,29 @@ export function ChatView() {
 
   const onComposerKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
         event.preventDefault();
         submitComposer(resolveComposerBusyPolicy(rt?.busy === true));
+      } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        const textarea = event.currentTarget;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const value = textarea.value;
+        const newValue = `${value.substring(0, start)}\n${value.substring(end)}`;
+        setComposerText(newValue);
+        requestAnimationFrame(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + 1;
+        });
       }
     },
-    [rt?.busy, submitComposer],
+    [rt?.busy, submitComposer, setComposerText],
   );
 
   if (!selectedThreadId || !thread) {

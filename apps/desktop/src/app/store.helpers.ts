@@ -200,6 +200,7 @@ export type AppStoreState = {
   providerUiState: PersistedProviderUiState;
 
   composerText: string;
+  newChatLandingTargetKind: "project" | "oneOff" | null;
   injectContext: boolean;
   developerMode: boolean;
   showHiddenFiles: boolean;
@@ -252,7 +253,7 @@ export type AppStoreState = {
     provider?: ProviderName;
     model?: string;
   }) => Promise<boolean>;
-  openNewChatLanding: () => Promise<void>;
+  openNewChatLanding: (opts?: { defaultTargetKind?: "project" | "oneOff" }) => Promise<void>;
   removeThread: (threadId: string) => Promise<void>;
   archiveThread: (threadId: string) => Promise<void>;
   restoreThread: (threadId: string) => Promise<void>;
