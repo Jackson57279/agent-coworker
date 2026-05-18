@@ -9,6 +9,39 @@ import {
 } from "../src/lib/desktopPlatform";
 import { setupJsdom } from "./jsdomHarness";
 
+type DesktopRootDataset = Partial<
+  Record<
+    | "platform"
+    | "sidebarTitlebandMode"
+    | "topbarControlPlacement"
+    | "usesNativeGlass"
+    | "disableCssBlur",
+    string
+  >
+>;
+
+function readPlatformInfoWithDataset(dataset: DesktopRootDataset) {
+  const harness = setupJsdom();
+  try {
+    Object.assign(document.documentElement.dataset, dataset);
+    return getDesktopPlatformInfo();
+  } finally {
+    harness.restore();
+  }
+}
+
+function withoutDocument(run: () => void) {
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+  delete (globalThis as Record<string, unknown>).document;
+  try {
+    run();
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, "document", documentDescriptor);
+    }
+  }
+}
+
 describe("normalizePlatform", () => {
   test("maps darwin to macos", () => {
     expect(normalizePlatform("darwin")).toBe("macos");
@@ -46,6 +79,19 @@ describe("platform booleans", () => {
 });
 
 describe("getDesktopPlatformInfo", () => {
+  test("returns a stable fallback when document is unavailable", () => {
+    withoutDocument(() => {
+      expect(getDesktopPlatformInfo()).toEqual({
+        platform: "other",
+        rawPlatform: "other",
+        sidebarTitlebandMode: "topbar",
+        topbarControlPlacement: "inline",
+        usesNativeGlass: false,
+        disableCssBlur: false,
+      });
+    });
+  });
+
   test("uses platform-specific defaults before IPC chrome attributes are applied", () => {
     const harness = setupJsdom();
     try {
@@ -86,25 +132,59 @@ describe("getDesktopPlatformInfo", () => {
   });
 
   test("prefers IPC chrome attributes over platform defaults", () => {
-    const harness = setupJsdom();
-    try {
-      const root = harness.dom.window.document.documentElement;
-      root.dataset.platform = "win32";
-      root.dataset.sidebarTitlebandMode = "topbar";
-      root.dataset.topbarControlPlacement = "inline";
-      root.dataset.usesNativeGlass = "true";
-      root.dataset.disableCssBlur = "true";
-
-      expect(getDesktopPlatformInfo()).toEqual({
-        platform: "windows",
-        rawPlatform: "win32",
+    expect(
+      readPlatformInfoWithDataset({
+        platform: "win32",
         sidebarTitlebandMode: "topbar",
         topbarControlPlacement: "inline",
-        usesNativeGlass: true,
-        disableCssBlur: true,
-      });
-    } finally {
-      harness.restore();
-    }
+        usesNativeGlass: "true",
+        disableCssBlur: "true",
+      }),
+    ).toEqual({
+      platform: "windows",
+      rawPlatform: "win32",
+      sidebarTitlebandMode: "topbar",
+      topbarControlPlacement: "inline",
+      usesNativeGlass: true,
+      disableCssBlur: true,
+    });
+  });
+
+  test("reads renderer chrome attrs from the document root dataset", () => {
+    expect(
+      readPlatformInfoWithDataset({
+        platform: "linux",
+        sidebarTitlebandMode: "native",
+        topbarControlPlacement: "left-rail",
+        usesNativeGlass: "true",
+        disableCssBlur: "true",
+      }),
+    ).toEqual({
+      platform: "linux",
+      rawPlatform: "linux",
+      sidebarTitlebandMode: "native",
+      topbarControlPlacement: "left-rail",
+      usesNativeGlass: true,
+      disableCssBlur: true,
+    });
+  });
+
+  test("keeps web chrome attrs as non-native inline controls", () => {
+    expect(
+      readPlatformInfoWithDataset({
+        platform: "web",
+        sidebarTitlebandMode: "topbar",
+        topbarControlPlacement: "inline",
+        usesNativeGlass: "false",
+        disableCssBlur: "false",
+      }),
+    ).toEqual({
+      platform: "other",
+      rawPlatform: "web",
+      sidebarTitlebandMode: "topbar",
+      topbarControlPlacement: "inline",
+      usesNativeGlass: false,
+      disableCssBlur: false,
+    });
   });
 });
