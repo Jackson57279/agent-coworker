@@ -176,6 +176,7 @@ type InteractionEventWithInteraction = {
 
 type InteractionStatusEvent = {
   event_type: "interaction.status_update";
+  interaction_id?: string;
   status?: Interactions.Interaction["status"];
   event_id?: string;
 };
@@ -813,6 +814,7 @@ export class ResearchService {
         return;
       }
       this.updateRecord(state, {
+        interactionId: event.interaction_id ?? state.record.interactionId,
         status: normalizeInteractionStatus(event.status),
         updatedAt: new Date().toISOString(),
       });

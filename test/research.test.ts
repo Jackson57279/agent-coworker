@@ -250,6 +250,46 @@ describe("research service", () => {
     }
   });
 
+  test("persists interaction_id from status updates when completion omits an interaction id", async () => {
+    const paths = await makeTmpCoworkHome();
+    const sessionDb = await SessionDb.create({ paths });
+
+    createResearchInteractionStreamImpl = async () =>
+      (async function* () {
+        yield {
+          event_type: "interaction.status_update",
+          event_id: "evt-status",
+          interaction_id: "interaction-from-status",
+          status: "running",
+        };
+        yield {
+          event_type: "interaction.complete",
+          event_id: "evt-complete",
+          interaction: { status: "completed" },
+        };
+      })();
+
+    const service = new ResearchService({
+      rootDir: paths.rootDir,
+      sessionDb,
+      getConfig: () => ({ skillsDirs: [] }) as any,
+      sendJsonRpc: () => {},
+    });
+
+    try {
+      const research = await service.start({ input: "Summarize status updates." });
+      const completed = await waitFor(
+        () => sessionDb.getResearch(research.id),
+        (record) => record?.status === "completed",
+      );
+
+      expect(completed?.interactionId).toBe("interaction-from-status");
+    } finally {
+      sessionDb.close();
+      await fs.rm(paths.home, { recursive: true, force: true });
+    }
+  });
+
   test("passes configurable Deep Research agent settings to the Interactions runtime", async () => {
     const paths = await makeTmpCoworkHome();
     const sessionDb = await SessionDb.create({ paths });

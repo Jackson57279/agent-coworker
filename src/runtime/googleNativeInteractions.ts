@@ -1772,16 +1772,25 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
 
       if (eventType === "interaction.start" || eventType === "interaction.created") {
         const interaction = eventRecord.interaction as Record<string, unknown> | undefined;
-        interactionId = interaction?.id as string | undefined;
+        interactionId =
+          asNonEmptyString(interaction?.id) ??
+          asNonEmptyString(eventRecord.interaction_id) ??
+          interactionId;
         continue;
       }
 
       if (eventType === "interaction.complete" || eventType === "interaction.completed") {
         const interaction = eventRecord.interaction as Record<string, unknown> | undefined;
-        if (!interactionId && interaction?.id) {
-          interactionId = interaction.id as string;
-        }
+        interactionId =
+          asNonEmptyString(interaction?.id) ??
+          asNonEmptyString(eventRecord.interaction_id) ??
+          interactionId;
         usageData = interaction?.usage as Record<string, unknown> | undefined;
+        continue;
+      }
+
+      if (eventType === "interaction.status_update") {
+        interactionId = asNonEmptyString(eventRecord.interaction_id) ?? interactionId;
         continue;
       }
 

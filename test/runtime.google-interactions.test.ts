@@ -1327,6 +1327,54 @@ describe("google native interactions request building", () => {
     }
   });
 
+  test("runGoogleNativeInteractionStep preserves top-level interaction_id from status updates", async () => {
+    const realFetch = globalThis.fetch;
+    googleNativeInternal.__testResetGoogleInteractionsClientCache();
+    globalThis.fetch = (async () =>
+      googleSseResponse([
+        {
+          event_type: "interaction.status_update",
+          interaction_id: "status-interaction",
+          status: "running",
+        },
+        {
+          event_type: "step.start",
+          index: 0,
+          step: { type: "model_output", content: [{ type: "text", text: "Status" }] },
+        },
+        { event_type: "step.delta", index: 0, delta: { type: "text", text: " id" } },
+        { event_type: "step.stop", index: 0 },
+        {
+          event_type: "interaction.completed",
+          interaction: { status: "completed" },
+        },
+      ])) as typeof fetch;
+
+    try {
+      const result = await runGoogleNativeInteractionStep({
+        model: {
+          id: "gemini-3-flash-preview",
+          name: "Gemini 3 Flash Preview",
+          reasoning: true,
+          input: ["text", "image"],
+          contextWindow: 1_048_576,
+          maxTokens: 65_536,
+        },
+        apiKey: "test-google-api-key",
+        systemPrompt: "You are helpful.",
+        messages: [{ role: "user", content: "Hello" }] as ModelMessage[],
+        tools: [],
+        streamOptions: { thinkingSummaries: "auto" },
+      });
+
+      expect(result.interactionId).toBe("status-interaction");
+      expect(result.assistant.content).toEqual([{ type: "text", text: "Status id" }]);
+    } finally {
+      globalThis.fetch = realFetch;
+      googleNativeInternal.__testResetGoogleInteractionsClientCache();
+    }
+  });
+
   liveGoogleTest(
     "live Google Interactions smoke streams text when explicitly enabled",
     async () => {
