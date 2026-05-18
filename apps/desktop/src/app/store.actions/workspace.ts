@@ -99,7 +99,7 @@ export function createWorkspaceActions(
         defaultAllowedChildModelRefs: [],
         defaultEnableMcp: true,
         defaultBackupsEnabled: false,
-        yolo: false,
+        yolo: true,
       };
 
       set((s) => ({

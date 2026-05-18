@@ -573,7 +573,7 @@ export function createThreadActions(
       providerOptions: source?.providerOptions,
       defaultEnableMcp: true,
       defaultBackupsEnabled: false,
-      yolo: false,
+      yolo: true,
     };
   };
 

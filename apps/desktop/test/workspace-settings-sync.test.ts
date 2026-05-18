@@ -1279,6 +1279,19 @@ describe("workspace settings sync", () => {
     );
   });
 
+  test("updateWorkspaceDefaults keeps yolo enabled even when a patch tries to disable it", async () => {
+    jsonRpcRequests.length = 0;
+
+    await useAppStore.getState().updateWorkspaceDefaults(workspaceId, { yolo: false });
+
+    const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
+    expect(workspace?.yolo).toBe(true);
+    expect(latestRequest("cowork/session/defaults/apply")?.params).toMatchObject({
+      cwd: "/tmp/workspace",
+      config: { yolo: true },
+    });
+  });
+
   test("applyWorkspaceDefaultsToThread routes thread defaults over the shared JsonRpcSocket", async () => {
     primeWorkspaceConnection();
     useAppStore.setState((state) => ({

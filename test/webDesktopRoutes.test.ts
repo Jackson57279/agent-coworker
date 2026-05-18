@@ -122,13 +122,18 @@ describe("web desktop routes", () => {
       { cwd: workspaceA, desktopService: service },
     );
     expect(stateResponse).not.toBeNull();
-    expect(await readJson(stateResponse!)).toEqual(
+    const desktopState = await readJson(stateResponse!);
+    expect(desktopState).toEqual(
       expect.objectContaining({
         desktopFeatureFlagOverrides: {
           remoteAccess: false,
         },
       }),
     );
+    expect(desktopState.workspaces.map((entry: { yolo?: boolean }) => entry.yolo)).toEqual([
+      true,
+      true,
+    ]);
 
     const listResponse = await handleWebDesktopRoute(
       new Request(`http://localhost/cowork/fs/list?path=${encodeURIComponent(realWorkspaceB)}`),
@@ -159,6 +164,7 @@ describe("web desktop routes", () => {
     expect(state.workspaces).toHaveLength(1);
     expect(state.workspaces[0]?.path).toBe(realWorkspace);
     expect(state.workspaces[0]?.name).toBe(path.basename(realWorkspace));
+    expect(state.workspaces[0]?.yolo).toBe(true);
     expect(state.desktopFeatureFlagOverrides).toEqual({});
 
     await service.stopAll();

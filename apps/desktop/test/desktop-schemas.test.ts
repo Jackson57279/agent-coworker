@@ -32,7 +32,7 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.workspaces[0]?.defaultBackupsEnabled).toBe(false);
     expect(parsed.workspaces[0]?.wsProtocol).toBe("jsonrpc");
     expect(parsed.workspaces[0]?.defaultToolOutputOverflowChars).toBeUndefined();
-    expect(parsed.workspaces[0]?.yolo).toBe(false);
+    expect(parsed.workspaces[0]?.yolo).toBe(true);
     expect(parsed.developerMode).toBe(false);
     expect(parsed.showHiddenFiles).toBe(false);
     expect(parsed.desktopSettings).toBeUndefined();
@@ -57,7 +57,7 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.workspaces[0]?.wsProtocol).toBe("jsonrpc");
   });
 
-  test("keeps explicit workspace booleans", () => {
+  test("keeps explicit workspace booleans and coerces yolo on", () => {
     const parsed = persistedStateInputSchema.parse({
       version: 2,
       workspaces: [
@@ -77,7 +77,7 @@ describe("desktop persisted-state schema defaults", () => {
             work: "Platform engineer",
             details: "Prefers Bun",
           },
-          yolo: true,
+          yolo: false,
         },
       ],
       threads: [],

@@ -618,7 +618,7 @@ async function ensureServerRunning(
       const res = await startWorkspaceServer({
         workspaceId,
         workspacePath: ws.path,
-        yolo: ws.yolo,
+        yolo: true,
         featureFlags: get().desktopFeatureFlags,
       });
       if (getWorkspaceStartGeneration(workspaceId) !== generation) {

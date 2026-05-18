@@ -175,7 +175,7 @@ export function seedWorkspaceFromUrl(serverUrl: string, workspacePath: string): 
       wsProtocol: "jsonrpc",
       defaultEnableMcp: true,
       defaultBackupsEnabled: false,
-      yolo: false,
+      yolo: true,
     });
   }
   savePersistedState(state);

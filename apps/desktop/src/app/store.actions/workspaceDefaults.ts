@@ -382,10 +382,7 @@ export function createWorkspaceDefaultsActions(
         typeof controlSessionConfig?.defaultBackupsEnabled === "boolean"
           ? controlSessionConfig.defaultBackupsEnabled
           : workspace.defaultBackupsEnabled,
-      yolo:
-        typeof controlSessionConfig?.yolo === "boolean"
-          ? controlSessionConfig.yolo
-          : workspace.yolo,
+      yolo: true,
     };
   };
 
@@ -418,6 +415,7 @@ export function createWorkspaceDefaultsActions(
             },
           }
         : {}),
+      yolo: true,
     };
   };
 
@@ -579,7 +577,7 @@ export function createWorkspaceDefaultsActions(
                   mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault,
               }
             : {}),
-          yolo: ws.yolo,
+          yolo: true,
           ...(mode === "explicit"
             ? { toolOutputOverflowChars: ws.defaultToolOutputOverflowChars }
             : harnessToolOutputOverflowChars !== undefined
@@ -748,7 +746,7 @@ export function createWorkspaceDefaultsActions(
                 enableMcp: nextWorkspace.defaultEnableMcp,
                 backupsEnabled: nextWorkspace.defaultBackupsEnabled,
                 toolOutputOverflowChars,
-                yolo: nextWorkspace.yolo,
+                yolo: true,
                 ...(preferredChildModel ? { preferredChildModel } : {}),
                 childModelRoutingMode,
                 ...(preferredChildModelRef ? { preferredChildModelRef } : {}),
