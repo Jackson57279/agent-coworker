@@ -214,10 +214,7 @@ export function createWorkspaceDefaultsActions(
       configPatch.backupsEnabled = opts.desired.backupsEnabled;
     }
 
-    if (
-      typeof opts.desired.yolo === "boolean" &&
-      opts.desired.yolo !== currentSessionConfig.yolo
-    ) {
+    if (typeof opts.desired.yolo === "boolean" && opts.desired.yolo !== currentSessionConfig.yolo) {
       configPatch.yolo = opts.desired.yolo;
     }
 

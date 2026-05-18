@@ -1,6 +1,13 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { asRecord, asString } from "../runtime/piRuntimeOptions";
 import { openExternalUrl, type UrlOpener } from "../utils/browser";
-import { type CodexAppServerClient, getPooledCodexAppServerClient } from "./codexAppServerClient";
+import {
+  type CodexAppServerClient,
+  __internal as clientInternal,
+  getPooledCodexAppServerClient,
+} from "./codexAppServerClient";
 
 const CODEX_AUTH_RPC_TIMEOUT_MS = 60_000;
 const CODEX_STATUS_RPC_TIMEOUT_MS = 15_000;
@@ -446,6 +453,15 @@ export async function readCodexAppServerAccount(
   opts: ReadAccountOptions,
 ): Promise<{ account: CodexAppServerAccount | null; requiresOpenaiAuth: boolean }> {
   if (appServerAuthOverrides.readAccount) return await appServerAuthOverrides.readAccount(opts);
+  const codexHome = opts.codexHome ?? clientInternal.resolveCodexHome();
+  const authFile = path.join(codexHome, "auth.json");
+  const exists = await fs
+    .stat(authFile)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    return { account: null, requiresOpenaiAuth: true };
+  }
   return await withClient(
     async (client) => {
       const result = asRecord(
@@ -572,22 +588,30 @@ async function waitForLogin(client: CodexAppServerClient, loginId: string): Prom
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(
       () => {
-        dispose();
+        cleanup();
         reject(new Error("Timed out waiting for Codex app-server login."));
       },
       10 * 60 * 1000,
     );
-    const dispose = client.onNotification((notification) => {
+    const disposeClose = client.onClose?.(() => {
+      cleanup();
+      reject(new Error("Codex client exited during authentication"));
+    });
+    const disposeNotification = client.onNotification((notification) => {
       if (notification.method !== "account/login/completed") return;
       const params = asRecord(notification.params);
       if (asString(params?.loginId) !== loginId) return;
-      clearTimeout(timeout);
-      dispose();
+      cleanup();
       if (params?.success === true) {
         resolve();
       } else {
         reject(new Error(asString(params?.error) ?? "Codex app-server login failed."));
       }
     });
+    function cleanup() {
+      clearTimeout(timeout);
+      disposeClose?.();
+      disposeNotification();
+    }
   });
 }

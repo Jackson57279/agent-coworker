@@ -168,4 +168,41 @@ describe("codex app-server resolver", () => {
     expect(__internal.parseCodexVersion("codex-cli 0.128.0")).toBe("0.128.0");
     expect(__internal.parseCodexVersion("0.129.1")).toBe("0.129.1");
   });
+
+  test("compares versions correctly including pre-releases", () => {
+    expect(__internal.compareVersions("1.0.0", "1.0.0-beta")).toBe(1);
+    expect(__internal.compareVersions("1.0.0-beta", "1.0.0")).toBe(-1);
+    expect(__internal.compareVersions("1.0.0-alpha", "1.0.0-beta")).toBe(-1);
+    expect(__internal.compareVersions("2.0.0", "1.0.0")).toBe(1);
+  });
+
+  test("handles overridden quoted arguments containing spaces", async () => {
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = "/tmp/custom-codex-app-server";
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = `--config "/path/with spaces/config.json" --option value`;
+
+    const command = await resolveCodexAppServerCommand({
+      spawnForResult: async () => ({ ok: false, stdout: "", stderr: "" }),
+    });
+
+    expect(command).toEqual({
+      command: "/tmp/custom-codex-app-server",
+      args: ["--config", "/path/with spaces/config.json", "--option", "value"],
+      source: "override",
+    });
+  });
+
+  test("handles overridden JSON array arguments", async () => {
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = "/tmp/custom-codex-app-server";
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = `["--config", "/path/with spaces/config.json"]`;
+
+    const command = await resolveCodexAppServerCommand({
+      spawnForResult: async () => ({ ok: false, stdout: "", stderr: "" }),
+    });
+
+    expect(command).toEqual({
+      command: "/tmp/custom-codex-app-server",
+      args: ["--config", "/path/with spaces/config.json"],
+      source: "override",
+    });
+  });
 });

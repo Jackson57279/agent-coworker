@@ -142,12 +142,25 @@ function parseCodexVersion(output: string): string | undefined {
 
 function compareVersions(a: string | undefined, b: string | undefined): number {
   if (!a || !b) return 0;
-  const left = a.split(/[.-]/).map((part) => Number.parseInt(part, 10));
-  const right = b.split(/[.-]/).map((part) => Number.parseInt(part, 10));
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const leftPart = Number.isFinite(left[index] ?? NaN) ? (left[index] as number) : 0;
-    const rightPart = Number.isFinite(right[index] ?? NaN) ? (right[index] as number) : 0;
-    if (leftPart !== rightPart) return leftPart > rightPart ? 1 : -1;
+  const leftParts = a.split(/[.-]/);
+  const rightParts = b.split(/[.-]/);
+  const maxLen = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < maxLen; index += 1) {
+    const leftRaw = leftParts[index];
+    const rightRaw = rightParts[index];
+    if (leftRaw === undefined && rightRaw !== undefined) return 1;
+    if (leftRaw !== undefined && rightRaw === undefined) return -1;
+    const leftNum = Number.parseInt(leftRaw ?? "", 10);
+    const rightNum = Number.parseInt(rightRaw ?? "", 10);
+    const leftIsNum = !Number.isNaN(leftNum);
+    const rightIsNum = !Number.isNaN(rightNum);
+    if (leftIsNum && rightIsNum) {
+      if (leftNum !== rightNum) return leftNum > rightNum ? 1 : -1;
+    } else if (!leftIsNum && !rightIsNum) {
+      if (leftRaw !== rightRaw) return (leftRaw ?? "") > (rightRaw ?? "") ? 1 : -1;
+    } else {
+      return leftIsNum ? 1 : -1;
+    }
   }
   return 0;
 }
@@ -236,6 +249,31 @@ async function readVersionFile(executablePath: string): Promise<string | undefin
   }
 }
 
+function splitArgs(raw: string): string[] {
+  if (raw.startsWith("[") && raw.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      // ignore
+    }
+  }
+  const regex = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|([^\s'"]+)/g;
+  const args: string[] = [];
+  let match = regex.exec(raw);
+  while (match !== null) {
+    if (match[1] !== undefined) {
+      args.push(match[1].replace(/\\"/g, '"'));
+    } else if (match[2] !== undefined) {
+      args.push(match[2].replace(/\\'/g, "'"));
+    } else if (match[3] !== undefined) {
+      args.push(match[3]);
+    }
+    match = regex.exec(raw);
+  }
+  return args;
+}
+
 async function resolveOverrideCommand(
   _overrides: CodexAppServerResolverOverrides,
 ): Promise<CodexAppServerCommand | null> {
@@ -244,7 +282,7 @@ async function resolveOverrideCommand(
   if (!command) return null;
   return {
     command,
-    args: rawArgs ? rawArgs.split(/\s+/).filter(Boolean) : [],
+    args: rawArgs ? splitArgs(rawArgs) : [],
     source: "override",
   };
 }
@@ -372,6 +410,22 @@ async function findFileRecursive(dir: string, wantedBasename: string): Promise<s
   return null;
 }
 
+async function pruneManagedVersions(homeDir: string): Promise<void> {
+  const versionsDir = path.join(managedRoot(homeDir), "versions");
+  try {
+    const entries = await fs.readdir(versionsDir, { withFileTypes: true });
+    const versionDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    if (versionDirs.length <= 3) return;
+    versionDirs.sort(compareVersions);
+    const toPrune = versionDirs.slice(0, versionDirs.length - 3);
+    for (const v of toPrune) {
+      await fs.rm(path.join(versionsDir, v), { recursive: true, force: true });
+    }
+  } catch {
+    // ignore
+  }
+}
+
 async function installCodexAppServer(
   opts: { version?: string; force?: boolean } = {},
   overrides: CodexAppServerResolverOverrides = {},
@@ -385,6 +439,7 @@ async function installCodexAppServer(
   const existing = await pathExists(executablePath);
   if (existing && !opts.force) {
     await promoteManagedInstall(executablePath, currentPath, release.version, target);
+    await pruneManagedVersions(homeDir);
     return { command: currentPath, args: [], source: "managed", version: release.version };
   }
 
@@ -416,6 +471,7 @@ async function installCodexAppServer(
       }
       await fs.writeFile(`${executablePath}.version`, `${release.version}\n`, "utf8");
       await promoteManagedInstall(executablePath, currentPath, release.version, target);
+      await pruneManagedVersions(homeDir);
       return {
         command: currentPath,
         args: [],
@@ -442,9 +498,13 @@ async function promoteManagedInstall(
   target: BuildTarget,
 ): Promise<void> {
   await fs.mkdir(path.dirname(currentPath), { recursive: true });
-  await fs.copyFile(executablePath, currentPath);
-  if (target.platform !== "win32") await fs.chmod(currentPath, 0o755);
-  await fs.writeFile(`${currentPath}.version`, `${version}\n`, "utf8");
+  const tmpPath = `${currentPath}.tmp`;
+  await fs.copyFile(executablePath, tmpPath);
+  if (target.platform !== "win32") await fs.chmod(tmpPath, 0o755);
+  await fs.rename(tmpPath, currentPath);
+  const tmpVersionPath = `${currentPath}.version.tmp`;
+  await fs.writeFile(tmpVersionPath, `${version}\n`, "utf8");
+  await fs.rename(tmpVersionPath, `${currentPath}.version`);
 }
 
 export async function resolveCodexAppServerCommand(

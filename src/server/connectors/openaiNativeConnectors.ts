@@ -93,10 +93,12 @@ export async function listOpenAiNativeConnectors(opts: {
     };
   }
 
-  const connectors = (await listCodexAppServerApps({
-    codexHome,
-    forceRefetch: opts.forceRefetch === true,
-  }))
+  const connectors = (
+    await listCodexAppServerApps({
+      codexHome,
+      forceRefetch: opts.forceRefetch === true,
+    })
+  )
     .map(
       (app): OpenAiNativeConnector => ({
         id: app.id,

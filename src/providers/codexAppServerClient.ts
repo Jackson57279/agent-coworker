@@ -53,6 +53,8 @@ export type CodexAppServerClient = {
   ) => () => void;
   onServerRequest: (handler: CodexAppServerRequestHandler) => () => void;
   onJsonRpcMessage: (listener: (message: CodexAppServerJsonRpcRawMessage) => void) => () => void;
+  onClose?: (listener: (code: number | null, signal: NodeJS.Signals | null) => void) => () => void;
+  onError?: (listener: (err: Error) => void) => () => void;
   close: () => Promise<void>;
 };
 
@@ -111,6 +113,8 @@ export async function startCodexAppServerClient(
   const listeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
   const serverRequestHandlers = new Set<CodexAppServerRequestHandler>();
   const jsonRpcMessageListeners = new Set<(message: CodexAppServerJsonRpcRawMessage) => void>();
+  const closeListeners = new Set<(code: number | null, signal: NodeJS.Signals | null) => void>();
+  const errorListeners = new Set<(err: Error) => void>();
   let nextId = 1;
   let closed = false;
 
@@ -128,6 +132,10 @@ export async function startCodexAppServerClient(
 
   child.once("error", (error) => {
     rejectAll(new Error(`Failed to start codex app-server: ${error.message}`));
+    for (const listener of errorListeners) listener(error);
+  });
+  child.stdin.on("error", (error) => {
+    opts.log?.(`[codex-app-server:stdin:error] ${error.message}`);
   });
   child.once("exit", (code, signal) => {
     closed = true;
@@ -139,6 +147,7 @@ export async function startCodexAppServerClient(
         ),
       );
     }
+    for (const listener of closeListeners) listener(code, signal);
   });
   child.stderr.on("data", (chunk) => {
     const text = String(chunk).trim();
@@ -273,6 +282,18 @@ export async function startCodexAppServerClient(
         jsonRpcMessageListeners.delete(listener);
       };
     },
+    onClose: (listener) => {
+      closeListeners.add(listener);
+      return () => {
+        closeListeners.delete(listener);
+      };
+    },
+    onError: (listener) => {
+      errorListeners.add(listener);
+      return () => {
+        errorListeners.delete(listener);
+      };
+    },
     close: async () => {
       rl.close();
       await stopProcess(child);
@@ -373,8 +394,12 @@ export async function getPooledCodexAppServerClient(
   const key = pooledClientKey(opts.cwd, codexHome);
   const existing = pooledClients.get(key);
   if (existing) {
-    const client = await existing;
-    if (!client.isClosed()) return client;
+    try {
+      const client = await existing;
+      if (!client.isClosed()) return client;
+    } catch (error) {
+      opts.log?.(`[codex-app-server] Discarding failed pooled client: ${String(error)}`);
+    }
     pooledClients.delete(key);
   }
 

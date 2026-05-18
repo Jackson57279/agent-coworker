@@ -190,6 +190,7 @@ function buildCodexTurnInput(
     return part ? [part] : [];
   }
   return messages
+    .filter((message) => message.role !== "system")
     .map((message) => codexInputPartForMessage(message, { includeRole: true }))
     .filter((part): part is CodexTurnInputPart => part !== null);
 }
@@ -954,6 +955,31 @@ function reasoningTextFromTurn(turn: unknown): string | undefined {
   return text || undefined;
 }
 
+async function requestWithAbort<T>(
+  client: CodexAppServerClient,
+  method: string,
+  params: unknown,
+  timeoutMs: number,
+  abortSignal?: AbortSignal,
+): Promise<T> {
+  const requestPromise = client.request(method, params, timeoutMs) as Promise<T>;
+  if (!abortSignal) return requestPromise;
+  if (abortSignal.aborted) throw new Error("Cancelled by user");
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error("Cancelled by user"));
+    abortSignal.addEventListener("abort", onAbort, { once: true });
+    requestPromise
+      .then((res) => {
+        abortSignal.removeEventListener("abort", onAbort);
+        resolve(res);
+      })
+      .catch((err) => {
+        abortSignal.removeEventListener("abort", onAbort);
+        reject(err);
+      });
+  });
+}
+
 export function createCodexAppServerRuntime(): LlmRuntime {
   return {
     name: "codex-app-server",
@@ -988,7 +1014,8 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         const resumeState = currentState?.model === effectiveModel ? currentState : null;
         let resumedThread = resumeState !== null;
         const startThread = async () =>
-          await client.request(
+          await requestWithAbort<unknown>(
+            client,
             "thread/start",
             {
               cwd: params.config.workingDirectory,
@@ -1002,11 +1029,13 @@ export function createCodexAppServerRuntime(): LlmRuntime {
               ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
             },
             CODEX_STARTUP_RPC_TIMEOUT_MS,
+            params.abortSignal,
           );
         let threadResult: unknown;
         if (resumeState) {
           try {
-            threadResult = await client.request(
+            threadResult = await requestWithAbort<unknown>(
+              client,
               "thread/resume",
               {
                 threadId: resumeState.threadId,
@@ -1020,6 +1049,7 @@ export function createCodexAppServerRuntime(): LlmRuntime {
                 ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
               },
               CODEX_STARTUP_RPC_TIMEOUT_MS,
+              params.abortSignal,
             );
           } catch (error) {
             if (!isInvalidCodexThreadError(error)) throw error;
@@ -1064,14 +1094,22 @@ export function createCodexAppServerRuntime(): LlmRuntime {
             abortSignal: params.abortSignal,
             interrupt: async () => {
               if (!threadId) return;
-              await client.interruptTurn({
-                threadId,
-                ...(startedTurnId ? { turnId: startedTurnId } : {}),
-              });
+              try {
+                await client.interruptTurn({
+                  threadId,
+                  ...(startedTurnId ? { turnId: startedTurnId } : {}),
+                });
+              } catch (error) {
+                params.log?.(
+                  `[codex-app-server] interrupt failed, forcing hard close: ${String(error)}`,
+                );
+                await client.close().catch(() => {});
+              }
             },
           },
         );
-        const turnResult = await client.request(
+        const turnResult = await requestWithAbort<unknown>(
+          client,
           "turn/start",
           {
             threadId,
@@ -1086,8 +1124,10 @@ export function createCodexAppServerRuntime(): LlmRuntime {
             summary: normalizeSummary(
               providerOptionString(params.providerOptions, "reasoningSummary"),
             ),
+            clientMessageId: params.clientMessageId,
           },
           CODEX_STARTUP_RPC_TIMEOUT_MS,
+          params.abortSignal,
         );
 
         const startedTurn = asRecord(asRecord(turnResult)?.turn);
@@ -1213,14 +1253,14 @@ async function waitForTurnCompletion(
       return;
     }
     opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
-    dispose = client.onNotification((notification) => {
+    const disposeNotification = client.onNotification((notification) => {
       const params = asRecord(notification.params);
       const expectedThreadId = typeof threadId === "function" ? threadId() : threadId;
       const expectedTurnId = typeof turnId === "function" ? turnId() : turnId;
       const payloadThreadId = codexPayloadThreadId(params);
       if (payloadThreadId && expectedThreadId && payloadThreadId !== expectedThreadId) return;
       if (notification.method === "thread/tokenUsage/updated") {
-        const payloadTurnId = codexPayloadTurnId(params);
+        const payloadTurnId = codexPayloadThreadId(params);
         if (expectedTurnId && payloadTurnId && payloadTurnId !== expectedTurnId) return;
         onUsage(parseUsage(params?.tokenUsage));
         return;
@@ -1235,5 +1275,12 @@ async function waitForTurnCompletion(
       }
       settleResolve(turn);
     });
+    const disposeClose = client.onClose?.(() => {
+      settleReject(new Error("Codex client disconnected during execution"));
+    });
+    dispose = () => {
+      disposeNotification();
+      disposeClose?.();
+    };
   });
 }

@@ -57,6 +57,7 @@ export interface RuntimeRunTurnParams {
   providerState?: ProviderContinuationState | null;
   abortSignal?: AbortSignal;
   includeRawChunks?: boolean;
+  clientMessageId?: string;
   telemetry?: unknown;
   prepareStep?: RuntimePrepareStep;
   registerSteerHandler?: RuntimeRegisterSteerHandler;
