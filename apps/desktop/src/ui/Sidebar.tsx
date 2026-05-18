@@ -40,6 +40,7 @@ import { Button } from "../components/ui/button";
 import { Collapsible, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Input } from "../components/ui/input";
 import { confirmAction, showContextMenu } from "../lib/desktopCommands";
+import { resolveNewChatLandingProjectWorkspaceId } from "../lib/newChatLanding";
 import { useDesktopPlatform } from "../lib/useDesktopPlatform";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
 import { cn } from "../lib/utils";
@@ -613,6 +614,7 @@ export const Sidebar = memo(function Sidebar() {
   const pluginManagementWorkspaceId = useAppStore((s) => s.pluginManagementWorkspaceId);
   const pluginManagementMode = useAppStore((s) => s.pluginManagementMode);
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+  const newChatLandingTarget = useAppStore((s) => s.newChatLandingTarget);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
   const desktopFeatures = useAppStore((s) => s.desktopFeatureFlags);
   const sidebarSectionOrder = useAppStore((s) => s.desktopSettings.sidebarSectionOrder);
@@ -666,12 +668,31 @@ export const Sidebar = memo(function Sidebar() {
   const workspacePickerEnabled = desktopFeatures.workspacePicker !== false;
   const workspaceLifecycleEnabled = desktopFeatures.workspaceLifecycle !== false;
   const effectiveView = view === "research" && !googleResearchAvailable ? "chat" : view;
+  const isOnNewChatLanding = effectiveView === "chat" && selectedThreadId === null;
+  const landingProjectWorkspaceId = useMemo(
+    () =>
+      isOnNewChatLanding
+        ? resolveNewChatLandingProjectWorkspaceId(
+            newChatLandingTarget,
+            projectWorkspaces,
+            selectedWorkspaceId,
+          )
+        : null,
+    [
+      isOnNewChatLanding,
+      newChatLandingTarget,
+      projectWorkspaces,
+      selectedWorkspaceId,
+    ],
+  );
   const activeWorkspaceId =
     effectiveView === "skills"
       ? pluginSelection.displayWorkspaceId
       : effectiveView === "research"
         ? null
-        : selectedWorkspaceId;
+        : isOnNewChatLanding
+          ? landingProjectWorkspaceId
+          : selectedWorkspaceId;
   const activeProjectWorkspaceId = projectWorkspaces.some(
     (workspace) => workspace.id === activeWorkspaceId,
   )

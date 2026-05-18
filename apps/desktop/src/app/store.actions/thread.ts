@@ -1,6 +1,15 @@
 import { defaultModelForProvider } from "@cowork/providers/catalog";
 
 import * as desktopCommands from "../../lib/desktopCommands";
+import {
+  appendAttachmentSkippedNotes,
+  createComposerAttachmentFile,
+  resolveComposerAttachmentsForWorkspace,
+} from "../../lib/composerAttachments";
+import {
+  resolveDefaultNewChatTarget,
+  type NewChatLandingTarget,
+} from "../../lib/newChatLanding";
 import { seedDockFromFeed } from "../a2uiDockReducer";
 import {
   type AppStoreActions,
@@ -453,6 +462,7 @@ export function createThreadActions(
   | "renameThread"
   | "newThread"
   | "openNewChatLanding"
+  | "setNewChatLandingTarget"
   | "selectThread"
   | "reconnectThread"
   | "sendMessage"
@@ -765,7 +775,9 @@ export function createThreadActions(
       const scope =
         opts?.scope ??
         (explicitWorkspace && !isOneOffChatWorkspace(explicitWorkspace) ? "project" : "oneOff");
-      const hasQueuedAttachments = opts?.attachments && opts.attachments.length > 0;
+      const hasQueuedAttachments =
+        (opts?.attachments && opts.attachments.length > 0) ||
+        (opts?.attachmentFiles && opts.attachmentFiles.length > 0);
       const createSessionImmediately =
         opts?.mode === "session" || Boolean(opts?.firstMessage?.trim()) || hasQueuedAttachments;
 
@@ -836,6 +848,7 @@ export function createThreadActions(
             set({
               selectedThreadId: existingDraft.id,
               view: "chat",
+              newChatLandingTarget: null,
             });
             ensureThreadRuntime(get, set, existingDraft.id);
             await persistNow(get);
@@ -890,6 +903,7 @@ export function createThreadActions(
         selectedThreadId: threadId,
         view: "chat",
         composerText: "",
+        newChatLandingTarget: null,
       }));
       ensureThreadRuntime(get, set, threadId);
       set((s) => ({
@@ -913,26 +927,54 @@ export function createThreadActions(
         return false;
       }
 
-      const hasFirstMessage = Boolean(opts?.firstMessage?.trim());
-      if (hasFirstMessage || hasQueuedAttachments) {
-        queuePendingThreadMessage(threadId, opts?.firstMessage ?? "", opts?.attachments);
+      let firstMessage = opts?.firstMessage ?? "";
+      let resolvedAttachments = opts?.attachments;
+      if (opts?.attachmentFiles && opts.attachmentFiles.length > 0) {
+        const resolved = await resolveComposerAttachmentsForWorkspace(
+          get,
+          set,
+          workspaceId,
+          opts.attachmentFiles.map(createComposerAttachmentFile),
+        );
+        resolvedAttachments =
+          resolved.attachments.length > 0 ? resolved.attachments : undefined;
+        firstMessage = appendAttachmentSkippedNotes(firstMessage, resolved.skippedNotes);
       }
-      ensureThreadSocket(get, set, threadId, url, opts?.firstMessage, hasFirstMessage);
+
+      const hasFirstMessage = Boolean(firstMessage.trim());
+      const hasResolvedAttachments = Boolean(
+        resolvedAttachments && resolvedAttachments.length > 0,
+      );
+      if (hasFirstMessage || hasResolvedAttachments) {
+        queuePendingThreadMessage(threadId, firstMessage, resolvedAttachments);
+      }
+      ensureThreadSocket(get, set, threadId, url, firstMessage, hasFirstMessage);
       return true;
     },
 
     openNewChatLanding: async (opts?: { defaultTargetKind?: "project" | "oneOff" }) => {
+      const state = get();
+      const landingTarget: NewChatLandingTarget =
+        opts?.defaultTargetKind === "oneOff"
+          ? { kind: "oneOff" }
+          : resolveDefaultNewChatTarget(state.workspaces, state.selectedWorkspaceId);
       set({
         selectedThreadId: null,
         view: "chat",
         composerText: "",
-        newChatLandingTargetKind: opts?.defaultTargetKind ?? null,
+        newChatLandingTarget: landingTarget,
       });
       syncDesktopStateCache(get);
       await persistNow(get);
     },
 
+    setNewChatLandingTarget: (target) => {
+      set({ newChatLandingTarget: target });
+      syncDesktopStateCache(get);
+    },
+
     selectThread: async (threadId: string) => {
+      set({ newChatLandingTarget: null });
       await hydrateThreadSelection(get, set, threadId, {
         reconnectAfterHydration: true,
         skipWorkspaceSelectOnReconnect: true,

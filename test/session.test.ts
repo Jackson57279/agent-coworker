@@ -4359,6 +4359,33 @@ describe("AgentSession", () => {
       });
     });
 
+    test("preserves inline base64 audio attachments for Google multimodal input", async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "session-attachments-"));
+      const uploadsDir = path.join(dir, "uploads");
+      await fs.mkdir(uploadsDir, { recursive: true });
+      const { session } = makeSession({
+        config: makeConfig(dir),
+      });
+
+      await session.sendUserMessage("", "msg-inline-audio", undefined, [
+        {
+          filename: "voice.mp3",
+          contentBase64: Buffer.from("inline-audio-bytes").toString("base64"),
+          mimeType: "audio/mpeg",
+        },
+      ]);
+
+      const call = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      expect(call.messages.at(-1)?.content).toContainEqual({
+        type: "audio",
+        data: Buffer.from("inline-audio-bytes").toString("base64"),
+        mimeType: "audio/mpeg",
+      });
+      await expect(fs.readFile(path.join(uploadsDir, "voice.mp3"))).resolves.toEqual(
+        Buffer.from("inline-audio-bytes"),
+      );
+    });
+
     test("rejects oversized uploaded multimodal attachments before emitting a user_message event", async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), "session-attachments-"));
       const uploadsDir = path.join(dir, "uploads");

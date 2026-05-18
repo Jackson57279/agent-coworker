@@ -4,6 +4,7 @@ import type {
   DesktopFeatureFlags,
 } from "../../../../src/shared/featureFlags";
 import { createDefaultUpdaterState, type UpdaterState } from "../lib/desktopApi";
+import type { NewChatLandingTarget } from "../lib/newChatLanding";
 import { startWorkspaceServer } from "../lib/desktopCommands";
 import { fallbackAuthMethods } from "../lib/providerDisplayNames";
 import type {
@@ -200,7 +201,7 @@ export type AppStoreState = {
   providerUiState: PersistedProviderUiState;
 
   composerText: string;
-  newChatLandingTargetKind: "project" | "oneOff" | null;
+  newChatLandingTarget: NewChatLandingTarget | null;
   injectContext: boolean;
   developerMode: boolean;
   showHiddenFiles: boolean;
@@ -250,10 +251,12 @@ export type AppStoreState = {
     firstMessage?: string;
     mode?: "draft" | "session";
     attachments?: import("./store.helpers/jsonRpcSocket").FileAttachmentInput[];
+    attachmentFiles?: File[];
     provider?: ProviderName;
     model?: string;
   }) => Promise<boolean>;
   openNewChatLanding: (opts?: { defaultTargetKind?: "project" | "oneOff" }) => Promise<void>;
+  setNewChatLandingTarget: (target: NewChatLandingTarget) => void;
   removeThread: (threadId: string) => Promise<void>;
   archiveThread: (threadId: string) => Promise<void>;
   restoreThread: (threadId: string) => Promise<void>;

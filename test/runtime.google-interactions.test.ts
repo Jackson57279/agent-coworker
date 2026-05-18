@@ -1571,6 +1571,41 @@ describe("google native interactions request building", () => {
     ]);
   });
 
+  test("convertMessagesToInteractionsInput preserves audio tool results", () => {
+    const input = googleNativeInternal.convertMessagesToInteractionsInput([
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call_read_audio",
+            toolName: "read",
+            output: {
+              type: "content",
+              content: [
+                { type: "text", text: "Audio file: clip.mp3" },
+                { type: "audio", data: "def456", mimeType: "audio/mpeg" },
+              ],
+            },
+          },
+        ],
+      },
+    ] as ModelMessage[]);
+
+    expect(input).toEqual([
+      {
+        type: "function_result",
+        call_id: "call_read_audio",
+        name: "read",
+        result: [
+          { type: "text", text: "Audio file: clip.mp3" },
+          { type: "audio", data: "def456", mime_type: "audio/mpeg" },
+        ],
+        is_error: false,
+      },
+    ]);
+  });
+
   test("convertMessagesToInteractionsInput preserves URI media blocks accepted by the SDK", () => {
     const input = googleNativeInternal.convertMessagesToInteractionsInput([
       {

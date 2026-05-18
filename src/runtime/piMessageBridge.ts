@@ -49,7 +49,15 @@ function safeJsonStringify(value: unknown): string {
 
 type PiToolResultTextContent = { type: "text"; text: string };
 type PiToolResultImageContent = { type: "image"; data: string; mimeType: string };
-export type PiToolResultContentPart = PiToolResultTextContent | PiToolResultImageContent;
+type PiToolResultAudioContent = { type: "audio"; data: string; mimeType: string };
+type PiToolResultVideoContent = { type: "video"; data: string; mimeType: string };
+type PiToolResultDocumentContent = { type: "document"; data: string; mimeType: string };
+export type PiToolResultContentPart =
+  | PiToolResultTextContent
+  | PiToolResultImageContent
+  | PiToolResultAudioContent
+  | PiToolResultVideoContent
+  | PiToolResultDocumentContent;
 
 function contentTextParts(content: unknown): string[] {
   if (typeof content === "string") return content.trim() ? [content] : [];
@@ -158,6 +166,13 @@ function normalizeToolResultContentPart(part: unknown): PiToolResultContentPart 
     const mimeType = asNonEmptyString(record.mimeType);
     if (!data || !mimeType) return null;
     return { type: "image", data, mimeType };
+  }
+
+  if (record.type === "audio" || record.type === "video" || record.type === "document") {
+    const data = asNonEmptyString(record.data);
+    const mimeType = asNonEmptyString(record.mimeType);
+    if (!data || !mimeType) return null;
+    return { type: record.type, data, mimeType };
   }
 
   return null;

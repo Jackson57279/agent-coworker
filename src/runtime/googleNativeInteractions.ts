@@ -423,16 +423,21 @@ function stepsFromToolMessage(message: ModelMessage): InteractionsInput {
 
     const toolName = asNonEmptyString(record.toolName);
     const richResult = toolResultContentFromOutput(record.output ?? record.content);
-    const resultParts = richResult.flatMap<Interactions.TextContent | Interactions.ImageContent>(
-      (part) => {
-        if (part.type === "text") {
-          const textPart = buildTextContent(part.text);
-          return textPart ? [textPart] : [];
-        }
+    const resultParts = richResult.flatMap<InteractionsContent>((part) => {
+      if (part.type === "text") {
+        const textPart = buildTextContent(part.text);
+        return textPart ? [textPart] : [];
+      }
+      if (part.type === "image") {
         const imagePart = buildImageContent(part);
         return imagePart ? [imagePart] : [];
-      },
-    );
+      }
+      if (part.type === "audio" || part.type === "video" || part.type === "document") {
+        const binaryPart = buildBinaryContent(part, part.type);
+        return binaryPart ? [binaryPart] : [];
+      }
+      return [];
+    });
 
     const result =
       resultParts.length === 1 && resultParts[0]?.type === "text"

@@ -55,7 +55,7 @@ const initialState: AppStoreDataState = {
   providerUiState: DEFAULT_PROVIDER_UI_STATE,
 
   composerText: "",
-  newChatLandingTargetKind: null,
+  newChatLandingTarget: null,
   injectContext: false,
   developerMode: false,
   showHiddenFiles: false,

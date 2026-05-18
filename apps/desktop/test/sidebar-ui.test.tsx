@@ -470,8 +470,40 @@ describe("desktop sidebar", () => {
       expect(state.workspaces[0]?.workspaceKind).toBe("project");
       expect(state.selectedWorkspaceId).toBe("ws-1");
       expect(state.selectedThreadId).toBeNull();
+      expect(state.newChatLandingTarget).toEqual({ kind: "project", workspaceId: "ws-1" });
       expect(state.threads).toEqual([]);
       expect(state.view).toBe("chat");
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test.serial("one-off new chat landing does not emphasize a project row", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          workspaces: [makeWorkspace()],
+          selectedWorkspaceId: "ws-1",
+          selectedThreadId: null,
+          newChatLandingTarget: { kind: "oneOff" },
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      const workspaceCard = container.querySelector(".sidebar-workspace-card");
+      expect(workspaceCard?.className ?? "").not.toContain("bg-foreground/[0.05]");
     } finally {
       if (root) {
         await act(async () => {

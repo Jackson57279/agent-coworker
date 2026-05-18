@@ -219,6 +219,77 @@ describe("read tool", () => {
       ],
     });
   });
+
+  test("returns multimodal content for audio and video with Google provider", async () => {
+    const dir = await tmpDir();
+    const audioPath = path.join(dir, "clip.mp3");
+    const videoPath = path.join(dir, "clip.mp4");
+    await fs.writeFile(audioPath, "audio-bytes");
+    await fs.writeFile(videoPath, "video-bytes");
+
+    const t: any = createReadTool(makeCtx(dir, { config: makeConfig(dir, { provider: "google" }) }));
+    const audioOut = await t.execute({ filePath: audioPath, limit: 2000 });
+    const videoOut = await t.execute({ filePath: videoPath, limit: 2000 });
+
+    expect(audioOut).toEqual({
+      type: "content",
+      content: [
+        { type: "text", text: "Audio file: clip.mp3" },
+        {
+          type: "audio",
+          data: Buffer.from("audio-bytes").toString("base64"),
+          mimeType: "audio/mpeg",
+        },
+      ],
+    });
+    expect(videoOut).toEqual({
+      type: "content",
+      content: [
+        { type: "text", text: "Video file: clip.mp4" },
+        {
+          type: "video",
+          data: Buffer.from("video-bytes").toString("base64"),
+          mimeType: "video/mp4",
+        },
+      ],
+    });
+  });
+
+  test("returns multimodal content for PDF with Google provider", async () => {
+    const dir = await tmpDir();
+    const pdfPath = path.join(dir, "notes.pdf");
+    await fs.writeFile(pdfPath, "pdf-bytes");
+
+    const t: any = createReadTool(makeCtx(dir, { config: makeConfig(dir, { provider: "google" }) }));
+    const out = await t.execute({ filePath: pdfPath, limit: 2000 });
+
+    expect(out).toEqual({
+      type: "content",
+      content: [
+        { type: "text", text: "PDF file: notes.pdf" },
+        {
+          type: "document",
+          data: Buffer.from("pdf-bytes").toString("base64"),
+          mimeType: "application/pdf",
+        },
+      ],
+    });
+  });
+
+  test("returns a binary guard message for audio on non-Google providers", async () => {
+    const dir = await tmpDir();
+    const audioPath = path.join(dir, "clip.mp3");
+    await fs.writeFile(audioPath, "audio-bytes");
+
+    const t: any = createReadTool(
+      makeCtx(dir, { config: makeConfig(dir, { provider: "anthropic", model: "claude-sonnet-4-6" }) }),
+    );
+    const out: string = await t.execute({ filePath: audioPath, limit: 2000 });
+
+    expect(out).toContain("Cannot read clip.mp3 as text");
+    expect(out).toContain("audio/mpeg");
+    expect(out).not.toContain("audio-bytes");
+  });
 });
 
 // ---------------------------------------------------------------------------

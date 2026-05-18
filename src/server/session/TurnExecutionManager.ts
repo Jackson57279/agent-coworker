@@ -17,6 +17,10 @@ import {
 } from "../../shared/attachments";
 import { supportsOpenAiContinuation } from "../../shared/openaiContinuation";
 import {
+  googleMultimodalPartTypeForMime,
+  type MultimodalContentPartType,
+} from "../../shared/multimodalMime";
+import {
   isInvalidGoogleContinuationError as isInvalidGoogleContinuationHandleError,
   supportsProviderManagedContinuationProvider,
 } from "../../shared/providerContinuation";
@@ -95,29 +99,11 @@ function classifyStructuredTurnError(err: unknown): ClassifiedTurnError | null {
   };
 }
 
-type AttachmentContentPartType = "image" | "audio" | "video" | "document";
-
 function getAttachmentContentPartType(
   mimeType: string,
   opts: { modelSupportsImages: boolean; isGoogleProvider: boolean },
-): AttachmentContentPartType | null {
-  const mime = mimeType.toLowerCase();
-  if (mime.startsWith("image/")) {
-    return opts.modelSupportsImages ? "image" : null;
-  }
-  if (!opts.isGoogleProvider) {
-    return null;
-  }
-  if (mime.startsWith("audio/")) {
-    return "audio";
-  }
-  if (mime.startsWith("video/")) {
-    return "video";
-  }
-  if (mime === "application/pdf") {
-    return "document";
-  }
-  return null;
+): MultimodalContentPartType | null {
+  return googleMultimodalPartTypeForMime(mimeType, opts);
 }
 
 function getUploadedMultimodalAttachmentValidationMessage(

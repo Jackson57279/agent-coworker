@@ -24,10 +24,6 @@ import {
   useState,
 } from "react";
 import { formatCost, formatTokenCount } from "../../../../src/session/pricing";
-import {
-  MAX_ATTACHMENT_INLINE_BYTE_SIZE,
-  MAX_TURN_ATTACHMENT_TOTAL_INLINE_BYTE_SIZE,
-} from "../../../../src/shared/attachments";
 import type { CitationSource } from "../../../../src/shared/displayCitationMarkers";
 import {
   buildCitationOverflowFilePathsByMessageId,
@@ -38,14 +34,22 @@ import {
   extractCitationUrlsFromWebSearchResult,
 } from "../../../../src/shared/displayCitationMarkers";
 import {
+  buildAttachmentDisplayText,
   buildAttachmentSignature,
-  encodeArrayBufferToBase64,
   getAttachmentPickerValidationMessage,
-  getAttachmentUploadValidationMessage,
 } from "../app/attachmentInputs";
 import { useAppStore } from "../app/store";
+import { ensureServerRunning } from "../app/store.helpers";
+import { getAttachmentCountValidationMessage } from "../../../../src/shared/attachments";
 import type { FileAttachmentInput } from "../app/store.helpers/jsonRpcSocket";
-import { uploadJsonRpcWorkspaceFile } from "../app/store.helpers/jsonRpcSocket";
+import {
+  appendAttachmentSkippedNotes,
+  buildComposerAttachmentSignature,
+  createComposerAttachmentFile,
+  resolveComposerAttachmentsForWorkspace,
+  revokeComposerAttachmentPreview,
+  type ComposerAttachmentFile,
+} from "../lib/composerAttachments";
 import type {
   FeedItem,
   SessionUsageSnapshot,
@@ -57,6 +61,7 @@ import type {
   WorkspaceRecord,
 } from "../app/types";
 import { isOneOffChatWorkspace } from "../app/types";
+import { resolveNewChatLandingTarget } from "../lib/newChatLanding";
 import {
   Conversation,
   ConversationContent,
@@ -380,48 +385,6 @@ export function composerBusyHint(
 
 export function resolveComposerBusyPolicy(busy: boolean): "reject" | "steer" {
   return busy ? "steer" : "reject";
-}
-
-type PendingComposerAttachment = {
-  filename: string;
-  mimeType: string;
-  size: number;
-  file: File;
-  previewUrl?: string;
-  signature: string;
-};
-
-function buildPendingComposerAttachmentSignature(
-  attachments: readonly PendingComposerAttachment[],
-): string {
-  if (attachments.length === 0) {
-    return "";
-  }
-  return attachments
-    .map(
-      (attachment) =>
-        `${attachment.filename}\u0000${attachment.mimeType}\u0000${attachment.signature}`,
-    )
-    .join("\u0001");
-}
-
-function createPendingComposerAttachment(file: File): PendingComposerAttachment {
-  const previewUrl =
-    file.type.startsWith("image/") && file instanceof Blob ? URL.createObjectURL(file) : undefined;
-  return {
-    filename: file.name,
-    mimeType: file.type || "application/octet-stream",
-    size: file.size,
-    file,
-    previewUrl,
-    signature: `${file.name}\u0000${file.type}\u0000${file.size}\u0000${file.lastModified}`,
-  };
-}
-
-function revokePendingComposerAttachmentPreview(attachment: PendingComposerAttachment) {
-  if (attachment.previewUrl) {
-    URL.revokeObjectURL(attachment.previewUrl);
-  }
 }
 
 type OverflowCitationContext = {
@@ -905,21 +868,6 @@ type NewChatTarget =
       kind: "oneOff";
     };
 
-function resolveDefaultNewChatTarget(
-  workspaces: WorkspaceRecord[],
-  selectedWorkspaceId: string | null,
-): NewChatTarget {
-  const projectWorkspaces = workspaces.filter((workspace) => !isOneOffChatWorkspace(workspace));
-  const selectedProject = projectWorkspaces.find(
-    (workspace) => workspace.id === selectedWorkspaceId,
-  );
-  if (selectedProject) {
-    return { kind: "project", workspaceId: selectedProject.id };
-  }
-  const firstProject = projectWorkspaces[0];
-  return firstProject ? { kind: "project", workspaceId: firstProject.id } : { kind: "oneOff" };
-}
-
 function resolveDefaultNewChatModel(workspace: WorkspaceRecord | null): ComposerModelSelection {
   const provider =
     workspace?.defaultProvider && isChatProviderName(workspace.defaultProvider)
@@ -942,17 +890,20 @@ function NewChatLanding() {
   const setComposerText = useAppStore((s) => s.setComposerText);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const newThread = useAppStore((s) => s.newThread);
-  const newChatLandingTargetKind = useAppStore((s) => s.newChatLandingTargetKind);
-  const [target, setTarget] = useState<NewChatTarget>(() => {
-    if (newChatLandingTargetKind === "oneOff") {
-      return { kind: "oneOff" };
-    }
-    return resolveDefaultNewChatTarget(workspaces, selectedWorkspaceId);
-  });
+  const newChatLandingTarget = useAppStore((s) => s.newChatLandingTarget);
+  const setNewChatLandingTarget = useAppStore((s) => s.setNewChatLandingTarget);
+  const target = useMemo(
+    () => resolveNewChatLandingTarget(newChatLandingTarget, workspaces, selectedWorkspaceId),
+    [newChatLandingTarget, selectedWorkspaceId, workspaces],
+  );
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [modelTouched, setModelTouched] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<ComposerAttachmentFile[]>([]);
+  const [attachmentPickerError, setAttachmentPickerError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingAttachmentsRef = useRef<ComposerAttachmentFile[]>([]);
 
   const projectWorkspaces = useMemo(
     () => workspaces.filter((workspace) => !isOneOffChatWorkspace(workspace)),
@@ -968,6 +919,8 @@ function NewChatLanding() {
     targetWorkspace ?? selectedProjectWorkspace ?? projectWorkspaces[0] ?? null;
   const targetLabel = targetWorkspace?.name ?? "Don't work in a project";
   const trimmedComposerText = composerText.trim();
+  const hasPendingAttachments = pendingAttachments.length > 0;
+  const canSubmitNewChat = Boolean(trimmedComposerText || hasPendingAttachments);
   const modelDisplayNames = useMemo(
     () => modelDisplayNamesFromCatalog(providerCatalog),
     [providerCatalog],
@@ -980,18 +933,6 @@ function NewChatLanding() {
     useState<ComposerModelSelection>(defaultModelSelection);
 
   useEffect(() => {
-    setTarget((current) => {
-      if (current.kind === "oneOff") {
-        return current;
-      }
-      if (projectWorkspaces.some((workspace) => workspace.id === current.workspaceId)) {
-        return current;
-      }
-      return resolveDefaultNewChatTarget(workspaces, selectedWorkspaceId);
-    });
-  }, [projectWorkspaces, selectedWorkspaceId, workspaces]);
-
-  useEffect(() => {
     if (!modelTouched) {
       setModelSelection(defaultModelSelection);
     }
@@ -1001,38 +942,150 @@ function NewChatLanding() {
     textareaRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments;
+  }, [pendingAttachments]);
+
+  useEffect(() => {
+    return () => {
+      pendingAttachmentsRef.current.forEach(revokeComposerAttachmentPreview);
+    };
+  }, []);
+
+  const clearPendingAttachments = useCallback(() => {
+    setPendingAttachments((current) => {
+      current.forEach(revokeComposerAttachmentPreview);
+      return [];
+    });
+  }, []);
+
+  const ingestAttachmentFiles = useCallback(
+    async (selectedFiles: File[]) => {
+      if (selectedFiles.length === 0 || submitting) return;
+
+      const validationMessage = getAttachmentCountValidationMessage(
+        pendingAttachments.length + selectedFiles.length,
+      );
+      if (validationMessage) {
+        setAttachmentPickerError(validationMessage);
+        return;
+      }
+
+      setAttachmentPickerError(null);
+      setPendingAttachments((prev) => [...prev, ...selectedFiles.map(createComposerAttachmentFile)]);
+    },
+    [pendingAttachments.length, submitting],
+  );
+
+  const handleFileSelect = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      await ingestAttachmentFiles(Array.from(files));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    [ingestAttachmentFiles],
+  );
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachmentPickerError(null);
+    setPendingAttachments((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(index, 1);
+      if (removed) {
+        revokeComposerAttachmentPreview(removed);
+      }
+      return next;
+    });
+  }, []);
+
   const submitNewChat = useCallback(
     async (event?: FormEvent<HTMLFormElement>) => {
       event?.preventDefault();
-      if (!trimmedComposerText || submitting) {
+      if (!canSubmitNewChat || submitting) {
         return;
       }
 
       setSubmitting(true);
-      const ok =
-        target.kind === "project"
-          ? await newThread({
-              scope: "project",
-              workspaceId: target.workspaceId,
-              firstMessage: trimmedComposerText,
-              titleHint: trimmedComposerText,
-              mode: "session",
-              provider: modelSelection.provider,
-              model: modelSelection.model,
-            })
-          : await newThread({
-              scope: "oneOff",
-              firstMessage: trimmedComposerText,
-              titleHint: trimmedComposerText,
-              mode: "session",
-              provider: modelSelection.provider,
-              model: modelSelection.model,
-            });
-      if (!ok) {
+      setAttachmentPickerError(null);
+
+      const attachmentTitleHint = buildAttachmentDisplayText(
+        pendingAttachments.map((attachment) => ({ filename: attachment.filename })),
+      );
+      const titleHint = trimmedComposerText || attachmentTitleHint || "New chat";
+
+      try {
+        let firstMessage = trimmedComposerText;
+        let attachments: FileAttachmentInput[] | undefined;
+        let attachmentFiles: File[] | undefined;
+
+        if (hasPendingAttachments) {
+          if (target.kind === "project") {
+            await ensureServerRunning(
+              useAppStore.getState,
+              useAppStore.setState,
+              target.workspaceId,
+            );
+            const resolved = await resolveComposerAttachmentsForWorkspace(
+              useAppStore.getState,
+              useAppStore.setState,
+              target.workspaceId,
+              pendingAttachments,
+            );
+            attachments =
+              resolved.attachments.length > 0 ? resolved.attachments : undefined;
+            firstMessage = appendAttachmentSkippedNotes(firstMessage, resolved.skippedNotes);
+          } else {
+            attachmentFiles = pendingAttachments.map((attachment) => attachment.file);
+          }
+        }
+
+        const ok =
+          target.kind === "project"
+            ? await newThread({
+                scope: "project",
+                workspaceId: target.workspaceId,
+                firstMessage,
+                titleHint,
+                mode: "session",
+                attachments,
+                provider: modelSelection.provider,
+                model: modelSelection.model,
+              })
+            : await newThread({
+                scope: "oneOff",
+                firstMessage,
+                titleHint,
+                mode: "session",
+                attachmentFiles,
+                provider: modelSelection.provider,
+                model: modelSelection.model,
+              });
+
+        if (ok) {
+          clearPendingAttachments();
+          setComposerText("");
+        } else {
+          setSubmitting(false);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setAttachmentPickerError(message);
         setSubmitting(false);
       }
     },
-    [modelSelection, newThread, submitting, target, trimmedComposerText],
+    [
+      canSubmitNewChat,
+      clearPendingAttachments,
+      hasPendingAttachments,
+      modelSelection,
+      newThread,
+      pendingAttachments,
+      setComposerText,
+      submitting,
+      target,
+      trimmedComposerText,
+    ],
   );
 
   const addProjectFromSelector = useCallback(async () => {
@@ -1044,27 +1097,52 @@ function NewChatLanding() {
         workspace.id === state.selectedWorkspaceId && !isOneOffChatWorkspace(workspace),
     );
     if (selectedProject) {
-      setTarget({ kind: "project", workspaceId: selectedProject.id });
+      setNewChatLandingTarget({ kind: "project", workspaceId: selectedProject.id });
     }
-  }, [addWorkspace]);
+  }, [addWorkspace, setNewChatLandingTarget]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center bg-panel px-5 py-10">
-      <div className="flex w-full max-w-[56rem] -translate-y-8 flex-col items-center gap-7">
-        <h1 className="text-center text-[2rem] font-semibold text-foreground sm:text-[2.55rem]">
-          What should we work on?
-        </h1>
-        <PromptInputRoot className="w-full max-w-full rounded-[22px] border-border/50 bg-background/92 app-shadow-overlay backdrop-blur-md">
+    <div className="relative flex h-full min-h-0 flex-col items-center justify-center overflow-hidden bg-panel px-5 py-10">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-[42%] size-[min(44rem,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[image:var(--surface-landing-accent-glow)]"
+      />
+      <div className="relative flex w-full max-w-[52rem] flex-col items-center gap-9">
+        <header className="flex max-w-[34rem] flex-col items-center gap-3 text-center">
+          <h1 className="text-balance text-[2.125rem] font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-[2.75rem]">
+            What should we work on?
+          </h1>
+          <p className="text-balance text-[15px] leading-relaxed text-muted-foreground/88">
+            Describe a task, idea, or question — Cowork will take it from here.
+          </p>
+        </header>
+        <PromptInputRoot
+          className="w-full max-w-[42rem] rounded-[28px] border-border/55 bg-background/94 app-shadow-overlay backdrop-blur-md transition-shadow focus-within:shadow-[var(--shadow-popover)]"
+          fileDrop={
+            submitting ? undefined : { onFiles: (files) => void ingestAttachmentFiles(files) }
+          }
+        >
+          <PromptInputAttachmentPreviews
+            attachments={pendingAttachments}
+            onRemove={removeAttachment}
+          />
           <PromptInputForm onSubmit={submitNewChat}>
             <PromptInputStatusRow>
               {submitting ? "Starting a new chat..." : null}
             </PromptInputStatusRow>
             <PromptInputBody>
+              {attachmentPickerError ? (
+                <div className="flex items-center gap-1.5 px-1 pb-1 text-xs text-destructive">
+                  <AlertTriangleIcon className="size-3.5 shrink-0" />
+                  <span>{attachmentPickerError}</span>
+                </div>
+              ) : null}
               <PromptInputTextarea
                 ref={textareaRef}
                 value={composerText}
                 disabled={submitting}
                 placeholder="Message Cowork..."
+                className="min-h-[5.5rem] text-[16px] leading-relaxed placeholder:text-muted-foreground/75"
                 onChange={(event) => setComposerText(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (
@@ -1094,6 +1172,23 @@ function NewChatLanding() {
             </PromptInputBody>
             <PromptInputFooter className="gap-3 pt-1">
               <PromptInputTools className="gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={submitting}
+                  className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:opacity-50"
+                  aria-label="Attach files"
+                  title="Attach files"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                </button>
                 <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -1134,7 +1229,7 @@ function NewChatLanding() {
                               value={workspace.name}
                               className="h-10 rounded-lg px-2.5 text-[15px] data-[selected=true]:bg-muted/70"
                               onSelect={() => {
-                                setTarget({ kind: "project", workspaceId: workspace.id });
+                                setNewChatLandingTarget({ kind: "project", workspaceId: workspace.id });
                                 setSelectorOpen(false);
                               }}
                             >
@@ -1162,7 +1257,7 @@ function NewChatLanding() {
                             value="Don't work in a project"
                             className="h-10 rounded-lg px-2.5 text-[15px] data-[selected=true]:bg-muted/70"
                             onSelect={() => {
-                              setTarget({ kind: "oneOff" });
+                              setNewChatLandingTarget({ kind: "oneOff" });
                               setSelectorOpen(false);
                             }}
                           >
@@ -1192,7 +1287,7 @@ function NewChatLanding() {
               </PromptInputTools>
               <PromptInputSubmit
                 status={submitting ? "pending" : "ready"}
-                disabled={!trimmedComposerText || submitting}
+                disabled={!canSubmitNewChat || submitting}
               />
             </PromptInputFooter>
           </PromptInputForm>
@@ -1227,7 +1322,7 @@ export function ChatView() {
     Map<string, CitationSource[]>
   >(() => new Map());
   const [cancelScopeDialogOpen, setCancelScopeDialogOpen] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingComposerAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<ComposerAttachmentFile[]>([]);
   const [attachmentPickerError, setAttachmentPickerError] = useState<string | null>(null);
   const [preparingAttachments, setPreparingAttachments] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -1247,7 +1342,7 @@ export function ChatView() {
   const messageBarOverlayRef = useRef<HTMLDivElement | null>(null);
   const lastCountRef = useRef<number>(0);
   const autoScrolledThreadIdRef = useRef<string | null>(null);
-  const pendingAttachmentsRef = useRef<PendingComposerAttachment[]>([]);
+  const pendingAttachmentsRef = useRef<ComposerAttachmentFile[]>([]);
   const scrollButtonBottomOffset = composerOverlayHeight + SCROLL_BUTTON_BOTTOM_GAP_PX;
 
   const updateScrollButtonVisibility = useCallback(() => {
@@ -1298,13 +1393,13 @@ export function ChatView() {
 
   useEffect(() => {
     return () => {
-      pendingAttachmentsRef.current.forEach(revokePendingComposerAttachmentPreview);
+      pendingAttachmentsRef.current.forEach(revokeComposerAttachmentPreview);
     };
   }, []);
 
   const clearPendingAttachments = useCallback(() => {
     setPendingAttachments((current) => {
-      current.forEach(revokePendingComposerAttachmentPreview);
+      current.forEach(revokeComposerAttachmentPreview);
       return [];
     });
     setSubmittedAttachmentSignature(null);
@@ -1333,7 +1428,7 @@ export function ChatView() {
       setSubmittedAttachmentSignature(null);
       setPendingAttachments((prev) => [
         ...prev,
-        ...selectedFiles.map(createPendingComposerAttachment),
+        ...selectedFiles.map(createComposerAttachmentFile),
       ]);
     },
     [pendingAttachments],
@@ -1356,7 +1451,7 @@ export function ChatView() {
       const next = [...prev];
       const [removed] = next.splice(index, 1);
       if (removed) {
-        revokePendingComposerAttachmentPreview(removed);
+        revokeComposerAttachmentPreview(removed);
       }
       return next;
     });
@@ -1608,56 +1703,26 @@ export function ChatView() {
   const resolvePendingAttachmentsForSend = useCallback(
     async (
       workspaceId: string,
-      attachments: readonly PendingComposerAttachment[],
+      attachments: readonly ComposerAttachmentFile[],
     ): Promise<FileAttachmentInput[]> => {
-      let inlineByteLength = 0;
-      const resolvedAttachments: FileAttachmentInput[] = [];
-
-      for (const attachment of attachments) {
-        const uploadValidationMessage = getAttachmentUploadValidationMessage(attachment.size);
-        if (uploadValidationMessage) {
-          throw new Error(`${attachment.filename}: ${uploadValidationMessage}`);
-        }
-        const buffer = await attachment.file.arrayBuffer();
-        const base64 = encodeArrayBufferToBase64(buffer);
-        const canInline =
-          attachment.size <= MAX_ATTACHMENT_INLINE_BYTE_SIZE &&
-          inlineByteLength + attachment.size <= MAX_TURN_ATTACHMENT_TOTAL_INLINE_BYTE_SIZE;
-        if (canInline) {
-          inlineByteLength += attachment.size;
-          resolvedAttachments.push({
-            filename: attachment.filename,
-            contentBase64: base64,
-            mimeType: attachment.mimeType,
-          });
-          continue;
-        }
-
-        const uploaded = await uploadJsonRpcWorkspaceFile(
-          useAppStore.getState,
-          useAppStore.setState,
-          workspaceId,
-          attachment.filename,
-          base64,
-        );
-        if (!uploaded.path) {
-          throw new Error(`Failed to upload ${attachment.filename}`);
-        }
-        resolvedAttachments.push({
-          filename: uploaded.filename,
-          path: uploaded.path,
-          mimeType: attachment.mimeType,
-        });
+      const resolved = await resolveComposerAttachmentsForWorkspace(
+        useAppStore.getState,
+        useAppStore.setState,
+        workspaceId,
+        attachments,
+      );
+      if (resolved.skippedNotes.length > 0) {
+        const detail = resolved.skippedNotes.join(" ");
+        throw new Error(detail);
       }
-
-      return resolvedAttachments;
+      return resolved.attachments;
     },
     [],
   );
 
   const pendingAttachmentSignature = useMemo(
     () =>
-      submittedAttachmentSignature ?? buildPendingComposerAttachmentSignature(pendingAttachments),
+      submittedAttachmentSignature ?? buildComposerAttachmentSignature(pendingAttachments),
     [pendingAttachments, submittedAttachmentSignature],
   );
   const hasPendingAttachments = pendingAttachments.length > 0;

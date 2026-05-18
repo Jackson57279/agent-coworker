@@ -44,9 +44,21 @@ function joinToolResultText(parts: PiToolResultContentPart[]): string {
     .join("\n");
 }
 
+function hasNonTextMultimodalToolOutput(
+  parts: ReturnType<typeof toolResultContentFromOutput>,
+): boolean {
+  return parts.some(
+    (part) =>
+      part.type === "image" ||
+      part.type === "audio" ||
+      part.type === "video" ||
+      part.type === "document",
+  );
+}
+
 function serializeToolOutputForSpill(output: unknown): string | null {
   const content = toolResultContentFromOutput(output);
-  if (content.some((part) => part.type === "image")) return null;
+  if (hasNonTextMultimodalToolOutput(content)) return null;
 
   if (typeof output === "string") return output;
   if (typeof output === "number" || typeof output === "boolean" || typeof output === "bigint") {

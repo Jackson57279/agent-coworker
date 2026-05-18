@@ -82,6 +82,11 @@
     --surface-selection-inverse: color-mix(in srgb, var(--text-inverse) 30%, transparent);
     --surface-sidebar-drop: color-mix(in srgb, var(--accent-base) 6%, transparent);
     --surface-sidebar-drop-strong: color-mix(in srgb, var(--accent-base) 10%, transparent);
+    --surface-landing-accent-glow: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--accent-base) 9%, transparent) 0%,
+      transparent 70%
+    );
 
     --text-primary: var(--text-base);
     --text-secondary: color-mix(in srgb, var(--text-base) 88%, transparent);
