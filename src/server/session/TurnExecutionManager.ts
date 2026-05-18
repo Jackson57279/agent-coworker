@@ -75,6 +75,16 @@ const defaultSourceByErrorCode: Partial<Record<ServerErrorCode, ServerErrorSourc
 
 type ClassifiedTurnError = { code: ServerErrorCode; source: ServerErrorSource };
 
+const LARGE_MULTIMODAL_OUTPUT_GUIDANCE =
+  '[System: For large audio, video, or PDF transcription/extraction tasks, do not stream the full transcript or extracted text in chat. Create the requested file in the workspace with the write tool. Use mode="overwrite" for the first chunk and mode="append" for later chunks, keeping each chunk bounded. Return only the file path and a concise summary in chat.]';
+const largeMultimodalOutputRequestPattern =
+  /\b(transcribe|transcribed|transcribing|transcript|transcription|markdown|file|document|extract|extraction|extracting|ocr|caption|captions|subtitle|subtitles|srt|notes|minutes)\b/i;
+const largeMultimodalOutputPartTypes = new Set<MultimodalContentPartType>([
+  "audio",
+  "video",
+  "document",
+]);
+
 function isServerErrorCode(value: string): value is ServerErrorCode {
   return serverErrorCodeSet.has(value);
 }
@@ -104,6 +114,38 @@ function getAttachmentContentPartType(
   opts: { modelSupportsImages: boolean; isGoogleProvider: boolean },
 ): MultimodalContentPartType | null {
   return googleMultimodalPartTypeForMime(mimeType, opts);
+}
+
+function collectUserTextForAttachmentGuidance(
+  text: string,
+  inputParts?: readonly OrderedInputPart[],
+): string {
+  const orderedText = (inputParts ?? [])
+    .filter((part): part is Extract<OrderedInputPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  return [text, orderedText].filter((part) => part.trim().length > 0).join("\n");
+}
+
+function shouldInjectLargeMultimodalOutputGuidance(
+  text: string,
+  attachments: readonly FileAttachment[] | undefined,
+  inputParts: readonly OrderedInputPart[] | undefined,
+  opts: { modelSupportsImages: boolean; isGoogleProvider: boolean },
+): boolean {
+  if (!opts.isGoogleProvider || !attachments || attachments.length === 0) {
+    return false;
+  }
+
+  const userText = collectUserTextForAttachmentGuidance(text, inputParts);
+  if (!largeMultimodalOutputRequestPattern.test(userText)) {
+    return false;
+  }
+
+  return attachments.some((attachment) => {
+    const partType = getAttachmentContentPartType(attachment.mimeType, opts);
+    return partType ? largeMultimodalOutputPartTypes.has(partType) : false;
+  });
 }
 
 function getUploadedMultimodalAttachmentValidationMessage(
@@ -1186,6 +1228,23 @@ export class TurnExecutionManager {
     const resolvedUploadsDir = path.resolve(uploadsDir);
     const usedNames = new Set<string>();
     const contentParts: Array<Record<string, unknown>> = [];
+    const shouldAddLargeOutputGuidance = shouldInjectLargeMultimodalOutputGuidance(
+      text,
+      attachments,
+      inputParts,
+      {
+        modelSupportsImages,
+        isGoogleProvider,
+      },
+    );
+    let largeOutputGuidanceAdded = false;
+    const appendLargeOutputGuidance = () => {
+      if (!shouldAddLargeOutputGuidance || largeOutputGuidanceAdded) {
+        return;
+      }
+      contentParts.push({ type: "text", text: LARGE_MULTIMODAL_OUTPUT_GUIDANCE });
+      largeOutputGuidanceAdded = true;
+    };
 
     const appendAttachment = async (attachment: FileAttachment) => {
       const safeName = path.basename(attachment.filename);
@@ -1288,14 +1347,18 @@ export class TurnExecutionManager {
           contentParts.push({ type: "text", text: part.text });
           continue;
         }
+        appendLargeOutputGuidance();
         await appendAttachment(part);
       }
+      appendLargeOutputGuidance();
       return contentParts;
     }
 
     if (text) {
       contentParts.push({ type: "text", text });
     }
+
+    appendLargeOutputGuidance();
 
     for (const attachment of attachments) {
       await appendAttachment(attachment);
@@ -1409,7 +1472,17 @@ export class TurnExecutionManager {
       return { code: "observability_error", source: "observability" };
     }
 
-    if (includesAny("oauth", "api key", "unsupported provider")) {
+    if (
+      includesAny(
+        "oauth",
+        "api key",
+        "unsupported provider",
+        "generated response exceeds",
+        "generated response exceeded",
+        "maximum allowed size limit",
+        "provider size limit",
+      )
+    ) {
       return { code: "provider_error", source: "provider" };
     }
 

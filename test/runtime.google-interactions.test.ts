@@ -2062,6 +2062,18 @@ describe("google native interactions request building", () => {
     expect(googleNativeInternal.classifyGoogleInteractionError(new Error("400 schema error"))).toBe(
       "schema",
     );
+    const sizeLimitError = new Error(
+      "The generated response exceeds the maximum allowed size limit (temporary limitation).",
+    );
+    expect(googleNativeInternal.classifyGoogleInteractionError(sizeLimitError)).toBe(
+      "output_size",
+    );
+    expect(googleNativeInternal.isRetryableGoogleInteractionError(sizeLimitError)).toBe(false);
+    expect(
+      googleNativeInternal.classifyGoogleInteractionError(
+        new Error("Gemini generated response exceeded the provider size limit."),
+      ),
+    ).toBe("output_size");
   });
 
   test("enrichTextBlockAnnotations resolves Google grounding redirects for final text blocks", async () => {

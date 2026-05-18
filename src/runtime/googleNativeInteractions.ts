@@ -54,11 +54,41 @@ export type GoogleInteractionErrorKind =
   | "quota"
   | "stale_continuation"
   | "schema"
+  | "output_size"
   | "retryable"
   | "unknown";
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function isGoogleGeneratedResponseSizeLimitError(error: unknown): boolean {
+  const normalized = errorText(error).toLowerCase();
+  return (
+    (normalized.includes("generated response") &&
+      (normalized.includes("exceeds") || normalized.includes("exceeded")) &&
+      normalized.includes("size limit")) ||
+    normalized.includes("maximum allowed size limit")
+  );
+}
+
+function makeGoogleGeneratedResponseSizeLimitError(): Error & {
+  code: "provider_error";
+  source: "provider";
+} {
+  return Object.assign(
+    new Error(
+      "Gemini generated response exceeded the provider size limit. For large transcripts or extracted documents, write the full output to a workspace file in bounded chunks and return only the file path plus a concise summary in chat.",
+    ),
+    {
+      code: "provider_error" as const,
+      source: "provider" as const,
+    },
+  );
+}
+
 export function classifyGoogleInteractionError(error: unknown): GoogleInteractionErrorKind {
-  const text = error instanceof Error ? error.message : String(error);
+  const text = errorText(error);
   const normalized = text.toLowerCase();
   if (normalized.includes("abort")) return "abort";
   if (
@@ -95,6 +125,9 @@ export function classifyGoogleInteractionError(error: unknown): GoogleInteractio
     normalized.includes("400")
   ) {
     return "schema";
+  }
+  if (isGoogleGeneratedResponseSizeLimitError(error)) {
+    return "output_size";
   }
   if (
     normalized.includes("timeout") ||
@@ -1756,6 +1789,9 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
         const error = (eventRecord.error as Record<string, unknown>) ?? {};
         const message =
           (error.message as string) ?? (error.code as string) ?? "Google Interactions API error";
+        if (isGoogleGeneratedResponseSizeLimitError(message)) {
+          throw makeGoogleGeneratedResponseSizeLimitError();
+        }
         throw new Error(message);
       }
 
@@ -1825,13 +1861,16 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
 
     return { assistant, interactionId };
   } catch (error) {
+    const normalizedError = isGoogleGeneratedResponseSizeLimitError(error)
+      ? makeGoogleGeneratedResponseSizeLimitError()
+      : error;
     await pendingEventDelivery.catch(() => undefined);
     await Promise.allSettled(pendingAnnotationEnrichments);
     await emitEvent({
       type: "error",
-      error: error instanceof Error ? error.message : String(error),
+      error: normalizedError instanceof Error ? normalizedError.message : String(normalizedError),
     });
-    throw error;
+    throw normalizedError;
   }
 };
 
@@ -1843,6 +1882,7 @@ export const __internal = {
   getGoogleInteractionsClient,
   googleTurnMessagesToModelMessages,
   classifyGoogleInteractionError,
+  isGoogleGeneratedResponseSizeLimitError,
   isRetryableGoogleInteractionError,
   mapGoogleEventToStreamParts,
   normalizeGoogleStreamEvent,

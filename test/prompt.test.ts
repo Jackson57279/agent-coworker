@@ -177,6 +177,12 @@ function expectWebFetchDownloadGuidance(prompt: string) {
   expect(normalized).toContain("markdown");
 }
 
+function expectChunkedLongOutputGuidance(prompt: string) {
+  expect(prompt).toContain('mode="append"');
+  expect(prompt).toContain("For very long transcripts");
+  expect(prompt).toContain("Keep the chat response concise");
+}
+
 function expectSharedAgentReportContract(prompt: string) {
   expect(prompt).toContain("Completion contract:");
   expect(prompt).toContain("exactly one `<agent_report>...</agent_report>` footer");
@@ -726,6 +732,32 @@ describe("loadSystemPrompt", () => {
         }),
       );
       expectWebFetchDownloadGuidance(prompt);
+    }
+  });
+
+  test("default and Gemini prompts tell models to chunk very long generated artifacts into files", async () => {
+    const configs = [
+      { provider: "opencode-go" as const, model: "kimi-k2.5", preferredChildModel: "kimi-k2.5" },
+      {
+        provider: "google" as const,
+        model: "gemini-3.1-pro-preview",
+        preferredChildModel: "gemini-3.1-pro-preview",
+      },
+      {
+        provider: "google" as const,
+        model: "gemini-3-flash-preview",
+        preferredChildModel: "gemini-3-flash-preview",
+      },
+    ];
+
+    for (const overrides of configs) {
+      const prompt = await loadSystemPrompt(
+        makeConfig({
+          ...overrides,
+          skillsDirs: ["/nonexistent/skills"],
+        }),
+      );
+      expectChunkedLongOutputGuidance(prompt);
     }
   });
 

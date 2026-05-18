@@ -333,6 +333,28 @@ describe("write tool", () => {
     expect(written).toBe("new content");
   });
 
+  test("appends to existing file when mode is append", async () => {
+    const dir = await tmpDir();
+    const p = path.join(dir, "append.txt");
+    await fs.writeFile(p, "first\n", "utf-8");
+
+    const t: any = createWriteTool(makeCtx(dir));
+    const res: string = await t.execute({ filePath: p, content: "second\n", mode: "append" });
+    expect(res).toContain("Appended");
+    const written = await fs.readFile(p, "utf-8");
+    expect(written).toBe("first\nsecond\n");
+  });
+
+  test("creates file when appending to a missing path", async () => {
+    const dir = await tmpDir();
+    const p = path.join(dir, "missing", "append.txt");
+
+    const t: any = createWriteTool(makeCtx(dir));
+    await t.execute({ filePath: p, content: "chunk\n", mode: "append" });
+    const written = await fs.readFile(p, "utf-8");
+    expect(written).toBe("chunk\n");
+  });
+
   test("writes empty string", async () => {
     const dir = await tmpDir();
     const p = path.join(dir, "empty.txt");

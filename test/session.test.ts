@@ -4207,6 +4207,48 @@ describe("AgentSession", () => {
       );
     });
 
+    test("adds chunked file-output guidance for Gemini audio markdown requests", async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "session-attachments-"));
+      const uploadsDir = path.join(dir, "uploads");
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig(dir),
+          uploadsDirectory: uploadsDir,
+        },
+      });
+
+      await session.sendUserMessage("give me a markdown file with this", "msg-mp3-md", undefined, [
+        {
+          filename: "google-io-preview.mp3",
+          contentBase64: Buffer.from("audio bytes").toString("base64"),
+          mimeType: "audio/mpeg",
+        },
+      ]);
+
+      const userEvt = events.find((e) => e.type === "user_message") as any;
+      expect(userEvt).toMatchObject({
+        text: "give me a markdown file with this\n\nAttached: [google-io-preview.mp3]",
+        clientMessageId: "msg-mp3-md",
+      });
+
+      const call = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      const content = call.messages.at(-1)?.content as Array<Record<string, unknown>>;
+      expect(content).toContainEqual({
+        type: "text",
+        text: "give me a markdown file with this",
+      });
+      expect(content).toContainEqual({
+        type: "audio",
+        data: Buffer.from("audio bytes").toString("base64"),
+        mimeType: "audio/mpeg",
+      });
+      const guidance = content.find(
+        (part) => part.type === "text" && String(part.text).includes('mode="append"'),
+      );
+      expect(String(guidance?.text)).toContain("do not stream the full transcript");
+      expect(String(guidance?.text)).toContain("Return only the file path");
+    });
+
     test("deduplicates attachment filenames against existing uploads without stale in-memory names", async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), "session-attachments-"));
       const uploadsDir = path.join(dir, "custom-uploads");

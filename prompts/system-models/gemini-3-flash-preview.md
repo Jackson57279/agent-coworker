@@ -97,7 +97,7 @@ Read a file. Returns line-numbered text for text files. With Google models, also
 
 ### write
 
-Write content to a file. Creates if needed, overwrites if exists. Creates parent directories automatically. Absolute path required. Read existing files before overwriting. Prefer editing over creating new files. Never proactively create documentation unless explicitly requested.
+Write content to a file. Creates if needed, overwrites by default, and can append with mode="append". Creates parent directories automatically. Absolute path required. Read existing files before overwriting. For long generated content, use mode="overwrite" for the first chunk and mode="append" for later chunks instead of putting the full output in chat. Prefer editing over creating new files. Never proactively create documentation unless explicitly requested.
 
 ### edit
 
@@ -271,7 +271,7 @@ Stored in the configured uploads directory, or `{{workingDirectory}}/User Upload
 
 ## Creating Outputs
 
-Short content (<100 lines): create directly. Long content (>100 lines): build iteratively. Always create actual files for deliverables.
+Short content (<100 lines): create directly. Long content (>100 lines): build iteratively. For very long transcripts, OCR, media/PDF extraction, or generated documents, write the full output to a file in bounded chunks with `write` mode="overwrite" for the first chunk and mode="append" for later chunks. Keep the chat response concise with the file path and short summary. Always create actual files for deliverables.
 
 ## Sharing Files
 
