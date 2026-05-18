@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { type AiCoworkerPaths, getAiCoworkerPaths, readConnectionStore } from "../connect";
 import {
   defaultSupportedModel,
@@ -50,6 +52,10 @@ export type ProviderCatalogPayload = {
   connected: string[];
 };
 
+function codexHomeFromPaths(paths: AiCoworkerPaths): string {
+  return path.join(paths.authDir, "codex-cli");
+}
+
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   google: "Google",
   openai: "OpenAI",
@@ -81,11 +87,12 @@ function staticCatalogEntry(provider: Exclude<ProviderName, "lmstudio">): Provid
 
 async function codexCatalogEntry(opts: {
   listCodexAppServerModelsImpl?: typeof listCodexAppServerModels;
+  codexHome?: string;
 }): Promise<ProviderCatalogEntry> {
   const listModels = opts.listCodexAppServerModelsImpl ?? listCodexAppServerModels;
   let appServerModels: Awaited<ReturnType<typeof listCodexAppServerModels>> = [];
   try {
-    appServerModels = await listModels();
+    appServerModels = await listModels({ codexHome: opts.codexHome });
   } catch (error) {
     return {
       id: "codex-cli",
@@ -280,13 +287,14 @@ export async function getProviderCatalog(
   const readCodexAppServerAccountImpl =
     opts.readCodexAppServerAccountImpl ?? readCodexAppServerAccount;
   const store = await readStore(paths);
+  const codexHome = codexHomeFromPaths(paths);
   const bedrock = await bedrockCatalogEntry({
     paths,
     providerOptions: opts.providerOptions,
     env: opts.env,
   });
   const hasCodexAccount = Boolean(
-    await readCodexAppServerAccountImpl({ refreshToken: false }).then(
+    await readCodexAppServerAccountImpl({ refreshToken: false, codexHome }).then(
       (result) => result.account,
       () => null,
     ),
@@ -300,6 +308,7 @@ export async function getProviderCatalog(
   const codex = hasCodexAccount
     ? await codexCatalogEntry({
         listCodexAppServerModelsImpl: opts.listCodexAppServerModelsImpl,
+        codexHome,
       })
     : staticCatalogEntry("codex-cli");
   const all = PROVIDER_NAMES.map((provider) => {

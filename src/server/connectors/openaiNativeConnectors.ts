@@ -11,6 +11,7 @@ import type {
   OpenAiNativeConnectorsConfig,
 } from "../../shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../../types";
+import { resolveAuthHomeDir } from "../../utils/authHome";
 
 const CONNECTORS_CONFIG_FILE_NAME = "openai-native-connectors.json";
 
@@ -33,6 +34,10 @@ function emptyConnectorsConfig(): OpenAiNativeConnectorsConfig {
   };
 }
 
+function codexHomeFromConfig(config: AgentConfig): string {
+  return path.join(resolveAuthHomeDir(config), ".cowork", "auth", "codex-cli");
+}
+
 export async function readOpenAiNativeConnectorsConfig(
   config: Pick<AgentConfig, "projectCoworkDir">,
 ): Promise<OpenAiNativeConnectorsConfig> {
@@ -41,13 +46,17 @@ export async function readOpenAiNativeConnectorsConfig(
 }
 
 export async function setOpenAiNativeConnectorEnabled(
-  config: Pick<AgentConfig, "projectCoworkDir">,
+  config: AgentConfig,
   connectorId: string,
   enabled: boolean,
 ): Promise<OpenAiNativeConnectorsConfig> {
   const id = connectorId.trim();
   if (!id) throw new Error("Connector id is required.");
-  await setCodexAppServerAppEnabled({ appId: id, enabled });
+  await setCodexAppServerAppEnabled({
+    appId: id,
+    enabled,
+    codexHome: codexHomeFromConfig(config),
+  });
   void config;
   return emptyConnectorsConfig();
 }
@@ -71,7 +80,10 @@ export async function listOpenAiNativeConnectors(opts: {
       message: "OpenAI native connectors are disabled. Enable the experimental feature flag first.",
     };
   }
-  const accountResult = await readCodexAppServerAccount({ refreshToken: false }).catch(() => null);
+  const codexHome = codexHomeFromConfig(opts.config);
+  const accountResult = await readCodexAppServerAccount({ refreshToken: false, codexHome }).catch(
+    () => null,
+  );
   if (!accountResult?.account) {
     return {
       connectors: [],
@@ -81,7 +93,10 @@ export async function listOpenAiNativeConnectors(opts: {
     };
   }
 
-  const connectors = (await listCodexAppServerApps({ forceRefetch: opts.forceRefetch === true }))
+  const connectors = (await listCodexAppServerApps({
+    codexHome,
+    forceRefetch: opts.forceRefetch === true,
+  }))
     .map(
       (app): OpenAiNativeConnector => ({
         id: app.id,

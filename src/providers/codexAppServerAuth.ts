@@ -59,23 +59,28 @@ type CodexAppServerAppsConfig = {
 
 type ReadAccountOptions = {
   refreshToken?: boolean;
+  codexHome?: string;
   log?: (line: string) => void;
 };
 
 type ReadRateLimitsOptions = {
+  codexHome?: string;
   log?: (line: string) => void;
 };
 
 type LoginOptions = {
+  codexHome?: string;
   openUrl?: UrlOpener;
   log?: (line: string) => void;
 };
 
 type ListModelsOptions = {
+  codexHome?: string;
   log?: (line: string) => void;
 };
 
 type ListAppsOptions = {
+  codexHome?: string;
   forceRefetch?: boolean;
   log?: (line: string) => void;
 };
@@ -83,6 +88,7 @@ type ListAppsOptions = {
 type SetAppEnabledOptions = {
   appId: string;
   enabled: boolean;
+  codexHome?: string;
   log?: (line: string) => void;
 };
 
@@ -102,8 +108,9 @@ const appServerAuthOverrides: AppServerAuthOverrides = {};
 async function withClient<T>(
   fn: (client: CodexAppServerClient) => Promise<T>,
   log?: (line: string) => void,
+  codexHome?: string,
 ): Promise<T> {
-  return await fn(await getPooledCodexAppServerClient({ log }));
+  return await fn(await getPooledCodexAppServerClient({ log, codexHome }));
 }
 
 function normalizeAccount(value: unknown): CodexAppServerAccount | null {
@@ -373,7 +380,7 @@ export async function listCodexAppServerModels(
       cursor = asString(result?.nextCursor) ?? asString(result?.next_cursor);
     } while (cursor);
     return models;
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export async function listCodexAppServerApps(
@@ -387,7 +394,7 @@ export async function listCodexAppServerApps(
       if (!isUnknownMethodError(error, "mcpServerStatus/list")) throw error;
       return await listCodexAppServerAppsViaLegacyAppList(client, opts);
     }
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export async function setCodexAppServerAppEnabled(opts: SetAppEnabledOptions): Promise<void> {
@@ -403,7 +410,7 @@ export async function setCodexAppServerAppEnabled(opts: SetAppEnabledOptions): P
       value: opts.enabled,
       mergeStrategy: "upsert",
     });
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export async function readCodexAppServerAccount(
@@ -418,7 +425,7 @@ export async function readCodexAppServerAccount(
       account: normalizeAccount(result?.account),
       requiresOpenaiAuth: result?.requiresOpenaiAuth === true,
     };
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export async function readCodexAppServerRateLimits(
@@ -430,7 +437,7 @@ export async function readCodexAppServerRateLimits(
   return await withClient(async (client) => {
     const result = asRecord(await client.request("account/rateLimits/read"));
     return (asRecord(result?.rateLimits) as CodexAppServerRateLimits | null) ?? null;
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export async function loginCodexAppServerChatGpt(
@@ -451,10 +458,12 @@ export async function loginCodexAppServerChatGpt(
     return {
       account: normalizeAccount(result?.account),
     };
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
-export async function logoutCodexAppServer(opts: { log?: (line: string) => void } = {}): Promise<{
+export async function logoutCodexAppServer(
+  opts: { codexHome?: string; log?: (line: string) => void } = {},
+): Promise<{
   revoked: boolean;
   message: string;
 }> {
@@ -475,7 +484,7 @@ export async function logoutCodexAppServer(opts: { log?: (line: string) => void 
       }
     }
     return { revoked, message };
-  }, opts.log);
+  }, opts.log, opts.codexHome);
 }
 
 export const __internal = {

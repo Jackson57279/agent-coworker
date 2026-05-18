@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { runTurn } from "../../agent";
 import type { ConnectProviderResult, connectProvider as connectModelProvider } from "../../connect";
 import type { MCPRegistryServer } from "../../mcp/configRegistry";
@@ -30,6 +32,7 @@ import type {
   ServerErrorCode,
   ServerErrorSource,
 } from "../../types";
+import { resolveAuthHomeDir } from "../../utils/authHome";
 import type { AgentWaitMode } from "../agents/types";
 import type { SessionConfigPatch, SessionEvent } from "../protocol";
 import {
@@ -1448,7 +1451,10 @@ export class AgentSession {
   async closeForHistory(): Promise<void> {
     this.state.persistenceStatus = "closed";
     if (this.state.config.provider === "codex-cli") {
-      await closePooledCodexAppServerClient(this.state.config.workingDirectory);
+      await closePooledCodexAppServerClient(
+        this.state.config.workingDirectory,
+        path.join(resolveAuthHomeDir(this.state.config), ".cowork", "auth", "codex-cli"),
+      );
     }
     this.queuePersistSessionSnapshot("session.closed");
     await this.persistenceManager.waitForIdle();

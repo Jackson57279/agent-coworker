@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { loginCodexAppServerChatGpt, logoutCodexAppServer } from "./providers/codexAppServerAuth";
 import {
   type AiCoworkerPaths,
@@ -49,6 +51,10 @@ const connectOauthDepsDefaults = {
 const connectOauthDeps = {
   ...connectOauthDepsDefaults,
 };
+
+function codexHomeFromPaths(paths: AiCoworkerPaths): string {
+  return path.join(paths.authDir, "codex-cli");
+}
 
 export const __internal = {
   setOauthDepsForTests(overrides: Partial<typeof connectOauthDepsDefaults>): void {
@@ -208,6 +214,7 @@ export async function connectProvider(opts: {
       );
     }
     const login = await connectOauthDeps.runCodexLogin({
+      codexHome: codexHomeFromPaths(paths),
       log: opts.onOauthLine,
       openUrl: opts.openUrl,
     });
@@ -247,7 +254,7 @@ export async function disconnectProvider(opts: {
     await writeConnectionStore(paths, store);
     let logoutMessage = "";
     try {
-      const logoutResult = await logoutCodexAppServer();
+      const logoutResult = await logoutCodexAppServer({ codexHome: codexHomeFromPaths(paths) });
       logoutMessage = logoutResult.message;
     } catch {
       // Best-effort logout; do not fail disconnect if app-server is unreachable.

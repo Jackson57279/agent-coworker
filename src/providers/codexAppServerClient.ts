@@ -1,7 +1,10 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 import readline from "node:readline";
 
 import { asRecord, asString } from "../runtime/piRuntimeOptions";
+import { resolveAuthHomeDir } from "../utils/authHome";
 import { VERSION } from "../version";
 import {
   type CodexAppServerCommand,
@@ -59,6 +62,7 @@ export type CodexAppServerRequestHandler = (
 
 export type CodexAppServerClientOptions = {
   cwd?: string;
+  codexHome?: string;
   log?: (line: string) => void;
   invalidJsonLogPrefix?: string;
   onServerRequest?: CodexAppServerRequestHandler;
@@ -68,6 +72,10 @@ export type CodexAppServerClientOptions = {
 let clientFactoryForTests:
   | ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>)
   | undefined;
+
+function resolveCodexHome(authHomeDir = resolveAuthHomeDir()): string {
+  return path.join(authHomeDir, ".cowork", "auth", "codex-cli");
+}
 
 export function codexAppServerClientInfo(): { name: string; title: string; version: string } {
   return {
@@ -93,7 +101,12 @@ export async function startCodexAppServerClient(
   if (clientFactoryForTests) return await clientFactoryForTests(opts);
 
   const command = await resolveCodexAppServerCommand();
-  const child = spawnCodexAppServer(command, { cwd: opts.cwd, env: process.env });
+  const codexHome = opts.codexHome ?? resolveCodexHome();
+  await fs.mkdir(codexHome, { recursive: true, mode: 0o700 });
+  const child = spawnCodexAppServer(command, {
+    cwd: opts.cwd,
+    env: { ...process.env, CODEX_HOME: codexHome },
+  });
   const pending = new Map<number | string, PendingRequest>();
   const listeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
   const serverRequestHandlers = new Set<CodexAppServerRequestHandler>();
@@ -319,14 +332,15 @@ export async function withCodexAppServerClient<T>(
 
 const pooledClients = new Map<string, Promise<CodexAppServerClient>>();
 
-function pooledClientKey(cwd: string | undefined): string {
-  return cwd ? `cwd:${cwd}` : "cwd:";
+function pooledClientKey(cwd: string | undefined, codexHome: string): string {
+  return `${cwd ? `cwd:${cwd}` : "cwd:"}|codexHome:${codexHome}`;
 }
 
 export async function getPooledCodexAppServerClient(
   opts: CodexAppServerClientOptions = {},
 ): Promise<CodexAppServerClient> {
-  const key = pooledClientKey(opts.cwd);
+  const codexHome = opts.codexHome ?? resolveCodexHome();
+  const key = pooledClientKey(opts.cwd, codexHome);
   const existing = pooledClients.get(key);
   if (existing) {
     const client = await existing;
@@ -337,6 +351,7 @@ export async function getPooledCodexAppServerClient(
   const created = (async () => {
     const client = await startCodexAppServerClient({
       cwd: opts.cwd,
+      codexHome,
       log: opts.log,
       invalidJsonLogPrefix: opts.invalidJsonLogPrefix,
     });
@@ -373,8 +388,11 @@ export async function closePooledCodexAppServerClients(): Promise<void> {
   );
 }
 
-export async function closePooledCodexAppServerClient(cwd: string | undefined): Promise<void> {
-  const key = pooledClientKey(cwd);
+export async function closePooledCodexAppServerClient(
+  cwd: string | undefined,
+  codexHome?: string,
+): Promise<void> {
+  const key = pooledClientKey(cwd, codexHome ?? resolveCodexHome());
   const clientPromise = pooledClients.get(key);
   if (!clientPromise) return;
   pooledClients.delete(key);
@@ -387,6 +405,7 @@ export async function closePooledCodexAppServerClient(cwd: string | undefined): 
 }
 
 export const __internal = {
+  resolveCodexHome,
   setClientFactoryForTests(
     factory: ((opts: CodexAppServerClientOptions) => Promise<CodexAppServerClient>) | undefined,
   ): void {

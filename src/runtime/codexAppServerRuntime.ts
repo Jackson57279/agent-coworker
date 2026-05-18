@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { getSupportedModel, listSupportedModels } from "../models/registry";
 import {
   type CodexAppServerClient,
@@ -10,6 +12,7 @@ import type { CodexAppServerCommand } from "../providers/codexAppServerResolver"
 import { isCodexAppServerContinuationState } from "../shared/providerContinuation";
 import { isCodexDynamicCoworkToolName } from "../tools/codexBoundary";
 import type { ModelMessage, TodoItem } from "../types";
+import { resolveAuthHomeDir } from "../utils/authHome";
 import { asRecord, asString, isZodSchema, toPiJsonSchema } from "./piRuntimeOptions";
 import type {
   LlmRuntime,
@@ -531,6 +534,7 @@ async function startCodexAppServer(
   };
   const client = await getPooledCodexAppServerClient({
     cwd: params.config.workingDirectory,
+    codexHome: path.join(resolveAuthHomeDir(params.config), ".cowork", "auth", "codex-cli"),
     log: params.log,
     invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
   });

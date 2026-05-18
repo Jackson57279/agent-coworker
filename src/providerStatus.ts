@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { z } from "zod";
 
 import {
@@ -301,6 +303,10 @@ function mapCodexCredits(credits: CodexAppServerRateLimits["credits"]): Provider
   };
 }
 
+function codexHomeFromPaths(paths: AiCoworkerPaths): string {
+  return path.join(paths.authDir, "codex-cli");
+}
+
 async function getCodexCliStatus(opts: {
   paths: AiCoworkerPaths;
   store: ConnectionStore;
@@ -326,7 +332,8 @@ async function getCodexCliStatus(opts: {
   }
 
   try {
-    const accountResult = await readCodexAppServerAccount({ refreshToken: true });
+    const codexHome = codexHomeFromPaths(opts.paths);
+    const accountResult = await readCodexAppServerAccount({ refreshToken: true, codexHome });
     if (!accountResult.account) {
       return {
         ...base,
@@ -341,7 +348,7 @@ async function getCodexCliStatus(opts: {
       };
     }
 
-    const rateLimits = await readCodexAppServerRateLimits({}).catch(() => null);
+    const rateLimits = await readCodexAppServerRateLimits({ codexHome }).catch(() => null);
     const usage: ProviderUsageStatus | undefined = rateLimits
       ? {
           ...(accountResult.account.email ? { email: accountResult.account.email } : {}),
