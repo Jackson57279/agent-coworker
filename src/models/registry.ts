@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import anthropicClaudeHaiku45 from "../../config/models/anthropic/claude-haiku-4-5.json";
 import anthropicClaudeOpus46 from "../../config/models/anthropic/claude-opus-4-6.json";
+import anthropicClaudeOpus47 from "../../config/models/anthropic/claude-opus-4-7.json";
 import anthropicClaudeSonnet45 from "../../config/models/anthropic/claude-sonnet-4-5.json";
 import anthropicClaudeSonnet46 from "../../config/models/anthropic/claude-sonnet-4-6.json";
 import basetenMoonshotAiKimiK25 from "../../config/models/baseten/moonshotai-kimi-k2.5.json";
@@ -81,6 +82,7 @@ export type SupportedModel = z.infer<typeof supportedModelSchema>;
 const RAW_MODEL_REGISTRY_ENTRIES = [
   anthropicClaudeHaiku45,
   anthropicClaudeOpus46,
+  anthropicClaudeOpus47,
   anthropicClaudeSonnet45,
   anthropicClaudeSonnet46,
   bedrockAmazonNovaLiteV10,

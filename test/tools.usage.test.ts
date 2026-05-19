@@ -136,6 +136,7 @@ describe("usage tool", () => {
     expect(result).toContain("Known Model Pricing");
     expect(result).toContain("gpt-5.2");
     expect(result).toContain("claude-opus-4-6");
+    expect(result).toContain("claude-opus-4-7");
   });
 
   test("returns unavailable message if no costTracker in context", async () => {

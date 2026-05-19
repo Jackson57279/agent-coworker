@@ -15,6 +15,11 @@ describe("pricing", () => {
       expect(pricing).not.toBeNull();
       expect(pricing!.inputPerMillion).toBe(3);
       expect(pricing!.outputPerMillion).toBe(15);
+
+      const opus47 = resolveModelPricing("anthropic", "claude-opus-4-7");
+      expect(opus47).not.toBeNull();
+      expect(opus47!.inputPerMillion).toBe(15);
+      expect(opus47!.outputPerMillion).toBe(75);
     });
 
     it("resolves exact match for openai gpt-5.2 pricing", () => {

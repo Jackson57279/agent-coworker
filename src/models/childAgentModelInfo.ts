@@ -84,6 +84,7 @@ const CHILD_AGENT_MODEL_INFO_BY_KEY: Readonly<Record<string, ChildAgentModelInfo
   [key("codex-cli", "gpt-5.3-codex-spark")]: fastGeneral,
 
   [key("anthropic", "claude-opus-4-6")]: claudeFrontier,
+  [key("anthropic", "claude-opus-4-7")]: claudeFrontier,
   [key("anthropic", "claude-sonnet-4-6")]: claudeBalanced,
   [key("anthropic", "claude-sonnet-4-5")]: claudeBalanced,
   [key("anthropic", "claude-haiku-4-5")]: claudeFast,

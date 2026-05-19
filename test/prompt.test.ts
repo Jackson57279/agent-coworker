@@ -220,6 +220,7 @@ const IMAGE_GUIDANCE_PROMPT_CONFIGS = [
   { provider: "anthropic", model: "claude-haiku-4-5", preferredChildModel: "claude-haiku-4-5" },
   { provider: "anthropic", model: "claude-sonnet-4-6", preferredChildModel: "claude-sonnet-4-6" },
   { provider: "anthropic", model: "claude-opus-4-6", preferredChildModel: "claude-opus-4-6" },
+  { provider: "anthropic", model: "claude-opus-4-7", preferredChildModel: "claude-opus-4-7" },
   {
     provider: "google",
     model: "gemini-3-flash-preview",
