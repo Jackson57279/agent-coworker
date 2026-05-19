@@ -6,6 +6,7 @@ import { openExternalUrl, type UrlOpener } from "../utils/browser";
 import {
   type CodexAppServerClient,
   __internal as clientInternal,
+  closePooledCodexAppServerClientsForHome,
   getPooledCodexAppServerClient,
 } from "./codexAppServerClient";
 
@@ -503,7 +504,8 @@ export async function loginCodexAppServerChatGpt(
   opts: LoginOptions,
 ): Promise<{ account: CodexAppServerAccount | null }> {
   if (appServerAuthOverrides.login) return await appServerAuthOverrides.login(opts);
-  return await withClient(
+  const codexHome = opts.codexHome ?? clientInternal.resolveCodexHome();
+  const login = await withClient(
     async (client) => {
       const started = asRecord(
         await client.request("account/login/start", { type: "chatgpt" }, CODEX_AUTH_RPC_TIMEOUT_MS),
@@ -529,8 +531,10 @@ export async function loginCodexAppServerChatGpt(
       };
     },
     opts.log,
-    opts.codexHome,
+    codexHome,
   );
+  await closePooledCodexAppServerClientsForHome(codexHome);
+  return login;
 }
 
 export async function logoutCodexAppServer(
@@ -539,7 +543,8 @@ export async function logoutCodexAppServer(
   revoked: boolean;
   message: string;
 }> {
-  return await withClient(
+  const codexHome = opts.codexHome ?? clientInternal.resolveCodexHome();
+  const logout = await withClient(
     async (client) => {
       let revoked = false;
       let message = "Codex app-server does not expose a logout method.";
@@ -559,8 +564,10 @@ export async function logoutCodexAppServer(
       return { revoked, message };
     },
     opts.log,
-    opts.codexHome,
+    codexHome,
   );
+  await closePooledCodexAppServerClientsForHome(codexHome);
+  return logout;
 }
 
 export const __internal = {

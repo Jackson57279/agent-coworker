@@ -443,6 +443,28 @@ export async function closePooledCodexAppServerClients(): Promise<void> {
   );
 }
 
+export async function closePooledCodexAppServerClientsForHome(
+  codexHome = resolveCodexHome(),
+): Promise<void> {
+  const clients: Promise<CodexAppServerClient>[] = [];
+  const keySuffix = `|codexHome:${codexHome}`;
+  for (const [key, clientPromise] of pooledClients) {
+    if (!key.endsWith(keySuffix)) continue;
+    pooledClients.delete(key);
+    clients.push(clientPromise);
+  }
+  await Promise.all(
+    clients.map(async (clientPromise) => {
+      try {
+        const client = await clientPromise;
+        await client.close();
+      } catch {
+        // ignore cleanup failures
+      }
+    }),
+  );
+}
+
 export async function closePooledCodexAppServerClient(
   cwd: string | undefined,
   codexHome?: string,

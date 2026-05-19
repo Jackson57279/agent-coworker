@@ -7,11 +7,17 @@ import {
   readCodexAppServerAccount,
   readCodexAppServerRateLimits,
 } from "../../src/providers/codexAppServerAuth";
-import { __internal as clientInternal } from "../../src/providers/codexAppServerClient";
+import {
+  type CodexAppServerClient,
+  __internal as clientInternal,
+  closePooledCodexAppServerClients,
+  getPooledCodexAppServerClient,
+} from "../../src/providers/codexAppServerClient";
 
 describe("codex app-server auth", () => {
-  afterEach(() => {
+  afterEach(async () => {
     clientInternal.setClientFactoryForTests(undefined);
+    await closePooledCodexAppServerClients();
   });
 
   test("returns not logged in without starting process if auth.json is missing", async () => {
@@ -97,5 +103,72 @@ describe("codex app-server auth", () => {
     expect(result).toEqual({
       primary: { usedPercent: 42, windowDurationMins: 15 },
     });
+  });
+
+  test("login closes pooled clients for the same Codex home so turns reload fresh auth", async () => {
+    const codexHome = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-auth-login-pool-"));
+    const clients: CodexAppServerClient[] = [];
+    let closeCount = 0;
+
+    clientInternal.setClientFactoryForTests(async () => {
+      const listeners = new Set<Parameters<CodexAppServerClient["onNotification"]>[0]>();
+      let closed = false;
+      const client: CodexAppServerClient = {
+        command: { command: "node", args: [], source: "system" },
+        isClosed: () => closed,
+        request: async (method) => {
+          if (method === "initialize") return {};
+          if (method === "account/login/start") {
+            setTimeout(() => {
+              for (const listener of listeners) {
+                listener({
+                  method: "account/login/completed",
+                  params: { loginId: "login-1", success: true },
+                });
+              }
+            }, 0);
+            return { authUrl: "https://example.test/login", loginId: "login-1" };
+          }
+          if (method === "account/read") {
+            return {
+              account: { type: "chatgpt", email: "fresh@example.com", planType: "Pro" },
+              requiresOpenaiAuth: false,
+            };
+          }
+          return {};
+        },
+        notify: () => {},
+        interruptTurn: async () => {},
+        onNotification: (listener) => {
+          listeners.add(listener);
+          return () => {
+            listeners.delete(listener);
+          };
+        },
+        onServerRequest: () => () => {},
+        onJsonRpcMessage: () => () => {},
+        close: async () => {
+          closed = true;
+          closeCount += 1;
+        },
+      };
+      clients.push(client);
+      return client;
+    });
+
+    const runtimeClient = await getPooledCodexAppServerClient({
+      cwd: "/tmp/workspace",
+      codexHome,
+    });
+
+    const login = await loginCodexAppServerChatGpt({
+      codexHome,
+      openUrl: async () => true,
+    });
+
+    expect(login.account?.email).toBe("fresh@example.com");
+    expect(runtimeClient.isClosed()).toBe(true);
+    expect(closeCount).toBe(2);
+    expect(clients).toHaveLength(2);
   });
 });
