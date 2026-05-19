@@ -23,15 +23,15 @@ function binaryMediaGuardMessage(filePath: string, mimeType: string): string {
   return [
     `Cannot read ${basename} as text (${mimeType}).`,
     "This file is binary media (image, audio, video, or PDF).",
-    "With the Google provider, the read tool can return it as multimodal content for the model.",
-    "Otherwise, ask the user to upload the file in chat.",
+    "The read tool does not return audio, video, or PDF bytes because large tool results can exceed provider response limits.",
+    "If the file was attached to the turn, use the already-attached media content; otherwise use a dedicated transcription or extraction workflow and write large output to a workspace file.",
   ].join(" ");
 }
 
 export function createReadTool(ctx: ToolContext) {
   return defineTool({
     description:
-      "Read a file from the filesystem. Returns line-numbered text for text files. For images, returns visual content. With the Google provider, also returns audio, video, and PDF files as multimodal content. Use offset/limit for large text files.",
+      "Read a file from the filesystem. Returns line-numbered text for text files. For images, returns visual content when the model supports image input. Audio, video, and PDF files are binary media and are not returned through read; use attached media or dedicated extraction/transcription workflows. Use offset/limit for large text files.",
     inputSchema: z.object({
       filePath: z.string().describe("Path to the file (prefer absolute)"),
       offset: z.number().int().min(1).optional().describe("Start line (1-indexed)"),
@@ -64,7 +64,7 @@ export function createReadTool(ctx: ToolContext) {
           isGoogleProvider,
         });
 
-      if (multimodalPartType) {
+      if (multimodalPartType === "image") {
         const buffer = await fs.readFile(abs);
         const sizeMessage = getAttachmentByteLengthValidationMessage([buffer.length]);
         if (sizeMessage) {
@@ -96,7 +96,7 @@ export function createReadTool(ctx: ToolContext) {
         return result;
       }
 
-      if (mimeType && isBinaryMediaMimeType(mimeType) && !isGoogleProvider) {
+      if (mimeType && isBinaryMediaMimeType(mimeType)) {
         const message = binaryMediaGuardMessage(abs, mimeType);
         ctx.log(`tool< read ${JSON.stringify({ binaryGuard: true, mimeType })}`);
         return message;

@@ -1619,7 +1619,7 @@ describe("google native interactions request building", () => {
     ]);
   });
 
-  test("convertMessagesToInteractionsInput preserves audio tool results", () => {
+  test("convertMessagesToInteractionsInput omits unsupported binary tool result bytes", () => {
     const input = googleNativeInternal.convertMessagesToInteractionsInput([
       {
         role: "tool",
@@ -1633,6 +1633,8 @@ describe("google native interactions request building", () => {
               content: [
                 { type: "text", text: "Audio file: clip.mp3" },
                 { type: "audio", data: "def456", mimeType: "audio/mpeg" },
+                { type: "video", data: "ghi789", mimeType: "video/mp4" },
+                { type: "document", data: "jkl012", mimeType: "application/pdf" },
               ],
             },
           },
@@ -1647,7 +1649,18 @@ describe("google native interactions request building", () => {
         name: "read",
         result: [
           { type: "text", text: "Audio file: clip.mp3" },
-          { type: "audio", data: "def456", mime_type: "audio/mpeg" },
+          {
+            type: "text",
+            text: "[audio (audio/mpeg) tool result omitted: Gemini Interactions function_result supports text and image content only.]",
+          },
+          {
+            type: "text",
+            text: "[video (video/mp4) tool result omitted: Gemini Interactions function_result supports text and image content only.]",
+          },
+          {
+            type: "text",
+            text: "[document (application/pdf) tool result omitted: Gemini Interactions function_result supports text and image content only.]",
+          },
         ],
         is_error: false,
       },

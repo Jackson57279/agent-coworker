@@ -220,7 +220,7 @@ describe("read tool", () => {
     });
   });
 
-  test("returns multimodal content for audio and video with Google provider", async () => {
+  test("returns a binary guard for audio and video with Google provider", async () => {
     const dir = await tmpDir();
     const audioPath = path.join(dir, "clip.mp3");
     const videoPath = path.join(dir, "clip.mp4");
@@ -233,31 +233,20 @@ describe("read tool", () => {
     const audioOut = await t.execute({ filePath: audioPath, limit: 2000 });
     const videoOut = await t.execute({ filePath: videoPath, limit: 2000 });
 
-    expect(audioOut).toEqual({
-      type: "content",
-      content: [
-        { type: "text", text: "Audio file: clip.mp3" },
-        {
-          type: "audio",
-          data: Buffer.from("audio-bytes").toString("base64"),
-          mimeType: "audio/mpeg",
-        },
-      ],
-    });
-    expect(videoOut).toEqual({
-      type: "content",
-      content: [
-        { type: "text", text: "Video file: clip.mp4" },
-        {
-          type: "video",
-          data: Buffer.from("video-bytes").toString("base64"),
-          mimeType: "video/mp4",
-        },
-      ],
-    });
+    expect(audioOut).toContain("Cannot read clip.mp3 as text");
+    expect(audioOut).toContain("audio/mpeg");
+    expect(audioOut).toContain("provider response limits");
+    expect(audioOut).not.toContain("audio-bytes");
+    expect(audioOut).not.toContain(Buffer.from("audio-bytes").toString("base64"));
+
+    expect(videoOut).toContain("Cannot read clip.mp4 as text");
+    expect(videoOut).toContain("video/mp4");
+    expect(videoOut).toContain("provider response limits");
+    expect(videoOut).not.toContain("video-bytes");
+    expect(videoOut).not.toContain(Buffer.from("video-bytes").toString("base64"));
   });
 
-  test("returns multimodal content for PDF with Google provider", async () => {
+  test("returns a binary guard for PDF with Google provider", async () => {
     const dir = await tmpDir();
     const pdfPath = path.join(dir, "notes.pdf");
     await fs.writeFile(pdfPath, "pdf-bytes");
@@ -267,17 +256,11 @@ describe("read tool", () => {
     );
     const out = await t.execute({ filePath: pdfPath, limit: 2000 });
 
-    expect(out).toEqual({
-      type: "content",
-      content: [
-        { type: "text", text: "PDF file: notes.pdf" },
-        {
-          type: "document",
-          data: Buffer.from("pdf-bytes").toString("base64"),
-          mimeType: "application/pdf",
-        },
-      ],
-    });
+    expect(out).toContain("Cannot read notes.pdf as text");
+    expect(out).toContain("application/pdf");
+    expect(out).toContain("provider response limits");
+    expect(out).not.toContain("pdf-bytes");
+    expect(out).not.toContain(Buffer.from("pdf-bytes").toString("base64"));
   });
 
   test("returns a binary guard message for audio on non-Google providers", async () => {

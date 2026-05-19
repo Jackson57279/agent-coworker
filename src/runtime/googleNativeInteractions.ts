@@ -281,6 +281,17 @@ function buildBinaryContent(
   } as InteractionsContent;
 }
 
+function unsupportedFunctionResultBinaryPlaceholder(part: InteractionsContent): Interactions.TextContent {
+  const record = part as unknown as Record<string, unknown>;
+  const partType = asNonEmptyString(record.type) ?? "binary";
+  const mimeType = asNonEmptyString(record.mime_type);
+  const label = mimeType ? `${partType} (${mimeType})` : partType;
+  return {
+    type: "text",
+    text: `[${label} tool result omitted: Gemini Interactions function_result supports text and image content only.]`,
+  };
+}
+
 function convertRichContentParts(parts: unknown): InteractionsContent[] {
   if (!Array.isArray(parts)) return [];
 
@@ -467,7 +478,8 @@ function stepsFromToolMessage(message: ModelMessage): InteractionsInput {
       }
       if (part.type === "audio" || part.type === "video" || part.type === "document") {
         const binaryPart = buildBinaryContent(part, part.type);
-        return binaryPart ? [binaryPart] : [];
+        if (!binaryPart) return [];
+        return [unsupportedFunctionResultBinaryPlaceholder(binaryPart)];
       }
       return [];
     });
