@@ -1,8 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 
-import "./helpers/mock-react-native";
-
 mock.module("@/theme/use-app-theme", () => ({
   useAppTheme: () => ({
     border: "#111",

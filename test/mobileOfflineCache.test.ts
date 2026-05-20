@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import "./helpers/mock-react-native";
 
 import path from "node:path";
 

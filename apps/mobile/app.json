@@ -4,6 +4,9 @@
     "slug": "cowork-mobile",
     "scheme": "cowork-mobile",
     "version": "0.1.0",
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",

@@ -57,7 +57,7 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.workspaces[0]?.wsProtocol).toBe("jsonrpc");
   });
 
-  test("keeps explicit workspace booleans and coerces yolo on", () => {
+  test("keeps explicit workspace booleans and yolo off", () => {
     const parsed = persistedStateInputSchema.parse({
       version: 2,
       workspaces: [
