@@ -268,13 +268,15 @@ export function createGoogleInteractionsRuntime(
         await params.onModelStreamPart(part);
       };
 
+      const turnMessages: Array<Record<string, unknown>> = [];
+      let usage = undefined as RuntimeRunTurnResult["usage"];
+      let finalProviderState = undefined as GoogleContinuationState | undefined;
+
       try {
         const resolved = await resolveGoogleInteractionsModel(params);
         const telemetry = parseTelemetrySettings(params.telemetry);
         const piTools = toolMapToPiTools(params.tools, params.config.provider);
         const includeUnknownRawParts = params.includeRawChunks ?? true;
-        const turnMessages: Array<Record<string, unknown>> = [];
-        let usage = undefined as RuntimeRunTurnResult["usage"];
         let finalStopReason: string | undefined;
         let stepProviderOptions: Record<string, unknown> | undefined =
           asRecord(params.providerOptions) ?? undefined;
@@ -327,7 +329,6 @@ export function createGoogleInteractionsRuntime(
             "google-interactions: Stored continuation request context changed; attempting previous_interaction_id and will retry from transcript if rejected.",
           );
         }
-        let finalProviderState = undefined as GoogleContinuationState | undefined;
         let previousInteractionId: string | undefined = activeProviderState?.interactionId;
         let stepMessages: ModelMessage[] = activeProviderState
           ? (() => {
@@ -571,6 +572,29 @@ export function createGoogleInteractionsRuntime(
           ...(finalProviderState ? { providerState: finalProviderState } : {}),
         };
       } catch (error) {
+        if (error && typeof error === "object") {
+          try {
+            (error as any).usage = usage;
+            const responseMessages =
+              typeof turnMessages !== "undefined" && Array.isArray(turnMessages)
+                ? googleTurnMessagesToModelMessages(turnMessages)
+                : [];
+            Object.defineProperty(error, "responseMessages", {
+              value: responseMessages,
+              configurable: true,
+              writable: true,
+            });
+            if (typeof finalProviderState !== "undefined" && finalProviderState) {
+              Object.defineProperty(error, "providerState", {
+                value: finalProviderState,
+                configurable: true,
+                writable: true,
+              });
+            }
+          } catch {
+            // Ignore if error object is not extensible/writable
+          }
+        }
         if (isAbortLikeError(error, params.abortSignal)) {
           await params.onModelAbort?.();
         } else {

@@ -311,8 +311,10 @@ function codexProviderOptions(
 }
 
 function normalizeEffort(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  return ["none", "minimal", "low", "medium", "high", "xhigh"].includes(value) ? value : undefined;
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === "none") return undefined;
+  if (normalized === "xhigh") return "high";
+  return ["minimal", "low", "medium", "high"].includes(normalized) ? normalized : undefined;
 }
 
 function normalizeSummary(value: string | undefined): string | undefined {
@@ -829,6 +831,29 @@ function normalizeTodoList(value: unknown): TodoItem[] | null {
   return todos.length > 0 || candidates.length === 0 ? todos : null;
 }
 
+function fileChangeOutput(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!record) return null;
+  return (
+    asString(record.patch) ??
+    asString(record.diff) ??
+    record.changes ??
+    asString(record.summary) ??
+    record.result ??
+    null
+  );
+}
+
+function mergedFileChangePayload(
+  payload: Record<string, unknown> | null,
+  item: Record<string, unknown> | null,
+) {
+  return {
+    ...(item ?? {}),
+    ...(payload ?? {}),
+  };
+}
+
 async function handleNotification(
   notification: CodexAppServerJsonRpcNotification,
   params: RuntimeRunTurnParams,
@@ -899,6 +924,7 @@ async function handleNotification(
     case "item/commandExecution/outputDelta":
     case "item/fileChange/delta":
     case "item/fileChange/diffDelta":
+    case "item/fileChange/patchUpdated":
       await params.onModelStreamPart?.({
         type: "tool-result",
         toolCallId: asString(payload?.itemId),
@@ -907,11 +933,13 @@ async function handleNotification(
             ? "commandExecution"
             : "fileChange",
         output:
-          asString(payload?.delta) ??
-          asString(payload?.diff) ??
-          asString(payload?.patch) ??
-          asString(payload?.summary) ??
-          "",
+          notification.method === "item/fileChange/patchUpdated"
+            ? fileChangeOutput(mergedFileChangePayload(payload, item))
+            : (asString(payload?.delta) ??
+              asString(payload?.diff) ??
+              asString(payload?.patch) ??
+              asString(payload?.summary) ??
+              ""),
         providerExecuted: true,
       });
       break;
@@ -960,7 +988,7 @@ async function handleNotification(
           type: item.status === "failed" ? "tool-error" : "tool-result",
           toolCallId: asString(item.id),
           toolName: "fileChange",
-          output: item.diff ?? item.summary ?? item.result ?? null,
+          output: fileChangeOutput(item),
           error: item.status === "failed" ? (item.error ?? "file change failed") : undefined,
           providerExecuted: true,
         });
@@ -1299,6 +1327,13 @@ export function createCodexAppServerRuntime(): LlmRuntime {
         }
       } catch (error) {
         const contextualError = withCodexAppServerDiagnostics(error, client.command);
+        if (contextualError && typeof contextualError === "object") {
+          try {
+            (contextualError as any).usage = usage;
+          } catch {
+            // Ignore if error object is not extensible/writable
+          }
+        }
         if (params.abortSignal?.aborted) {
           await params.onModelAbort?.();
         } else {
@@ -1332,6 +1367,14 @@ async function waitForTurnCompletion(
   return await new Promise<unknown>((resolve, reject) => {
     let settled = false;
     let dispose = () => {};
+    const pendingUsageByTurnId = new Map<string, RuntimeUsage>();
+    const flushPendingUsage = (id: string | undefined) => {
+      if (!id) return;
+      const pendingUsage = pendingUsageByTurnId.get(id);
+      if (!pendingUsage) return;
+      pendingUsageByTurnId.delete(id);
+      onUsage(pendingUsage);
+    };
     const settleReject = (error: Error) => {
       if (settled) return;
       settled = true;
@@ -1369,15 +1412,27 @@ async function waitForTurnCompletion(
       const expectedTurnId = typeof turnId === "function" ? turnId() : turnId;
       const payloadThreadId = codexPayloadThreadId(params);
       if (payloadThreadId && expectedThreadId && payloadThreadId !== expectedThreadId) return;
+      flushPendingUsage(expectedTurnId);
       if (notification.method === "thread/tokenUsage/updated") {
         const payloadTurnId = codexPayloadTurnId(params);
-        if (expectedTurnId && payloadTurnId && payloadTurnId !== expectedTurnId) return;
-        onUsage(parseUsage(params?.tokenUsage));
+        const parsedUsage = parseUsage(params?.tokenUsage);
+        if (expectedTurnId) {
+          if (payloadTurnId && payloadTurnId !== expectedTurnId) return;
+          onUsage(parsedUsage);
+          return;
+        }
+        if (payloadTurnId) {
+          if (parsedUsage) pendingUsageByTurnId.set(payloadTurnId, parsedUsage);
+          return;
+        }
+        onUsage(parsedUsage);
         return;
       }
       if (notification.method !== "turn/completed") return;
       const turn = asRecord(params?.turn);
-      if (expectedTurnId && asString(turn?.id) !== expectedTurnId) return;
+      const completedTurnId = asString(turn?.id);
+      if (expectedTurnId && completedTurnId !== expectedTurnId) return;
+      flushPendingUsage(expectedTurnId ?? completedTurnId);
       if (turn?.status === "failed") {
         const error = asRecord(turn.error);
         settleReject(new Error(asString(error?.message) ?? "codex app-server turn failed."));

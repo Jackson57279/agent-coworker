@@ -9,6 +9,7 @@ export type OpenAiContinuationState = {
   responseId: string;
   updatedAt: string;
   accountId?: string;
+  requestFingerprint?: string;
 };
 
 export const openAiContinuationStateSchema = z
@@ -18,6 +19,7 @@ export const openAiContinuationStateSchema = z
     responseId: z.string().trim().min(1),
     updatedAt: z.string().datetime({ offset: true }),
     accountId: z.string().trim().min(1).optional(),
+    requestFingerprint: z.string().trim().min(1).optional(),
   })
   .strict();
 

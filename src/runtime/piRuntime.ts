@@ -1086,13 +1086,15 @@ export function createPiRuntime(overrides: PiRuntimeOverrides = {}): LlmRuntime 
         await params.onModelStreamPart(part);
       };
 
+      const turnMessages: Array<Record<string, unknown>> = [];
+      let usage = undefined as RuntimeRunTurnResult["usage"];
+      const finalProviderState = undefined as any;
+
       try {
         const resolved = await resolvePiModel(params);
         const telemetry = parseTelemetrySettings(params.telemetry);
         const piTools = toolMapToPiTools(params.tools, params.config.provider);
         const includeUnknownRawParts = params.includeRawChunks ?? true;
-        const turnMessages: Array<Record<string, unknown>> = [];
-        let usage = undefined as RuntimeRunTurnResult["usage"];
         let stepMessages: ModelMessage[] = buildInitialStepMessages(params, resolved);
         let stepProviderOptions: Record<string, unknown> | undefined =
           asRecord(params.providerOptions) ?? undefined;
@@ -1232,6 +1234,29 @@ export function createPiRuntime(overrides: PiRuntimeOverrides = {}): LlmRuntime 
           usage,
         };
       } catch (error) {
+        if (error && typeof error === "object") {
+          try {
+            (error as any).usage = usage;
+            const responseMessages =
+              typeof turnMessages !== "undefined" && Array.isArray(turnMessages)
+                ? piTurnMessagesToModelMessages(turnMessages as any)
+                : [];
+            Object.defineProperty(error, "responseMessages", {
+              value: responseMessages,
+              configurable: true,
+              writable: true,
+            });
+            if (typeof finalProviderState !== "undefined" && finalProviderState) {
+              Object.defineProperty(error, "providerState", {
+                value: finalProviderState,
+                configurable: true,
+                writable: true,
+              });
+            }
+          } catch {
+            // Ignore if error object is not extensible/writable
+          }
+        }
         if (isAbortLikeError(error, params.abortSignal)) {
           await params.onModelAbort?.();
         } else {

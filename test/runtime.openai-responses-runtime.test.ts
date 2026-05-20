@@ -6,6 +6,7 @@ import path from "node:path";
 import { z } from "zod";
 import { __internal as openAiNativeInternal } from "../src/runtime/openaiNativeResponses";
 import { createOpenAiResponsesRuntime } from "../src/runtime/openaiResponsesRuntime";
+import type { PiModel } from "../src/runtime/piRuntimeOptions";
 import type { RuntimeRunTurnParams } from "../src/runtime/types";
 import {
   MODEL_SCRATCHPAD_DIRNAME,
@@ -511,5 +512,94 @@ describe("openai responses runtime", () => {
     expect(request.previous_response_id).toBe("resp_previous");
     expect(request.max_output_tokens).toBe(128);
     expect(request.text).toEqual({ verbosity: "high" });
+  });
+
+  test("OpenAI request builder normalizes reasoning effort sentinels", () => {
+    const model = {
+      id: "gpt-5.2",
+      name: "gpt-5.2",
+      api: "openai-responses",
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200000,
+      maxTokens: 32768,
+    } satisfies PiModel;
+
+    const xhighRequest = openAiNativeInternal.buildOpenAiNativeRequest({
+      provider: "openai",
+      model,
+      systemPrompt: "You are helpful.",
+      piMessages: [{ role: "user", content: "hello" }],
+      tools: [],
+      streamOptions: {
+        reasoningEffort: "xhigh",
+      },
+    });
+    expect(xhighRequest.reasoning).toEqual({ effort: "high", summary: "auto" });
+
+    const noneRequest = openAiNativeInternal.buildOpenAiNativeRequest({
+      provider: "openai",
+      model,
+      systemPrompt: "You are helpful.",
+      piMessages: [{ role: "user", content: "hello" }],
+      tools: [],
+      streamOptions: {
+        reasoningEffort: "none",
+      },
+    });
+    expect(noneRequest.reasoning).toBeUndefined();
+  });
+
+  test("records and attaches usage to thrown error when turn fails mid-way", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "openai-runtime-failure-usage-"));
+    let stepCount = 0;
+    const runtime = createOpenAiResponsesRuntime({
+      runStepImpl: async () => {
+        stepCount += 1;
+        if (stepCount === 1) {
+          return {
+            assistant: {
+              role: "assistant",
+              content: [{ type: "toolCall", id: "call_1", name: "some_tool", arguments: {} }],
+              usage: {
+                input: 50,
+                output: 10,
+                totalTokens: 60,
+              },
+              stopReason: "toolUse",
+            },
+            responseId: "resp_step_1",
+          };
+        }
+        throw new Error("API call failed on step 2");
+      },
+    });
+
+    let thrownError: any = null;
+    try {
+      await runtime.runTurn(
+        makeParams(makeConfig(homeDir), {
+          maxSteps: 2,
+          tools: {
+            some_tool: {
+              execute: async () => "success",
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).not.toBeNull();
+    expect(thrownError.message).toContain("API call failed on step 2");
+    expect(thrownError.usage).toEqual({
+      promptTokens: 50,
+      completionTokens: 10,
+      totalTokens: 60,
+    });
   });
 });

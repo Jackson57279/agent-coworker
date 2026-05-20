@@ -1194,6 +1194,64 @@ describe("google interactions runtime", () => {
     expect((errorCaught as Error).message).toBe("API rate limit exceeded");
   });
 
+  test("records and attaches usage to thrown error when turn fails mid-way", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-failure-usage-"));
+    let stepCount = 0;
+    const runtime = createGoogleInteractionsRuntime({
+      runStepImpl: async () => {
+        stepCount += 1;
+        if (stepCount === 1) {
+          return {
+            assistant: {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "call_1",
+                  name: "some_tool",
+                  arguments: {},
+                },
+              ],
+              usage: {
+                input: 40,
+                output: 8,
+                totalTokens: 48,
+              },
+              stopReason: "tool_calls",
+              timestamp: Date.now(),
+            },
+            interactionId: "interaction_step_1",
+          };
+        }
+        throw new Error("Gemini interactions failed on step 2");
+      },
+    });
+
+    let thrownError: any = null;
+    try {
+      await runtime.runTurn(
+        makeParams(makeConfig(homeDir), {
+          maxSteps: 2,
+          tools: {
+            some_tool: {
+              execute: async () => "success",
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).not.toBeNull();
+    expect(thrownError.message).toContain("Gemini interactions failed on step 2");
+    expect(thrownError.usage).toEqual({
+      promptTokens: 40,
+      completionTokens: 8,
+      totalTokens: 48,
+    });
+  });
+
   test("runtime name is google-interactions", () => {
     const runtime = createGoogleInteractionsRuntime({
       runStepImpl: async () => ({

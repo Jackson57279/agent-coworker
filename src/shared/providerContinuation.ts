@@ -102,3 +102,30 @@ export function isCodexAppServerContinuationState(
 ): state is CodexAppServerContinuationState {
   return state?.provider === "codex-cli" && "threadId" in state;
 }
+
+export function stableFingerprintStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableFingerprintStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableFingerprintStringify(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function buildRequestFingerprint(input: {
+  modelId: string;
+  system: string;
+  tools: Array<Record<string, unknown>>;
+  streamOptions: Record<string, unknown>;
+}): string {
+  const { apiKey: _apiKey, signal: _signal, ...safeStreamOptions } = input.streamOptions;
+  return stableFingerprintStringify({
+    modelId: input.modelId,
+    system: input.system,
+    tools: input.tools,
+    streamOptions: safeStreamOptions,
+  });
+}

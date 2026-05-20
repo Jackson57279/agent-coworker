@@ -3225,6 +3225,71 @@ describe("AgentSession", () => {
       expect(busyFalseIdxAfter).toBeGreaterThan(busyTrueIdx);
     });
 
+    test("persists partial progress and messages when runTurn fails with responseMessages attached to the error", async () => {
+      const { session, events } = makeSession();
+
+      const partialMessages = [
+        { role: "assistant", content: [{ type: "text", text: "Working on it..." }] },
+      ];
+      mockRunTurn.mockImplementation(async () => {
+        const error = new Error("Mocked execution failure midway");
+        (error as any).responseMessages = partialMessages;
+        throw error;
+      });
+
+      await session.sendUserMessage("trigger error");
+
+      // Verify that the error event was emitted
+      const errorEvt = events.find((e) => e.type === "error") as any;
+      expect(errorEvt).toBeDefined();
+      expect(errorEvt.message).toContain("Mocked execution failure midway");
+
+      // Verify that the partial messages were appended to the history
+      const history = (session as any).state.allMessages;
+      expect(
+        history.some(
+          (m: any) => m.role === "assistant" && m.content[0]?.text === "Working on it...",
+        ),
+      ).toBe(true);
+    });
+
+    test("records provider failure usage once when runTurn throws with usage", async () => {
+      const { session, events } = makeSession();
+
+      mockRunTurn.mockImplementation(async () => {
+        const error = new Error("Provider failed after billing usage");
+        (error as any).usage = {
+          promptTokens: 12,
+          completionTokens: 6,
+          totalTokens: 18,
+        };
+        throw error;
+      });
+
+      await session.sendUserMessage("trigger billed error");
+
+      const usageEvents = events.filter((e) => e.type === "turn_usage") as Array<
+        Extract<SessionEvent, { type: "turn_usage" }>
+      >;
+      expect(usageEvents).toHaveLength(1);
+      expect(usageEvents[0]?.usage).toEqual({
+        promptTokens: 12,
+        completionTokens: 6,
+        totalTokens: 18,
+      });
+
+      const tracker = (session as any).state.costTracker as SessionCostTracker;
+      const compact = tracker.getCompactSnapshot();
+      expect(compact.totalPromptTokens).toBe(12);
+      expect(compact.totalCompletionTokens).toBe(6);
+      expect(compact.totalTokens).toBe(18);
+      expect(compact.turns[0]?.usage).toEqual({
+        promptTokens: 12,
+        completionTokens: 6,
+        totalTokens: 18,
+      });
+    });
+
     test("defers external skill refresh until the active turn completes", async () => {
       const loadSystemPromptWithSkillsImpl = mock(async () => ({
         prompt: "Refreshed system prompt",

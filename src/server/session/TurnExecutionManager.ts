@@ -714,7 +714,16 @@ export class TurnExecutionManager {
     let startedStepCount = 0;
     let streamPartIndex = 0;
     let rawStreamEventIndex = 0;
+    const usageAccountedErrors = new WeakSet<object>();
     const includeRawChunks = this.context.state.config.includeRawChunks ?? true;
+    const mergeUsageFromError = (source: unknown) => {
+      if (!source || typeof source !== "object") return;
+      const usage = (source as { usage?: TurnUsage }).usage;
+      if (!usage) return;
+      if (usageAccountedErrors.has(source)) return;
+      usageAccountedErrors.add(source);
+      aggregatedUsage = mergeTurnUsage(aggregatedUsage, usage);
+    };
     const persistAggregatedUsage = () => {
       if (persistedAggregatedUsage || !aggregatedUsage) {
         return;
@@ -1027,6 +1036,7 @@ export class TurnExecutionManager {
         try {
           res = await invokeRunTurn(remainingSteps);
         } catch (error) {
+          mergeUsageFromError(error);
           const shouldRetryContinuation =
             supportsProviderManagedContinuationProvider(this.context.state.config.provider) &&
             this.context.state.providerState !== null &&
@@ -1041,7 +1051,12 @@ export class TurnExecutionManager {
           );
           this.context.state.providerState = null;
           this.context.queuePersistSessionSnapshot("session.provider_state_invalidated");
-          res = await invokeRunTurn(remainingSteps, null);
+          try {
+            res = await invokeRunTurn(remainingSteps, null);
+          } catch (retryError) {
+            mergeUsageFromError(retryError);
+            throw retryError;
+          }
         }
 
         if (startedStepCount === startedStepsBeforePass) {
@@ -1126,6 +1141,27 @@ export class TurnExecutionManager {
         lastStreamError && this.context.formatError(err).includes("No output generated")
           ? lastStreamError
           : err;
+
+      // Extract partial progress if any occurred before failure
+      const errorObj =
+        actualErr && typeof actualErr === "object" && "responseMessages" in actualErr
+          ? actualErr
+          : err;
+      const partialMessages = (errorObj as any)?.responseMessages;
+      if (Array.isArray(partialMessages) && partialMessages.length > 0) {
+        this.deps.historyManager.appendMessagesToHistory(partialMessages);
+        this.context.queuePersistSessionSnapshot("session.turn_response");
+      }
+      mergeUsageFromError(errorObj);
+      if (errorObj !== err) mergeUsageFromError(err);
+      const partialProviderState = (errorObj as any)?.providerState;
+      if (
+        partialProviderState &&
+        supportsProviderManagedContinuationProvider(this.context.state.config.provider)
+      ) {
+        this.context.state.providerState = partialProviderState;
+      }
+
       const msg = this.context.formatError(actualErr);
       if (!this.isAbortLikeError(actualErr)) {
         this.context.state.currentTurnOutcome = "error";

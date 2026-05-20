@@ -1155,6 +1155,76 @@ describe("pi runtime regressions", () => {
     );
   });
 
+  test("pi runtime attaches partial responseMessages and usage to errors on failure midway through a turn", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-failure-midway-"));
+    let step = 0;
+    const runtime = createPiRuntime({
+      piStreamImpl: (() => ({
+        async *[Symbol.asyncIterator]() {
+          return;
+        },
+        async result() {
+          step += 1;
+          if (step === 1) {
+            return {
+              role: "assistant",
+              content: [{ type: "toolCall", id: "call_1", name: "tool", arguments: {} }],
+              usage: { input: 10, output: 5, totalTokens: 15 },
+              stopReason: "toolUse",
+            };
+          }
+          throw new Error("Simulated model error on second step");
+        },
+      })) as any,
+    });
+
+    let caughtError: any = null;
+    try {
+      await runtime.runTurn(
+        makeParams(
+          makeConfig(homeDir, {
+            provider: "opencode-zen",
+            model: "glm-5",
+            preferredChildModel: "glm-5",
+          }),
+          {
+            maxSteps: 3,
+            tools: {
+              tool: {
+                inputSchema: z.object({}),
+                execute: async () => "tool response",
+              },
+            },
+          },
+        ),
+      );
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).not.toBeNull();
+    expect(caughtError.message).toBe("Simulated model error on second step");
+    expect(caughtError.responseMessages).toHaveLength(2); // Assistant tool call + Tool response
+    expect(caughtError.responseMessages[0].role).toBe("assistant");
+    expect(caughtError.responseMessages[0].content).toEqual([
+      { type: "tool-call", toolCallId: "call_1", toolName: "tool", input: {} },
+    ]);
+    expect(caughtError.responseMessages[1].role).toBe("tool");
+    expect(caughtError.responseMessages[1].content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call_1",
+        toolName: "tool",
+        isError: false,
+        output: {
+          type: "text",
+          value: "tool response",
+        },
+      },
+    ]);
+    expect(caughtError.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
+  });
+
   test("executeToolCall leaves short tool output inline when under the overflow threshold", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-tool-inline-"));
     const emitted: Array<Record<string, unknown>> = [];

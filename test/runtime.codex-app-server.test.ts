@@ -166,6 +166,7 @@ function createMockClient(): CodexAppServerClient {
     turnId: string,
     text: string,
     extraItems: unknown[] = [],
+    options: { emitUsage?: boolean } = {},
   ) => {
     sendNotification({
       method: "item/started",
@@ -187,30 +188,32 @@ function createMockClient(): CodexAppServerClient {
         item: { type: "agentMessage", id: "item_1", text, phase: null, memoryCitation: null },
       },
     });
-    sendNotification({
-      method: "thread/tokenUsage/updated",
-      params: {
-        threadId,
-        turnId,
-        tokenUsage: {
-          total: {
-            totalTokens: 7,
-            inputTokens: 3,
-            cachedInputTokens: 0,
-            outputTokens: 4,
-            reasoningOutputTokens: 0,
+    if (options.emitUsage !== false) {
+      sendNotification({
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId,
+          turnId,
+          tokenUsage: {
+            total: {
+              totalTokens: 7,
+              inputTokens: 3,
+              cachedInputTokens: 0,
+              outputTokens: 4,
+              reasoningOutputTokens: 0,
+            },
+            last: {
+              totalTokens: 7,
+              inputTokens: 3,
+              cachedInputTokens: 0,
+              outputTokens: 4,
+              reasoningOutputTokens: 0,
+            },
+            modelContextWindow: 272000,
           },
-          last: {
-            totalTokens: 7,
-            inputTokens: 3,
-            cachedInputTokens: 0,
-            outputTokens: 4,
-            reasoningOutputTokens: 0,
-          },
-          modelContextWindow: 272000,
         },
-      },
-    });
+      });
+    }
     sendNotification({
       method: "turn/completed",
       params: {
@@ -300,6 +303,56 @@ function createMockClient(): CodexAppServerClient {
       const record = params as { threadId?: string };
       const threadId = record.threadId ?? "thread_1";
       const turnId = `turn_${nextTurnId++}`;
+      if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("early-token-usage-wrong")) {
+        sendNotification({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId,
+            turnId: "turn_from_another_request",
+            tokenUsage: {
+              total: {
+                totalTokens: 999,
+                inputTokens: 400,
+                cachedInputTokens: 0,
+                outputTokens: 599,
+                reasoningOutputTokens: 0,
+              },
+              last: {
+                totalTokens: 999,
+                inputTokens: 400,
+                cachedInputTokens: 0,
+                outputTokens: 599,
+                reasoningOutputTokens: 0,
+              },
+            },
+          },
+        });
+      }
+      if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("early-token-usage-matching")) {
+        sendNotification({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId,
+            turnId,
+            tokenUsage: {
+              total: {
+                totalTokens: 24,
+                inputTokens: 11,
+                cachedInputTokens: 1,
+                outputTokens: 13,
+                reasoningOutputTokens: 0,
+              },
+              last: {
+                totalTokens: 24,
+                inputTokens: 11,
+                cachedInputTokens: 1,
+                outputTokens: 13,
+                reasoningOutputTokens: 0,
+              },
+            },
+          },
+        });
+      }
       if (process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("cross-thread-title-leak")) {
         sendNotification({
           method: "item/agentMessage/delta",
@@ -397,6 +450,15 @@ function createMockClient(): CodexAppServerClient {
               },
             });
             sendNotification({
+              method: "item/fileChange/patchUpdated",
+              params: {
+                threadId: "thread_1",
+                turnId,
+                itemId: "file_change_1",
+                patch: "@@ -1 +1 @@\n-old\n+new\n",
+              },
+            });
+            sendNotification({
               method: "item/completed",
               params: {
                 threadId: "thread_1",
@@ -406,7 +468,7 @@ function createMockClient(): CodexAppServerClient {
                   id: "file_change_1",
                   cwd: "/workspace",
                   paths: ["src/example.ts"],
-                  summary: "Edited src/example.ts",
+                  changes: [{ path: "src/example.ts", kind: "modified" }],
                 },
               },
             });
@@ -417,6 +479,13 @@ function createMockClient(): CodexAppServerClient {
             process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("model-gated")
               ? "fallback ok"
               : "hello from app-server",
+            [],
+            {
+              emitUsage: !(
+                process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("early-token-usage-wrong") ||
+                process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("early-token-usage-matching")
+              ),
+            },
           );
         });
       }
@@ -723,6 +792,58 @@ describe("codex app-server runtime", () => {
     expect(requests.find((entry) => entry.method === "thread/start")?.params.config).toEqual({
       web_search: "cached",
     });
+  });
+
+  test.serial("normalizes Codex reasoning effort sentinels before turn/start", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-effort-"));
+    const capturePath = path.join(dir, "requests.jsonl");
+    process.env.CODEX_APP_SERVER_CAPTURE_PATH = capturePath;
+
+    const highConfig = {
+      ...makeConfig(dir),
+      providerOptions: {
+        "codex-cli": {
+          reasoningEffort: "xhigh",
+        },
+      },
+    };
+    const runtime = createRuntime(highConfig);
+    await runtime.runTurn({
+      config: highConfig,
+      providerOptions: highConfig.providerOptions,
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    const xhighRequests = await readCapturedRequests(capturePath);
+    expect(xhighRequests.find((entry) => entry.method === "turn/start")?.params.effort).toBe(
+      "high",
+    );
+
+    await fs.writeFile(capturePath, "", "utf-8");
+    const noneConfig = {
+      ...makeConfig(dir),
+      providerOptions: {
+        "codex-cli": {
+          reasoningEffort: "none",
+        },
+      },
+    };
+    await runtime.runTurn({
+      config: noneConfig,
+      providerOptions: noneConfig.providerOptions,
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    const noneRequests = await readCapturedRequests(capturePath);
+    expect(noneRequests.find((entry) => entry.method === "turn/start")?.params).not.toHaveProperty(
+      "effort",
+    );
   });
 
   test.serial(
@@ -1311,6 +1432,58 @@ rl.on("line", (line) => {
         output: expect.stringContaining("--- a/src/example.ts"),
       }),
     );
+    expect(streamParts).toContainEqual(
+      expect.objectContaining({
+        type: "tool-result",
+        toolName: "fileChange",
+        output: expect.stringContaining("@@ -1 +1 @@"),
+      }),
+    );
+    expect(streamParts).toContainEqual(
+      expect.objectContaining({
+        type: "tool-result",
+        toolName: "fileChange",
+        output: [{ path: "src/example.ts", kind: "modified" }],
+      }),
+    );
     expect(prompts).toEqual([{ question: "Need detail?", options: ["yes"] }]);
+  });
+
+  test.serial("ignores early token usage for a different turn id", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-wrong-usage-"));
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = "early-token-usage-wrong";
+    const runtime = createRuntime(makeConfig(dir));
+
+    const result = await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    expect(result.text).toBe("hello from app-server");
+    expect(result.usage).toBeUndefined();
+  });
+
+  test.serial("keeps early token usage when its turn id later matches", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-matching-usage-"));
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = "early-token-usage-matching";
+    const runtime = createRuntime(makeConfig(dir));
+
+    const result = await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    expect(result.usage).toEqual({
+      promptTokens: 11,
+      completionTokens: 13,
+      totalTokens: 24,
+      cachedPromptTokens: 1,
+    });
   });
 });

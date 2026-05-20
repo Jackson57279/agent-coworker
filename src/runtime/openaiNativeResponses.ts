@@ -100,6 +100,29 @@ function maybeBuildReasoningPayload(
   };
 }
 
+function normalizeOpenAiReasoningEffort(value: unknown): string | undefined {
+  const normalized = asNonEmptyString(value)?.toLowerCase();
+  if (!normalized || normalized === "none") return undefined;
+  if (normalized === "xhigh") return "high";
+  return ["minimal", "low", "medium", "high"].includes(normalized) ? normalized : undefined;
+}
+
+function openAiNativeErrorPayload(error: unknown): Record<string, unknown> {
+  const record = asRecord(error);
+  const code = asNonEmptyString(record?.code);
+  const status = asNonEmptyString(record?.status);
+  const failureType = asNonEmptyString(record?.failureType) ?? asNonEmptyString(record?.type);
+  const param = asNonEmptyString(record?.param);
+  return {
+    errorMessage: error instanceof Error ? error.message : String(error),
+    ...(code ? { code } : {}),
+    ...(status ? { status } : {}),
+    ...(failureType ? { type: failureType } : {}),
+    ...(param ? { param } : {}),
+    ...(record && "response" in record ? { response: record.response } : {}),
+  };
+}
+
 function convertPiMessagesToResponsesInput(
   model: PiModel,
   piMessages: Array<Record<string, unknown>>,
@@ -200,7 +223,7 @@ export function buildOpenAiNativeRequest(opts: OpenAiNativeStepRequest): Record<
     request.temperature = temperature;
   }
 
-  const reasoningEffort = asNonEmptyString(opts.streamOptions.reasoningEffort);
+  const reasoningEffort = normalizeOpenAiReasoningEffort(opts.streamOptions.reasoningEffort);
   const reasoningSummary = asNonEmptyString(opts.streamOptions.reasoningSummary);
   const reasoning = maybeBuildReasoningPayload(
     reasoningEffort,
@@ -331,9 +354,7 @@ export const runOpenAiNativeResponseStep: RunOpenAiNativeResponseStep = async (
     await pendingEventDelivery;
     await emitOpenAiNativeEvent(opts, {
       type: "error",
-      error: {
-        errorMessage: error instanceof Error ? error.message : String(error),
-      },
+      error: openAiNativeErrorPayload(error),
     });
     throw error;
   }
@@ -344,6 +365,7 @@ export const __internal = {
   convertPiMessagesToResponsesInput,
   convertPiToolsToResponsesTools,
   mergeUniqueStrings,
+  normalizeOpenAiReasoningEffort,
   normalizeAllowedDomains,
   normalizeWebSearchLocation,
 } as const;
