@@ -147,7 +147,7 @@ async function main() {
     import("./startServer"),
   ]);
 
-  const { server, mobileServer, config, url } = await startAgentServer({
+  const { server, mobileServer, config, url, browserAccessToken } = await startAgentServer({
     cwd,
     hostname: host,
     port,
@@ -200,6 +200,7 @@ async function main() {
         hostHints,
         port: server.port,
         cwd: config.workingDirectory,
+        browserAccessToken: browserAccessToken ?? null,
         mobileH3: mobileServer
           ? {
               url: mobileServer.url,

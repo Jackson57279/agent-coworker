@@ -164,7 +164,9 @@ export async function maybeSpillToolOutputToWorkspace(opts: {
   const filePath = path.join(scratchDir, fileName);
 
   try {
+    await assertScratchpadDirectorySafe(scratchDir);
     await fs.mkdir(scratchDir, { recursive: true, mode: PRIVATE_SCRATCHPAD_DIR_MODE });
+    await assertScratchpadDirectorySafe(scratchDir);
     await fs.chmod(scratchDir, PRIVATE_SCRATCHPAD_DIR_MODE).catch(() => {});
     await fs.writeFile(filePath, spillText, {
       encoding: "utf-8",
@@ -202,4 +204,26 @@ export async function maybeSpillToolOutputToWorkspace(opts: {
       preview,
     },
   };
+}
+
+async function assertScratchpadDirectorySafe(scratchDir: string): Promise<void> {
+  try {
+    const stat = await fs.lstat(scratchDir);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`${MODEL_SCRATCHPAD_DIRNAME} must not be a symbolic link`);
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`${MODEL_SCRATCHPAD_DIRNAME} exists but is not a directory`);
+    }
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT"
+    ) {
+      return;
+    }
+    throw error;
+  }
 }

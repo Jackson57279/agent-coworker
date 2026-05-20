@@ -305,7 +305,7 @@ async function normalizeState(raw: unknown): Promise<DesktopPersistedState> {
       wsProtocol: "jsonrpc",
       defaultEnableMcp: asBoolean(item.defaultEnableMcp, true),
       defaultBackupsEnabled: asBoolean(item.defaultBackupsEnabled, false),
-      yolo: asBoolean(item.yolo, false),
+      yolo: false,
     });
     seenWorkspaceIds.add(id);
   }
@@ -826,7 +826,10 @@ export class WebDesktopService implements WebDesktopServiceLike {
     workspacePath: string;
     yolo: boolean;
   }): Promise<{ url: string }> {
-    return await this.serverManager.startWorkspaceServer(opts);
+    return await this.serverManager.startWorkspaceServer({
+      ...opts,
+      yolo: false,
+    });
   }
 
   async stopWorkspaceServer(workspaceId: string): Promise<void> {

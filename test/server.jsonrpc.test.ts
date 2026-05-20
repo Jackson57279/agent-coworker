@@ -103,7 +103,7 @@ async function requestRawWebSocketUpgrade(url: string, origin: string): Promise<
     const socket = net.connect(Number(parsed.port), parsed.hostname, () => {
       socket.write(
         [
-          `GET ${parsed.pathname} HTTP/1.1`,
+          `GET ${parsed.pathname}${parsed.search} HTTP/1.1`,
           `Host: ${parsed.host}`,
           "Upgrade: websocket",
           "Connection: Upgrade",
@@ -141,6 +141,77 @@ describe("server JSON-RPC websocket mode", () => {
       const response = await requestRawWebSocketUpgrade(url, "https://evil.example");
       expect(response).toStartWith("HTTP/1.1 403");
       expect(response).toContain("Forbidden origin");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("requires the browser access token for loopback-origin websocket upgrades", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url, browserAccessToken } = await startAgentServer(
+      serverOpts(tmpDir, {
+        env: {
+          COWORK_WEB_DESKTOP_SERVICE: "1",
+        },
+      }),
+    );
+
+    try {
+      expect(typeof browserAccessToken).toBe("string");
+      const unauthorized = await requestRawWebSocketUpgrade(url, "http://localhost:5173");
+      expect(unauthorized).toStartWith("HTTP/1.1 401");
+      expect(unauthorized).toContain("Unauthorized browser access");
+
+      const authorized = await requestRawWebSocketUpgrade(
+        `${url}?coworkBrowserToken=${encodeURIComponent(browserAccessToken ?? "")}`,
+        "http://localhost:5173",
+      );
+      expect(authorized).toStartWith("HTTP/1.1 101");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("allows browser preflight but protects cowork HTTP routes with the browser token", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, browserAccessToken } = await startAgentServer(
+      serverOpts(tmpDir, {
+        env: {
+          COWORK_WEB_DESKTOP_SERVICE: "1",
+        },
+      }),
+    );
+    const httpBase = `http://127.0.0.1:${server.port}`;
+
+    try {
+      expect(typeof browserAccessToken).toBe("string");
+      const preflight = await fetch(`${httpBase}/cowork/workspaces`, {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://localhost:5173",
+          "Access-Control-Request-Headers": "X-Cowork-Browser-Token",
+        },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-headers")).toContain(
+        "X-Cowork-Browser-Token",
+      );
+
+      const unauthorized = await fetch(`${httpBase}/cowork/workspaces`, {
+        headers: { Origin: "http://localhost:5173" },
+      });
+      expect(unauthorized.status).toBe(401);
+
+      const authorized = await fetch(`${httpBase}/cowork/workspaces`, {
+        headers: {
+          Origin: "http://localhost:5173",
+          "X-Cowork-Browser-Token": browserAccessToken ?? "",
+        },
+      });
+      expect(authorized.status).toBe(200);
+      await expect(authorized.json()).resolves.toEqual({
+        workspaces: [{ name: path.basename(tmpDir), path: await fs.realpath(tmpDir) }],
+      });
     } finally {
       await stopTestServer(server);
     }
@@ -392,6 +463,8 @@ describe("server JSON-RPC websocket mode", () => {
     const chatB = path.join(tmpDir, ".cowork", "chats", "20260516-chat-b");
     await fs.mkdir(chatA, { recursive: true });
     await fs.mkdir(chatB, { recursive: true });
+    const realChatA = await fs.realpath(chatA);
+    const realChatB = await fs.realpath(chatB);
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
     try {
@@ -426,8 +499,8 @@ describe("server JSON-RPC websocket mode", () => {
       expect(listedB.result.threads.map((thread: { id: string }) => thread.id)).toEqual([
         startedB.result.thread.id,
       ]);
-      expect(startedA.result.thread.cwd).toBe(chatA);
-      expect(startedB.result.thread.cwd).toBe(chatB);
+      expect(startedA.result.thread.cwd).toBe(realChatA);
+      expect(startedB.result.thread.cwd).toBe(realChatB);
       ws.close();
     } finally {
       await stopTestServer(server);

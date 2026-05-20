@@ -1075,7 +1075,7 @@ describe("runTurn", () => {
     expect(callArg.tools).toHaveProperty("mcp__s__doThing");
   });
 
-  test("read-only child roles only receive read-only MCP tools", async () => {
+  test("read-only child roles do not receive MCP tools", async () => {
     mockCreateTools.mockReturnValue({
       read: { type: "builtin-read" },
       write: { type: "builtin-write" },
@@ -1096,7 +1096,6 @@ describe("runTurn", () => {
     const callArg = mockStreamText.mock.calls[0][0] as any;
     expect(callArg.tools).toEqual({
       read: { type: "builtin-read" },
-      mcp__s__search: { type: "mcp-read", annotations: { readOnlyHint: true } },
     });
   });
 

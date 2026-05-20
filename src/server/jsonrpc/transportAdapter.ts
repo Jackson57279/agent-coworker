@@ -353,6 +353,7 @@ export function createJsonRpcTransportAdapter({
     dispatchJsonRpcMessage({
       ws,
       message,
+      transportType: ws.data.protocolMode === "h3" ? "h3" : "websocket",
       send: sendJsonRpc,
       onRequest: (request) => {
         if (ws.data.rpc) {

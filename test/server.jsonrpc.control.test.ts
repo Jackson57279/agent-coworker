@@ -598,6 +598,7 @@ describe("server JSON-RPC control methods", () => {
 
   test("shared skill installs notify subscribed control clients with refreshed catalog state", async () => {
     const tmpDir = await makeTmpProject("agent-harness-plugin-notify-");
+    const realTmpDir = await fs.realpath(tmpDir);
     const sourceRoot = `${tmpDir}/skill-source/example-skill`;
     await fs.mkdir(sourceRoot, { recursive: true });
     await fs.writeFile(
@@ -638,7 +639,7 @@ describe("server JSON-RPC control methods", () => {
         (message) =>
           message.method === "cowork/control/event" && message.params?.type === "skills_catalog",
       );
-      expect(notification.params.cwd).toBe(tmpDir);
+      expect(notification.params.cwd).toBe(realTmpDir);
       expect(notification.params.catalog.installations).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -657,6 +658,7 @@ describe("server JSON-RPC control methods", () => {
 
   test("session state read returns the workspace control config bundle", async () => {
     const tmpDir = await makeTmpProject();
+    const realTmpDir = await fs.realpath(tmpDir);
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
     try {
@@ -674,7 +676,7 @@ describe("server JSON-RPC control methods", () => {
       const sessionSettings = response.result.events[1];
       const sessionConfig = response.result.events[2];
       expect(configUpdated.config.provider).toBe("google");
-      expect(configUpdated.config.workingDirectory).toBe(tmpDir);
+      expect(configUpdated.config.workingDirectory).toBe(realTmpDir);
       expect(sessionSettings.enableMcp).toBe(true);
       expect(sessionConfig.config.defaultBackupsEnabled).toBe(false);
       rpc.close();
@@ -686,6 +688,7 @@ describe("server JSON-RPC control methods", () => {
   test("workspace control reads and persists the target workspace config", async () => {
     const serverRoot = await makeTmpProject("agent-harness-server-config-");
     const targetWorkspace = await makeTmpProject("agent-harness-target-config-");
+    const realTargetWorkspace = await fs.realpath(targetWorkspace);
     await fs.writeFile(
       `${targetWorkspace}/.cowork/config.json`,
       `${JSON.stringify(
@@ -718,7 +721,7 @@ describe("server JSON-RPC control methods", () => {
 
       expect(stateResponse.result.events[0]?.config?.provider).toBe("openai");
       expect(stateResponse.result.events[0]?.config?.model).toBe("gpt-5.4");
-      expect(stateResponse.result.events[0]?.config?.workingDirectory).toBe(targetWorkspace);
+      expect(stateResponse.result.events[0]?.config?.workingDirectory).toBe(realTargetWorkspace);
       expect(stateResponse.result.events[1]?.enableMcp).toBe(false);
       expect(stateResponse.result.events[2]?.config?.enableA2ui).toBeUndefined();
       expect(stateResponse.result.events[2]?.config?.enableMemory).toBe(false);
@@ -807,6 +810,8 @@ describe("server JSON-RPC control methods", () => {
   test("shared control notifications include the workspace cwd for sockets subscribed to multiple workspaces", async () => {
     const workspaceA = await makeTmpProject("agent-harness-plugin-notify-a-");
     const workspaceB = await makeTmpProject("agent-harness-plugin-notify-b-");
+    const realWorkspaceA = await fs.realpath(workspaceA);
+    const realWorkspaceB = await fs.realpath(workspaceB);
     const sourceRoot = `${workspaceB}/skill-source/example-skill`;
     await fs.mkdir(sourceRoot, { recursive: true });
     await fs.writeFile(
@@ -845,16 +850,16 @@ describe("server JSON-RPC control methods", () => {
         (message) =>
           message.method === "cowork/control/event" &&
           message.params?.type === "skills_catalog" &&
-          message.params?.cwd === workspaceB,
+          message.params?.cwd === realWorkspaceB,
       );
-      expect(workspaceBNotification.params.cwd).toBe(workspaceB);
+      expect(workspaceBNotification.params.cwd).toBe(realWorkspaceB);
 
       await expect(
         subscriber.waitFor(
           (message) =>
             message.method === "cowork/control/event" &&
             message.params?.type === "skills_catalog" &&
-            message.params?.cwd === workspaceA,
+            message.params?.cwd === realWorkspaceA,
           200,
         ),
       ).rejects.toThrow("Timed out waiting for JSON-RPC message");
@@ -921,6 +926,7 @@ describe("server JSON-RPC control methods", () => {
 
   test("session state read defaults omitted cwd to the server working directory", async () => {
     const tmpDir = await makeTmpProject();
+    const realTmpDir = await fs.realpath(tmpDir);
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
     try {
@@ -932,7 +938,7 @@ describe("server JSON-RPC control methods", () => {
         "session_settings",
         "session_config",
       ]);
-      expect(response.result.events[0]?.config?.workingDirectory).toBe(tmpDir);
+      expect(response.result.events[0]?.config?.workingDirectory).toBe(realTmpDir);
       rpc.close();
     } finally {
       await stopTestServer(server);
@@ -1055,6 +1061,7 @@ describe("server JSON-RPC control methods", () => {
 
   test("workspace backups read returns a session-event workspace_backups event payload", async () => {
     const tmpDir = await makeTmpProject();
+    const realTmpDir = await fs.realpath(tmpDir);
     await enableProjectBackups(tmpDir);
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
@@ -1065,7 +1072,7 @@ describe("server JSON-RPC control methods", () => {
       });
 
       expect(response.result.event.type).toBe("workspace_backups");
-      expect(response.result.event.workspacePath).toBe(tmpDir);
+      expect(response.result.event.workspacePath).toBe(realTmpDir);
       expect(Array.isArray(response.result.event.backups)).toBe(true);
       rpc.close();
     } finally {
@@ -1321,6 +1328,7 @@ describe("server JSON-RPC control methods", () => {
         homedir: tmpDir,
       }),
     );
+    let secondaryStopped = false;
 
     try {
       const rpc = await connectJsonRpc(primary.url);
@@ -1331,6 +1339,9 @@ describe("server JSON-RPC control methods", () => {
         threadId: otherThreadId,
         title: "Other workspace",
       });
+      otherRpc.close();
+      await stopTestServer(secondary.server);
+      secondaryStopped = true;
 
       const response = await rpc.request("cowork/session/delete", {
         cwd: tmpDir,
@@ -1339,14 +1350,20 @@ describe("server JSON-RPC control methods", () => {
 
       expect(response.error.message).toContain("outside the active workspace");
       expect(response.result).toBeUndefined();
-      const otherRead = await otherRpc.request("thread/read", {
-        threadId: otherThreadId,
-      });
-      expect(otherRead.result.thread.id).toBe(otherThreadId);
+      const db = new Database(path.join(tmpDir, ".cowork", "sessions.db"));
+      try {
+        const preserved = db
+          .query("select count(*) as count from sessions where session_id = ?")
+          .get(otherThreadId) as { count: number };
+        expect(preserved.count).toBe(1);
+      } finally {
+        db.close();
+      }
       rpc.close();
-      otherRpc.close();
     } finally {
-      await stopTestServer(secondary.server);
+      if (!secondaryStopped) {
+        await stopTestServer(secondary.server);
+      }
       await stopTestServer(primary.server);
     }
   });

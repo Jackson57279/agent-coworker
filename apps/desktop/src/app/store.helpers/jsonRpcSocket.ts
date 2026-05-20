@@ -3,6 +3,7 @@ import type {
   SpreadsheetPreviewViewportRequest,
 } from "../../../../../src/shared/spreadsheetPreview";
 import { JsonRpcSocket } from "../../lib/agentSocket";
+import { withBrowserAccessToken } from "../../lib/webAdapter";
 import type { StoreGet, StoreSet } from "../store.helpers";
 import type { ThreadRuntime, WorkspaceRecord } from "../types";
 import { JSONRPC_SOCKET_OVERRIDE_KEY } from "./jsonRpcSocketOverride";
@@ -246,7 +247,7 @@ export function ensureWorkspaceJsonRpcSocket(
 
   const JsonRpcSocketImpl = resolveJsonRpcSocketImpl();
   const socket = new JsonRpcSocketImpl({
-    url,
+    url: withBrowserAccessToken(url),
     clientInfo: {
       name: "cowork-desktop",
       title: "Cowork Desktop",

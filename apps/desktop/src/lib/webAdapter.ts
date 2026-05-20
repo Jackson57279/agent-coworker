@@ -40,6 +40,13 @@ function getInjectedWebServerUrl(): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function getInjectedBrowserAccessToken(): string | null {
+  const value = (
+    globalThis as typeof globalThis & { __COWORK_BROWSER_ACCESS_TOKEN__?: unknown }
+  ).__COWORK_BROWSER_ACCESS_TOKEN__;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function isCurrentPageWsOrigin(parsed: URL): boolean {
   if (typeof window === "undefined" || !window.location) {
     return false;
@@ -110,6 +117,18 @@ function getHttpBaseUrl(): string {
   return toHttpBaseUrl(getServerUrl());
 }
 
+export function withBrowserAccessToken(serverUrl: string): string {
+  const token = getInjectedBrowserAccessToken();
+  if (!token) return serverUrl;
+  try {
+    const parsed = new URL(serverUrl);
+    parsed.searchParams.set("coworkBrowserToken", token);
+    return parsed.toString();
+  } catch {
+    return serverUrl;
+  }
+}
+
 function getWorkspacePath(): string {
   // Fallback is intentionally empty. In the browser there is no cwd to fall back to — we rely on
   // the server telling us its cwd via /cowork/workspaces when no explicit path is supplied.
@@ -128,11 +147,18 @@ function buildWebRouteUrl(
   return url.toString();
 }
 
+export function browserAccessHeaders(): Record<string, string> {
+  const token = getInjectedBrowserAccessToken();
+  return token ? { "X-Cowork-Browser-Token": token } : {};
+}
+
 async function readWebJson<T>(
   pathname: string,
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
-  const response = await fetch(buildWebRouteUrl(pathname, params));
+  const response = await fetch(buildWebRouteUrl(pathname, params), {
+    headers: browserAccessHeaders(),
+  });
   if (!response.ok) {
     throw new Error((await response.text()) || `Request failed (${response.status})`);
   }
@@ -143,7 +169,9 @@ async function maybeReadWebJson<T>(
   pathname: string,
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T | null> {
-  const response = await fetch(buildWebRouteUrl(pathname, params));
+  const response = await fetch(buildWebRouteUrl(pathname, params), {
+    headers: browserAccessHeaders(),
+  });
   if (response.status === 404) {
     return null;
   }
@@ -157,6 +185,7 @@ async function postWebJson<T>(pathname: string, body: Record<string, unknown>): 
   const response = await fetch(buildWebRouteUrl(pathname), {
     method: "POST",
     headers: {
+      ...browserAccessHeaders(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -178,6 +207,7 @@ async function maybePostWebJson<T>(
   const response = await fetch(buildWebRouteUrl(pathname), {
     method: "POST",
     headers: {
+      ...browserAccessHeaders(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -201,6 +231,7 @@ async function maybeDeleteWeb(
 ): Promise<boolean> {
   const response = await fetch(buildWebRouteUrl(pathname, params), {
     method: "DELETE",
+    headers: browserAccessHeaders(),
   });
   if (response.status === 404) {
     return false;
@@ -215,7 +246,9 @@ async function readWebBytes(
   pathname: string,
   params: Record<string, string | number | boolean | undefined>,
 ): Promise<ReadFileForPreviewOutput> {
-  const response = await fetch(buildWebRouteUrl(pathname, params));
+  const response = await fetch(buildWebRouteUrl(pathname, params), {
+    headers: browserAccessHeaders(),
+  });
   if (!response.ok) {
     throw new Error((await response.text()) || `Request failed (${response.status})`);
   }

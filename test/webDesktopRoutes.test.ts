@@ -227,6 +227,40 @@ describe("web desktop routes", () => {
     expect(kills).toEqual(["child-1"]);
   });
 
+  test("web desktop service never forwards yolo workspace launches", async () => {
+    const userDataDir = await makeTempDir("cowork-web-desktop-yolo-userdata-");
+    const workspace = await makeTempDir("cowork-web-desktop-yolo-workspace-");
+    const starts: Array<{ workspacePath: string; yolo: boolean }> = [];
+    const manager = {
+      startWorkspaceServer: async (opts: {
+        workspaceId: string;
+        workspacePath: string;
+        yolo: boolean;
+      }) => {
+        starts.push({ workspacePath: opts.workspacePath, yolo: opts.yolo });
+        return { url: "ws://mock" };
+      },
+      stopWorkspaceServer: async () => {},
+      stopAll: async () => {},
+    };
+    const service = new WebDesktopService({
+      userDataDir,
+      serverManager: manager as unknown as InstanceType<
+        typeof __internal.SourceWorkspaceServerManager
+      >,
+    });
+
+    await expect(
+      service.startWorkspaceServer({
+        workspaceId: "ws1",
+        workspacePath: workspace,
+        yolo: true,
+      }),
+    ).resolves.toEqual({ url: "ws://mock" });
+
+    expect(starts).toEqual([{ workspacePath: workspace, yolo: false }]);
+  });
+
   test("serves active-content files as attachments while keeping plain text inline", async () => {
     const workspace = await makeTempDir("cowork-web-desktop-open-");
     const htmlPath = path.join(workspace, "preview.html");

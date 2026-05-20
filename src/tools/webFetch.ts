@@ -738,6 +738,9 @@ export function createWebFetchTool(ctx: ToolContext) {
       );
 
       if (contentKind.kind === "download") {
+        if (ctx.shellPolicy === "no_project_write") {
+          throw new Error("webFetch downloads are disabled for read-only roles");
+        }
         const downloadDir = resolveMaybeRelative("Downloads", ctx.config.workingDirectory);
         const targetPath = path.join(downloadDir, contentKind.fileName);
         const allowedTargetPath = await assertWritePathAllowed(targetPath, ctx.config, "write");

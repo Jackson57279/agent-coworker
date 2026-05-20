@@ -34,6 +34,13 @@ function hasUntrustedBrowserOrigin(req: Request): boolean {
   return Boolean(origin && !pickLoopbackOrigin(origin));
 }
 
+function readBrowserAccessToken(url: URL, req: Request): string | null {
+  const headerToken = req.headers.get("x-cowork-browser-token")?.trim();
+  if (headerToken) return headerToken;
+  const queryToken = url.searchParams.get("coworkBrowserToken")?.trim();
+  return queryToken || null;
+}
+
 function parseBearerToken(header: string | null): string | null {
   if (!header) return null;
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
@@ -50,6 +57,7 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
     : never;
   system: string;
   url: string;
+  browserAccessToken?: string;
 }> {
   const hostname = opts.hostname ?? "127.0.0.1";
   const runtime = await createAgentServerRuntime(opts);
@@ -58,6 +66,9 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
     runtime.env.COWORK_WEB_DESKTOP_SERVICE === "1"
       ? new WebDesktopService({ homedir: opts.homedir })
       : null;
+  const browserAccessToken =
+    runtime.env.COWORK_BROWSER_ACCESS_TOKEN?.trim() ||
+    (webDesktopService ? crypto.randomUUID() + crypto.randomUUID().replaceAll("-", "") : "");
   let mobileServer: Awaited<ReturnType<typeof startH3MobileServer>> | undefined;
 
   const createServer = (port: number): ReturnType<typeof Bun.serve> =>
@@ -73,6 +84,7 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
               Vary: "Origin",
             }
           : {};
+        const browserOrigin = req.headers.get("origin");
         if (hasUntrustedBrowserOrigin(req)) {
           return new Response("Forbidden origin", { status: 403, headers: corsHeaders });
         }
@@ -82,9 +94,31 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
             headers: {
               ...corsHeaders,
               "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type, Sec-WebSocket-Protocol",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Sec-WebSocket-Protocol, X-Cowork-Browser-Token",
               "Access-Control-Max-Age": "86400",
             },
+          });
+        }
+        if (
+          browserOrigin &&
+          !browserAccessToken &&
+          (url.pathname === "/ws" || url.pathname.startsWith("/cowork"))
+        ) {
+          return new Response("Browser access is not enabled for this server", {
+            status: 403,
+            headers: corsHeaders,
+          });
+        }
+        if (
+          browserOrigin &&
+          browserAccessToken &&
+          (url.pathname === "/ws" || url.pathname.startsWith("/cowork")) &&
+          readBrowserAccessToken(url, req) !== browserAccessToken
+        ) {
+          return new Response("Unauthorized browser access", {
+            status: 401,
+            headers: corsHeaders,
           });
         }
         if (url.pathname === "/ws") {
@@ -247,5 +281,6 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
     config: runtime.config,
     system: runtime.system,
     url,
+    ...(browserAccessToken ? { browserAccessToken } : {}),
   };
 }

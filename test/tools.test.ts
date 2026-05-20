@@ -1111,6 +1111,28 @@ describe("grep tool", () => {
     expect(res).toContain("haystack.txt");
   });
 
+  test("does not auto-download ripgrep for no-write roles", async () => {
+    const dir = await tmpDir();
+    await fs.writeFile(path.join(dir, "haystack.txt"), "needle\n", "utf-8");
+    const calls: unknown[] = [];
+    const t: any = createGrepTool(makeCtx(dir, { shellPolicy: "no_project_write" }), {
+      execFileImpl: fakeExecFile,
+      ensureRipgrepImpl: async (opts: unknown) => {
+        calls.push(opts);
+        return "rg";
+      },
+    });
+
+    const res: string = await t.execute({
+      pattern: "needle",
+      path: dir,
+      caseSensitive: true,
+    });
+
+    expect(res).toContain("needle");
+    expect(calls).toEqual([expect.objectContaining({ disableDownload: true })]);
+  });
+
   test("rejects grep path outside allowed directories", async () => {
     const dir = await tmpDir();
     const outsideDir = await tmpDir();
@@ -2256,6 +2278,32 @@ describe("webFetch tool", () => {
 
       expect(out).toBe(`File downloaded ${downloadedPath}`);
       expect(await fs.readFile(downloadedPath)).toEqual(pdfBytes);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("blocks downloads for no-write roles", async () => {
+    const dir = await tmpDir();
+    const pdfBytes = Buffer.from("%PDF-1.7\nfake\n");
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => {
+      return createStreamingResponse(pdfBytes, {
+        status: 200,
+        headers: { "Content-Type": "application/pdf" },
+      });
+    }) as any;
+
+    try {
+      const t: any = createWebFetchTool(makeCtx(dir, { shellPolicy: "no_project_write" }));
+      await expect(
+        t.execute({
+          url: "https://example.com/reports/q1-summary.pdf",
+          maxLength: 50000,
+        }),
+      ).rejects.toThrow("webFetch downloads are disabled for read-only roles");
+      await expect(fs.readdir(path.join(dir, "Downloads"))).rejects.toThrow();
     } finally {
       globalThis.fetch = originalFetch;
     }

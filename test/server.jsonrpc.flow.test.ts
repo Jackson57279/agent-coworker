@@ -155,6 +155,7 @@ describe("server JSON-RPC flows", () => {
 
   test("thread/list defaults omitted cwd to the server working directory", async () => {
     const tmpDir = await makeTmpProject();
+    const realTmpDir = await fs.realpath(tmpDir);
     const otherTmpDir = await makeTmpProject("agent-harness-other-");
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
@@ -163,17 +164,17 @@ describe("server JSON-RPC flows", () => {
       const localThread = await rpc.sendRequest("thread/start", { cwd: tmpDir });
       await rpc.waitFor((message) => message.method === "thread/started");
       const otherThread = await rpc.sendRequest("thread/start", { cwd: otherTmpDir });
-      await rpc.waitFor((message) => message.method === "thread/started");
+      expect(otherThread.error?.message).toContain(
+        "thread/start cwd must match the server workspace",
+      );
+      expect(otherThread.result).toBeUndefined();
 
       const listed = await rpc.sendRequest("thread/list", {});
 
       expect(listed.result.threads.map((thread: any) => thread.id)).toContain(
         localThread.result.thread.id,
       );
-      expect(listed.result.threads.map((thread: any) => thread.id)).not.toContain(
-        otherThread.result.thread.id,
-      );
-      expect(listed.result.threads.every((thread: any) => thread.cwd === tmpDir)).toBe(true);
+      expect(listed.result.threads.every((thread: any) => thread.cwd === realTmpDir)).toBe(true);
       rpc.close();
     } finally {
       await stopTestServer(server);
@@ -895,6 +896,7 @@ describe("server JSON-RPC flows", () => {
 
   test("turn/start preserves ordered mixed text and file input parts", async () => {
     const tmpDir = await makeTmpProject();
+    const realTmpDir = await fs.realpath(tmpDir);
     let capturedMessages: any[] = [];
     const { server, url } = await startAgentServer(
       serverOpts(tmpDir, {
@@ -929,13 +931,13 @@ describe("server JSON-RPC flows", () => {
         { type: "text", text: "first caption" },
         {
           type: "text",
-          text: `[System: The user uploaded a file which has been saved to ${path.join(tmpDir, "User Uploads", "one.png")}]`,
+          text: `[System: The user uploaded a file which has been saved to ${path.join(realTmpDir, "User Uploads", "one.png")}]`,
         },
         { type: "image", data: "b25l", mimeType: "image/png" },
         { type: "text", text: "second caption" },
         {
           type: "text",
-          text: `[System: The user uploaded a file which has been saved to ${path.join(tmpDir, "User Uploads", "two.png")}]`,
+          text: `[System: The user uploaded a file which has been saved to ${path.join(realTmpDir, "User Uploads", "two.png")}]`,
         },
         { type: "image", data: "dHdv", mimeType: "image/png" },
       ]);
