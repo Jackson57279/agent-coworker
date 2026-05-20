@@ -486,6 +486,102 @@ describe("desktop workspaces page", () => {
     }
   });
 
+  test("renders project workspace defaults when a hidden one-off chat is selected", async () => {
+    useAppStore.setState((state) => ({
+      ...state,
+      perWorkspaceSettings: false,
+      workspaces: [
+        {
+          id: "project-1",
+          name: "Project workspace",
+          path: "/tmp/project-workspace",
+          workspaceKind: "project",
+          createdAt: "2026-05-20T00:00:00.000Z",
+          lastOpenedAt: "2026-05-20T00:00:00.000Z",
+          defaultProvider: "google",
+          defaultModel: "gemini-3-flash-preview",
+          defaultPreferredChildModel: "gemini-3-flash-preview",
+          defaultChildModelRoutingMode: "same-provider",
+          defaultPreferredChildModelRef: "google:gemini-3-flash-preview",
+          defaultAllowedChildModelRefs: [],
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+        {
+          id: "chat-1",
+          name: "One-off chat",
+          path: "/tmp/one-off-chat",
+          workspaceKind: "oneOffChat",
+          createdAt: "2026-05-20T00:00:00.000Z",
+          lastOpenedAt: "2026-05-20T00:00:00.000Z",
+          defaultProvider: "google",
+          defaultModel: "ajax",
+          defaultPreferredChildModel: "ajax",
+          defaultChildModelRoutingMode: "same-provider",
+          defaultPreferredChildModelRef: "google:ajax",
+          defaultAllowedChildModelRefs: [],
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: "chat-1",
+      providerCatalog: [
+        {
+          id: "google",
+          name: "Google",
+          defaultModel: "gemini-3-flash-preview",
+          models: [
+            {
+              id: "gemini-3-flash-preview",
+              displayName: "Gemini 3 Flash Preview",
+              knowledgeCutoff: "unknown",
+              supportsImageInput: true,
+            },
+            {
+              id: "gemini-3-pro-preview",
+              displayName: "Gemini 3 Pro Preview",
+              knowledgeCutoff: "unknown",
+              supportsImageInput: true,
+            },
+          ],
+        },
+      ],
+      providerConnected: ["google"],
+      providerStatusByName: {
+        google: { verified: true },
+      },
+      providerDefaultModelByProvider: {
+        google: "gemini-3-flash-preview",
+      },
+    }));
+
+    const harness = setupWorkspacePageJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(createElement(WorkspacesPage));
+      });
+
+      expect(container.textContent).toContain("gemini-3-flash-preview");
+      expect(container.textContent).not.toContain("One-off chat");
+      expect(container.textContent).not.toContain("ajax");
+    } finally {
+      if (root) {
+        await act(async () => {
+          root?.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
   test("renders cross-provider child routing controls for workspace defaults", async () => {
     useAppStore.setState((state) => ({
       ...state,

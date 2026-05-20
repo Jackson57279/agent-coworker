@@ -933,10 +933,17 @@ export function WorkspacesPage() {
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
   const updateWorkspaceDefaults = useSharedUpdateWorkspaceDefaults();
   const restartWorkspaceServer = useAppStore((s) => s.restartWorkspaceServer);
+  const projectWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => !isOneOffChatWorkspace(workspace)),
+    [workspaces],
+  );
 
   const ws = useMemo(
-    () => workspaces.find((w) => w.id === selectedWorkspaceId) ?? workspaces[0] ?? null,
-    [selectedWorkspaceId, workspaces],
+    () =>
+      projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
+      projectWorkspaces[0] ??
+      null,
+    [projectWorkspaces, selectedWorkspaceId],
   );
 
   const provider = (ws?.defaultProvider ?? "google") as ProviderName;
@@ -1045,7 +1052,7 @@ export function WorkspacesPage() {
 
   return (
     <div className="space-y-5">
-      {workspaces.length === 0 || !ws ? (
+      {projectWorkspaces.length === 0 || !ws ? (
         <Card className="border-border/80 bg-card/85">
           <CardContent className="p-8 text-center">
             {workspaceLifecycleEnabled ? (
@@ -1123,13 +1130,13 @@ export function WorkspacesPage() {
                     <div className="text-sm font-medium text-foreground">{ws.name}</div>
                     <div className="text-xs text-muted-foreground">{ws.path}</div>
                   </div>
-                  {workspacePickerEnabled && workspaces.length > 1 ? (
+                  {workspacePickerEnabled && projectWorkspaces.length > 1 ? (
                     <Select value={ws.id} onValueChange={(value) => void selectWorkspace(value)}>
                       <SelectTrigger aria-label="Active workspace">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {workspaces.map((workspace) => (
+                        {projectWorkspaces.map((workspace) => (
                           <SelectItem key={workspace.id} value={workspace.id}>
                             {workspace.name}
                           </SelectItem>
