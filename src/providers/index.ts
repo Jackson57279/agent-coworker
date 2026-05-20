@@ -2,6 +2,7 @@ import { normalizeModelIdForProvider } from "../models/metadata";
 import type { AgentConfig, ProviderName } from "../types";
 
 import { anthropicProvider } from "./anthropic";
+import { antigravityProvider } from "./antigravity";
 import { basetenProvider } from "./baseten";
 import { bedrockProvider } from "./bedrock";
 import { PROVIDER_MODEL_CATALOG } from "./catalog";
@@ -68,6 +69,7 @@ const PROVIDER_RUNTIMES: Record<ProviderName, ProviderRuntimeDefinition> = {
   "codex-cli": codexCliProvider,
   google: googleProvider,
   openai: openaiProvider,
+  antigravity: antigravityProvider,
 };
 
 export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
@@ -86,6 +88,7 @@ export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
   "codex-cli": { ...PROVIDER_RUNTIMES["codex-cli"], ...PROVIDER_MODEL_CATALOG["codex-cli"] },
   google: { ...PROVIDER_RUNTIMES.google, ...PROVIDER_MODEL_CATALOG.google },
   openai: { ...PROVIDER_RUNTIMES.openai, ...PROVIDER_MODEL_CATALOG.openai },
+  antigravity: { ...PROVIDER_RUNTIMES.antigravity, ...PROVIDER_MODEL_CATALOG.antigravity },
 };
 
 export function getModelForProvider(config: AgentConfig, modelId: string, savedKey?: string) {

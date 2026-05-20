@@ -575,7 +575,7 @@ describe("JSON-RPC extracted route review fixes", () => {
   });
 
   test("session usage budget forwards null thresholds so hard caps can be cleared", async () => {
-    let receivedStopAtUsd: number | null | undefined = undefined;
+    let receivedStopAtUsd: number | null | undefined;
     let harness!: RouteHarness;
     const threadSession = {
       id: "thread-1",

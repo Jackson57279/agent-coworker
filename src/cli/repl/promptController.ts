@@ -18,9 +18,7 @@ export function activateNextPrompt(state: ReplPromptStateAdapter, rl: readline.I
     state.promptMode = "approval";
     if (state.activeApproval) {
       console.log(`\nApproval requested: ${sanitizeTerminalOutput(state.activeApproval.command)}`);
-      console.log(
-        state.activeApproval.dangerous ? "Dangerous command." : "Standard command.",
-      );
+      console.log(state.activeApproval.dangerous ? "Dangerous command." : "Standard command.");
       console.log(`Risk: ${sanitizeTerminalOutput(state.activeApproval.reasonCode)}`);
     }
     rl.setPrompt("approve (y/n)> ");

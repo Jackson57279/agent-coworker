@@ -231,3 +231,17 @@ export function createLmStudioModelAdapter(
     baseUrl,
   );
 }
+
+export function createAntigravityModelAdapter(
+  modelId: string,
+  savedKey?: string,
+): ProviderModelAdapter {
+  return createModelAdapter(modelId, "antigravity", async () => {
+    const key = firstNonEmpty(savedKey, envKey("GEMINI_API_KEY", "GOOGLE_API_KEY"));
+    const headers: HeaderMap = {};
+    if (key) {
+      headers["x-goog-api-key"] = key;
+    }
+    return headers;
+  });
+}

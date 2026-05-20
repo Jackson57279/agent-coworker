@@ -147,16 +147,13 @@ export function buildOpenAiResponseFailedError(
     .filter(Boolean)
     .join(", ");
 
-  return new OpenAiResponseFailedError(
-    detailSuffix ? `${message} (${detailSuffix})` : message,
-    {
-      ...(code ? { code } : {}),
-      ...(status ? { status } : {}),
-      ...(failureType ? { failureType } : {}),
-      ...(param ? { param } : {}),
-      response: response ?? event.response,
-    },
-  );
+  return new OpenAiResponseFailedError(detailSuffix ? `${message} (${detailSuffix})` : message, {
+    ...(code ? { code } : {}),
+    ...(status ? { status } : {}),
+    ...(failureType ? { failureType } : {}),
+    ...(param ? { param } : {}),
+    response: response ?? event.response,
+  });
 }
 
 export function createResponsesStreamProjector(

@@ -36,6 +36,7 @@ mock.module(mobileReactDomClientPath, () => desktopReactDomClient);
 mock.module(mobileReactDomServerPath, () => desktopReactDomServer);
 
 import { afterEach } from "bun:test";
+
 afterEach(() => {
   try {
     const storePath = require.resolve("../apps/desktop/src/app/store");

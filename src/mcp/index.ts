@@ -705,7 +705,7 @@ function serializeServerConfigs(servers: MCPServerConfig[]): string {
       JSON.stringify(servers, (key, value) => {
         if (typeof value === "function") return undefined;
         return value;
-      })
+      }),
     );
     return JSON.stringify(cloned);
   } catch {
@@ -720,7 +720,7 @@ export async function getOrLoadMCPToolsCached(
     log?: (line: string) => void;
     loadMCPServers?: typeof loadMCPServers;
     loadMCPTools?: typeof loadMCPTools;
-  } = {}
+  } = {},
 ): Promise<{ tools: Record<string, unknown>; errors: string[] }> {
   const loadMCPServersFn = opts.loadMCPServers ?? loadMCPServers;
   const loadMCPToolsFn = opts.loadMCPTools ?? loadMCPTools;

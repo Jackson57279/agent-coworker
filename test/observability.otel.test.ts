@@ -233,7 +233,12 @@ describe("emitObservabilityEvent (Langfuse runtime tracer)", () => {
 
     const res = await emitObservabilityEvent(
       cfg,
-      { name: "agent.turn.completed", at: "2026-02-19T08:00:00.000Z", status: "ok", forceFlush: true },
+      {
+        name: "agent.turn.completed",
+        at: "2026-02-19T08:00:00.000Z",
+        status: "ok",
+        forceFlush: true,
+      },
       {
         tracer: tracer as any,
         runtime: {
@@ -292,7 +297,12 @@ describe("emitObservabilityEvent (Langfuse runtime tracer)", () => {
 
     const res = await emitObservabilityEvent(
       cfg,
-      { name: "agent.turn.completed", at: "2026-02-19T08:00:00.000Z", status: "ok", forceFlush: true },
+      {
+        name: "agent.turn.completed",
+        at: "2026-02-19T08:00:00.000Z",
+        status: "ok",
+        forceFlush: true,
+      },
       {
         tracer: tracer as any,
         runtime: {

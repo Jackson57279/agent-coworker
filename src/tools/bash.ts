@@ -318,20 +318,22 @@ export function createBashTool(ctx: ToolContext) {
           abortSignal: ctx.abortSignal,
           timeoutMs,
           env: ctx.toolEnv,
-        }).then(({ stdout, stderr, exitCode }) => {
-          const res = {
-            stdout: String(stdout ?? ""),
-            stderr: String(stderr ?? ""),
-            exitCode,
-          };
-          const redactedRes = {
-            stdout: redactSecrets(res.stdout),
-            stderr: redactSecrets(res.stderr),
-            exitCode: res.exitCode,
-          };
-          ctx.log(`tool< bash ${JSON.stringify(redactedRes)}`);
-          resolve(res);
-        }).catch(reject);
+        })
+          .then(({ stdout, stderr, exitCode }) => {
+            const res = {
+              stdout: String(stdout ?? ""),
+              stderr: String(stderr ?? ""),
+              exitCode,
+            };
+            const redactedRes = {
+              stdout: redactSecrets(res.stdout),
+              stderr: redactSecrets(res.stderr),
+              exitCode: res.exitCode,
+            };
+            ctx.log(`tool< bash ${JSON.stringify(redactedRes)}`);
+            resolve(res);
+          })
+          .catch(reject);
       });
     },
   });

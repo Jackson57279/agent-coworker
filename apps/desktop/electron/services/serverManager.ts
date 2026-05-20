@@ -238,9 +238,7 @@ async function gracefulKill(child: ServerChildProcess): Promise<void> {
   await waitForExit(child, 1_000);
 }
 
-function getServerStartupTimeoutMs(
-  env: Record<string, string | undefined> = process.env,
-): number {
+function getServerStartupTimeoutMs(env: Record<string, string | undefined> = process.env): number {
   const parsed = Number(env.COWORK_DESKTOP_SERVER_STARTUP_TIMEOUT_MS);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_SERVER_STARTUP_TIMEOUT_MS;
@@ -296,9 +294,7 @@ function waitForServerListening(
     const timeout = setTimeout(() => {
       cleanup();
       reject(
-        new Error(
-          withRecentOutput(`Server startup timed out after ${timeoutMs / 1000} seconds`),
-        ),
+        new Error(withRecentOutput(`Server startup timed out after ${timeoutMs / 1000} seconds`)),
       );
     }, timeoutMs);
 

@@ -41,9 +41,8 @@ function getInjectedWebServerUrl(): string | null {
 }
 
 function getInjectedBrowserAccessToken(): string | null {
-  const value = (
-    globalThis as typeof globalThis & { __COWORK_BROWSER_ACCESS_TOKEN__?: unknown }
-  ).__COWORK_BROWSER_ACCESS_TOKEN__;
+  const value = (globalThis as typeof globalThis & { __COWORK_BROWSER_ACCESS_TOKEN__?: unknown })
+    .__COWORK_BROWSER_ACCESS_TOKEN__;
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 

@@ -105,9 +105,7 @@ export function createThreadRouteHandlers(context: JsonRpcRouteContext): JsonRpc
     },
 
     "thread/list": (ws, message) => {
-      const parsed = jsonRpcThreadTurnRequestSchemas["thread/list"].safeParse(
-        message.params ?? {},
-      );
+      const parsed = jsonRpcThreadTurnRequestSchemas["thread/list"].safeParse(message.params ?? {});
       if (!parsed.success) {
         sendInvalidParams(context, ws, message, parsed.error.issues[0]?.message);
         return;

@@ -129,10 +129,7 @@ function parseTrustedDesktopRecord(raw: unknown): TrustedDesktopRecord | null {
     certSha256: readString(record, "certSha256"),
     spkiSha256: readString(record, "spkiSha256"),
   };
-  return trusted.macDeviceId &&
-    trusted.endpointUrl &&
-    trusted.certSha256 &&
-    trusted.spkiSha256
+  return trusted.macDeviceId && trusted.endpointUrl && trusted.certSha256 && trusted.spkiSha256
     ? trusted
     : null;
 }

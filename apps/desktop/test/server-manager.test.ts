@@ -225,15 +225,12 @@ describe("desktop server manager startup mode", () => {
   });
 
   test("appendBrowserAccessToken returns a browser-authorized websocket URL", () => {
-    expect(
-      __internal.appendBrowserAccessToken("ws://127.0.0.1:7337/ws", "token value"),
-    ).toBe("ws://127.0.0.1:7337/ws?coworkBrowserToken=token+value");
-    expect(
-      __internal.appendBrowserAccessToken(
-        "ws://127.0.0.1:7337/ws?existing=1",
-        "token",
-      ),
-    ).toBe("ws://127.0.0.1:7337/ws?existing=1&coworkBrowserToken=token");
+    expect(__internal.appendBrowserAccessToken("ws://127.0.0.1:7337/ws", "token value")).toBe(
+      "ws://127.0.0.1:7337/ws?coworkBrowserToken=token+value",
+    );
+    expect(__internal.appendBrowserAccessToken("ws://127.0.0.1:7337/ws?existing=1", "token")).toBe(
+      "ws://127.0.0.1:7337/ws?existing=1&coworkBrowserToken=token",
+    );
     expect(__internal.appendBrowserAccessToken("ws://127.0.0.1:7337/ws", null)).toBe(
       "ws://127.0.0.1:7337/ws",
     );

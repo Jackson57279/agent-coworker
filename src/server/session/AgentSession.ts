@@ -2,8 +2,8 @@ import path from "node:path";
 
 import type { runTurn } from "../../agent";
 import type { ConnectProviderResult, connectProvider as connectModelProvider } from "../../connect";
-import type { MCPRegistryServer } from "../../mcp/configRegistry";
 import { closeMcpServersForSession } from "../../mcp";
+import type { MCPRegistryServer } from "../../mcp/configRegistry";
 import { type MemoryScope, MemoryStore } from "../../memoryStore";
 import { getKnownResolvedModelMetadata, isDynamicModelProvider } from "../../models/metadata";
 import { defaultSupportedModel } from "../../models/registry";

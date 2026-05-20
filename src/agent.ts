@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { getModel as realGetModel } from "./config";
-import { loadMCPServers, loadMCPTools, getOrLoadMCPToolsCached } from "./mcp";
+import { getOrLoadMCPToolsCached, loadMCPServers, loadMCPTools } from "./mcp";
 import { buildRuntimeTelemetrySettings } from "./observability/runtime";
 import { buildGooglePrepareStep } from "./providers/googleReplay";
 import { createRuntime } from "./runtime";

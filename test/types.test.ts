@@ -5,8 +5,8 @@ import { isProviderName, PROVIDER_NAMES, resolveProviderName } from "../src/type
 // PROVIDER_NAMES
 // ---------------------------------------------------------------------------
 describe("PROVIDER_NAMES", () => {
-  test("contains exactly 12 providers", () => {
-    expect(PROVIDER_NAMES).toHaveLength(12);
+  test("contains exactly 13 providers", () => {
+    expect(PROVIDER_NAMES).toHaveLength(13);
   });
 
   test("contains expected provider names", () => {
@@ -22,6 +22,7 @@ describe("PROVIDER_NAMES", () => {
     expect(PROVIDER_NAMES).toContain("opencode-go");
     expect(PROVIDER_NAMES).toContain("opencode-zen");
     expect(PROVIDER_NAMES).toContain("codex-cli");
+    expect(PROVIDER_NAMES).toContain("antigravity");
   });
 });
 
@@ -39,6 +40,7 @@ describe("resolveProviderName", () => {
     expect(resolveProviderName("opencode-go")).toBe("opencode-go");
     expect(resolveProviderName("opencode-zen")).toBe("opencode-zen");
     expect(resolveProviderName("codex-cli")).toBe("codex-cli");
+    expect(resolveProviderName("antigravity")).toBe("antigravity");
   });
 
   test("returns null for unknown provider names", () => {
@@ -99,6 +101,10 @@ describe("isProviderName", () => {
 
     test("opencode-zen", () => {
       expect(isProviderName("opencode-zen")).toBe(true);
+    });
+
+    test("antigravity", () => {
+      expect(isProviderName("antigravity")).toBe(true);
     });
   });
 

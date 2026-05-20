@@ -5,6 +5,8 @@ import anthropicClaudeOpus46 from "../../config/models/anthropic/claude-opus-4-6
 import anthropicClaudeOpus47 from "../../config/models/anthropic/claude-opus-4-7.json";
 import anthropicClaudeSonnet45 from "../../config/models/anthropic/claude-sonnet-4-5.json";
 import anthropicClaudeSonnet46 from "../../config/models/anthropic/claude-sonnet-4-6.json";
+import antigravityGemini31Pro from "../../config/models/antigravity/gemini-3.1-pro.json";
+import antigravityGemini35Flash from "../../config/models/antigravity/gemini-3.5-flash.json";
 import basetenMoonshotAiKimiK25 from "../../config/models/baseten/moonshotai-kimi-k2.5.json";
 import basetenNvidiaNemotron120bA12b from "../../config/models/baseten/nvidia-nemotron-120b-a12b.json";
 import basetenZaiOrgGlm5 from "../../config/models/baseten/zai-org-glm-5.json";
@@ -57,6 +59,7 @@ export const STATIC_MODEL_PROVIDER_NAMES = [
   "opencode-go",
   "opencode-zen",
   "codex-cli",
+  "antigravity",
 ] as const satisfies readonly ProviderName[];
 
 export type StaticModelProviderName = (typeof STATIC_MODEL_PROVIDER_NAMES)[number];
@@ -101,6 +104,8 @@ const RAW_MODEL_REGISTRY_ENTRIES = [
   fireworksMinimaxM2p5,
   googleGemini35Flash,
   googleGemini3FlashPreview,
+  antigravityGemini35Flash,
+  antigravityGemini31Pro,
   googleGemini31FlashLitePreview,
   googleGemini31ProPreview,
   googleGemini31ProPreviewCustomtools,
@@ -140,6 +145,7 @@ function buildRegistry(entries: SupportedModel[]) {
     "opencode-go": [],
     "opencode-zen": [],
     "codex-cli": [],
+    antigravity: [],
   };
   const byKey = new Map<string, SupportedModel>();
   const defaults = new Map<StaticModelProviderName, SupportedModel>();

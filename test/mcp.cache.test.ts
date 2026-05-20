@@ -1,5 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { getOrLoadMCPToolsCached, closeMcpServersForSession, __internal } from "../src/mcp";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { __internal, closeMcpServersForSession, getOrLoadMCPToolsCached } from "../src/mcp";
 import type { AgentConfig, MCPServerConfig } from "../src/types";
 
 describe("MCP Caching and Lifecycle", () => {
@@ -13,7 +13,7 @@ describe("MCP Caching and Lifecycle", () => {
       provider: "openai",
       model: "gpt-4o",
       enableMcp: true,
-    } as unknown as AgentConfig);
+    }) as unknown as AgentConfig;
 
   test("should cache connections and only spawn once for same config and workspace", async () => {
     const config = makeConfig("/path/to/workspace-a");

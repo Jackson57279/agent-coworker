@@ -679,6 +679,10 @@ export async function resolvePiModel(
     throw new Error("codex-cli is handled by the Codex app-server runtime.");
   }
 
+  if (provider === "antigravity") {
+    throw new Error("Antigravity is handled by the Antigravity runtime.");
+  }
+
   const exhaustive: never = provider;
   throw new Error(`Unsupported provider for PI runtime: ${String(exhaustive)}`);
 }
