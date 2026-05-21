@@ -1,5 +1,11 @@
 import type { AgentConfig } from "../types";
 import {
+  FIREWORKS_INFERENCE_BASE_URL,
+  getFireworksInferenceAuthConfig,
+  type FireworksInferenceProvider,
+  resolveFireworksInferenceApiKey,
+} from "./fireworksShared";
+import {
   getOpenCodeProviderConfig,
   isOpenCodeModelSupportedByProvider,
   type OpenCodeProviderName,
@@ -123,42 +129,39 @@ export function createTogetherModelAdapter(
   });
 }
 
-export function createFireworksModelAdapter(
+export function createFireworksInferenceModelAdapter(
+  provider: FireworksInferenceProvider,
   modelId: string,
   savedKey?: string,
 ): ProviderModelAdapter {
+  const { adapterProvider } = getFireworksInferenceAuthConfig(provider);
   return createModelAdapter(
     modelId,
-    "fireworks.completions",
+    adapterProvider,
     async () => {
-      const key = firstNonEmpty(savedKey, envKey("FIREWORKS_API_KEY"));
+      const key = resolveFireworksInferenceApiKey(provider, { savedKey });
       const headers: HeaderMap = {};
       if (key) {
         headers.authorization = `Bearer ${key}`;
       }
       return headers;
     },
-    "https://api.fireworks.ai/inference/v1",
+    FIREWORKS_INFERENCE_BASE_URL,
   );
+}
+
+export function createFireworksModelAdapter(
+  modelId: string,
+  savedKey?: string,
+): ProviderModelAdapter {
+  return createFireworksInferenceModelAdapter("fireworks", modelId, savedKey);
 }
 
 export function createFirepassModelAdapter(
   modelId: string,
   savedKey?: string,
 ): ProviderModelAdapter {
-  return createModelAdapter(
-    modelId,
-    "firepass.completions",
-    async () => {
-      const key = firstNonEmpty(savedKey, envKey("FIREPASS_API_KEY"));
-      const headers: HeaderMap = {};
-      if (key) {
-        headers.authorization = `Bearer ${key}`;
-      }
-      return headers;
-    },
-    "https://api.fireworks.ai/inference/v1",
-  );
+  return createFireworksInferenceModelAdapter("firepass", modelId, savedKey);
 }
 
 export function createNvidiaModelAdapter(modelId: string, savedKey?: string): ProviderModelAdapter {

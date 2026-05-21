@@ -5,8 +5,11 @@ import { getResolvedModelMetadataSync } from "../models/metadata";
 import type { TelemetrySettings } from "../observability/runtime";
 import { getBasetenModelSpec, resolveBasetenApiKey } from "../providers/basetenShared";
 import { bedrockClientConfig, resolveBedrockAuthConfig } from "../providers/bedrockShared";
-import { getFirepassModelSpec, resolveFirepassApiKey } from "../providers/firepassShared";
-import { getFireworksModelSpec, resolveFireworksApiKey } from "../providers/fireworksShared";
+import {
+  getFireworksInferenceModelSpec,
+  isFireworksInferenceProvider,
+  resolveFireworksInferenceApiKey,
+} from "../providers/fireworksShared";
 import { prepareLmStudioModelMetadataForInference } from "../providers/lmstudio/catalog";
 import { lmStudioOpenAiBaseUrl } from "../providers/lmstudio/client";
 import { getNvidiaModelSpec, resolveNvidiaApiKey } from "../providers/nvidiaShared";
@@ -366,38 +369,18 @@ function getTogetherPiModel(modelId: string): PiModel | null {
   };
 }
 
-function getFireworksPiModel(modelId: string): PiModel | null {
-  const modelSpec = getFireworksModelSpec(modelId);
+function getFireworksInferencePiModel(
+  provider: "fireworks" | "firepass",
+  modelId: string,
+): PiModel | null {
+  const modelSpec = getFireworksInferenceModelSpec(provider, modelId);
   if (!modelSpec) return null;
 
   return {
     id: modelSpec.id,
     name: modelSpec.name,
     api: "openai-completions",
-    provider: "fireworks",
-    baseUrl: modelSpec.baseUrl,
-    reasoning: modelSpec.reasoning,
-    input: [...modelSpec.input],
-    cost: {
-      input: modelSpec.pricing.input,
-      output: modelSpec.pricing.output,
-      cacheRead: modelSpec.pricing.cacheRead ?? 0,
-      cacheWrite: modelSpec.pricing.cacheWrite ?? 0,
-    },
-    contextWindow: modelSpec.contextWindow,
-    maxTokens: modelSpec.maxTokens,
-  };
-}
-
-function getFirepassPiModel(modelId: string): PiModel | null {
-  const modelSpec = getFirepassModelSpec(modelId);
-  if (!modelSpec) return null;
-
-  return {
-    id: modelSpec.id,
-    name: modelSpec.name,
-    api: "openai-completions",
-    provider: "firepass",
+    provider,
     baseUrl: modelSpec.baseUrl,
     reasoning: modelSpec.reasoning,
     input: [...modelSpec.input],
@@ -635,26 +618,14 @@ export async function resolvePiModel(
     };
   }
 
-  if (provider === "fireworks") {
-    const model = getFireworksPiModel(modelId);
+  if (isFireworksInferenceProvider(provider)) {
+    const model = getFireworksInferencePiModel(provider, modelId);
     if (!model)
-      throw new Error(`No PI model metadata available for provider fireworks (model: ${modelId}).`);
+      throw new Error(`No PI model metadata available for provider ${provider} (model: ${modelId}).`);
     return {
       model: applySupportedModelMetadata(model, provider, modelId),
-      apiKey: resolveFireworksApiKey({
-        savedKey: getSavedProviderApiKey(params.config, "fireworks"),
-      }),
-    };
-  }
-
-  if (provider === "firepass") {
-    const model = getFirepassPiModel(modelId);
-    if (!model)
-      throw new Error(`No PI model metadata available for provider firepass (model: ${modelId}).`);
-    return {
-      model: applySupportedModelMetadata(model, provider, modelId),
-      apiKey: resolveFirepassApiKey({
-        savedKey: getSavedProviderApiKey(params.config, "firepass"),
+      apiKey: resolveFireworksInferenceApiKey(provider, {
+        savedKey: getSavedProviderApiKey(params.config, provider),
       }),
     };
   }

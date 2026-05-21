@@ -1,5 +1,6 @@
 import { getModel as getPiModel, getModels as getPiModels } from "@mariozechner/pi-ai";
 import { z } from "zod";
+import { isFireworksInferenceProvider } from "../providers/fireworksShared";
 import type { ProviderName } from "../types";
 import type { RuntimeRunTurnParams } from "./types";
 
@@ -293,7 +294,7 @@ const FIREWORKS_TOOL_SCHEMA_MAX_BYTES = 4096;
 const FIREWORKS_TOTAL_TOOL_SCHEMA_MAX_BYTES = 12288;
 
 function usesFireworksToolSchemaRules(provider?: ProviderName): boolean {
-  return provider === "fireworks" || provider === "firepass";
+  return provider !== undefined && isFireworksInferenceProvider(provider);
 }
 
 type ToolSchemaBudgetState = {

@@ -21,6 +21,10 @@
  */
 
 import type { ProviderName } from "../types";
+import {
+  isFireworksInferenceProvider,
+  listFireworksInferencePricingEntries,
+} from "../providers/fireworksShared";
 
 export type ModelPricing = {
   /** Cost per 1M input/prompt tokens in USD. */
@@ -49,11 +53,27 @@ export type PricingCatalogEntry = {
 
 type PricingEnv = Record<string, string | undefined>;
 
+function fireworksInferencePricingTable(): Record<string, ModelPricing> {
+  const table: Record<string, ModelPricing> = {};
+  for (const { key, pricing } of listFireworksInferencePricingEntries()) {
+    table[key] = {
+      inputPerMillion: pricing.input,
+      outputPerMillion: pricing.output,
+      ...(pricing.cacheRead !== undefined ? { cachedInputPerMillion: pricing.cacheRead } : {}),
+      ...(pricing.cacheWrite !== undefined
+        ? { cacheWriteInputPerMillion: pricing.cacheWrite }
+        : {}),
+    };
+  }
+  return table;
+}
+
 /**
  * Known model pricing. Keys are `provider:model` strings for direct lookup.
  * When an exact match isn't found we fall back to prefix matching.
  */
 const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
+  ...fireworksInferencePricingTable(),
   // ── Anthropic ────────────────────────────────────────────────────────
   "anthropic:claude-opus-4-6": {
     inputPerMillion: 5,
@@ -114,32 +134,6 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
   "together:zai-org/GLM-5": {
     inputPerMillion: 1,
     outputPerMillion: 3.2,
-  },
-  "fireworks:accounts/fireworks/models/glm-5": {
-    inputPerMillion: 1,
-    outputPerMillion: 3.2,
-    cachedInputPerMillion: 0.2,
-  },
-  "fireworks:accounts/fireworks/models/kimi-k2p5": {
-    inputPerMillion: 0.6,
-    outputPerMillion: 3,
-    cachedInputPerMillion: 0.1,
-  },
-  "fireworks:accounts/fireworks/models/minimax-m2p5": {
-    inputPerMillion: 0.3,
-    outputPerMillion: 1.2,
-    cachedInputPerMillion: 0.03,
-  },
-  "fireworks:accounts/fireworks/routers/kimi-k2p5-turbo": {
-    inputPerMillion: 0.6,
-    outputPerMillion: 3,
-    cachedInputPerMillion: 0.1,
-  },
-  // Kimi K2.6 Turbo serverless pricing (https://fireworks.ai/models/fireworks/kimi-k2p6).
-  "firepass:accounts/fireworks/routers/kimi-k2p6-turbo": {
-    inputPerMillion: 0.95,
-    outputPerMillion: 4,
-    cachedInputPerMillion: 0.16,
   },
   // OpenCode Go is intentionally excluded from local pricing estimates.
   "opencode-zen:glm-5": {
@@ -355,8 +349,7 @@ function isPricingOverrideKey(value: string): value is `${ProviderName}:${string
     provider === "anthropic" ||
     provider === "baseten" ||
     provider === "together" ||
-    provider === "fireworks" ||
-    provider === "firepass" ||
+    isFireworksInferenceProvider(provider as ProviderName) ||
     provider === "opencode-zen" ||
     provider === "codex-cli"
   );
