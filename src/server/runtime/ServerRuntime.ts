@@ -3,6 +3,7 @@ import path from "node:path";
 import type { runTurn as runTurnFn } from "../../agent";
 import { ensureCodexPrimaryRuntimeReady } from "../../codexPrimaryRuntime";
 import { loadConfig } from "../../config";
+import { ensureManagedSofficeRuntimeReady } from "../../managedSofficeRuntime";
 import type { connectProvider as connectModelProvider, getAiCoworkerPaths } from "../../connect";
 import { getAiCoworkerPaths as getAiCoworkerPathsDefault } from "../../connect";
 import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
@@ -151,6 +152,16 @@ export async function createAgentServerRuntime(
   });
   if (codexRuntimeSetup) {
     Object.assign(env, codexRuntimeSetup.runtimeEnv);
+  }
+  const managedSofficeRuntimeSetup = await ensureManagedSofficeRuntimeReady({
+    homedir: opts.homedir,
+    env,
+    log: (line) => {
+      console.warn(`[managed-soffice] ${line}`);
+    },
+  });
+  if (managedSofficeRuntimeSetup?.status === "available") {
+    Object.assign(env, managedSofficeRuntimeSetup.runtimeEnv);
   }
 
   await fs.mkdir(config.projectCoworkDir, { recursive: true });
