@@ -455,7 +455,7 @@ describe("google interactions runtime", () => {
     });
   });
 
-  test("reuses Google continuation when the request fingerprint changes", async () => {
+  test("replays full transcript when the request fingerprint changes", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "google-interactions-fingerprint-"));
     const seenRequests: GoogleNativeStepRequest[] = [];
     const logs: string[] = [];
@@ -499,11 +499,11 @@ describe("google interactions runtime", () => {
     );
 
     expect(seenRequests).toHaveLength(1);
-    expect(seenRequests[0]?.previousInteractionId).toBe("interaction_old");
-    expect(seenRequests[0]?.messages).toEqual([{ role: "user", content: "new" }]);
+    expect(seenRequests[0]?.previousInteractionId).toBeUndefined();
+    expect(seenRequests[0]?.messages).toEqual(history);
     expect(
       logs.some((message) =>
-        message.includes("Stored continuation request context changed; attempting"),
+        message.includes("Not reusing stored continuation because request context changed"),
       ),
     ).toBe(true);
   });
@@ -762,7 +762,7 @@ describe("google interactions runtime", () => {
     expect(result.text).toBe("Recovered with full history");
   });
 
-  test("retries stale Google continuation with text-only history when clean replay is unsupported", async () => {
+  test("retries changed-context replay with text-only history when clean replay is unsupported", async () => {
     const homeDir = await fs.mkdtemp(
       path.join(os.tmpdir(), "google-interactions-continuation-not-implemented-fallback-"),
     );
@@ -772,9 +772,6 @@ describe("google interactions runtime", () => {
       runStepImpl: async (opts) => {
         seenRequests.push(opts);
         if (seenRequests.length === 1) {
-          throw new Error("Invalid previous_interaction_id: interaction_id not found");
-        }
-        if (seenRequests.length === 2) {
           throw new Error(
             '501 {"error":{"message":"Operation is not implemented, or supported, or enabled.","code":"not_implemented"}}',
           );
@@ -840,13 +837,11 @@ describe("google interactions runtime", () => {
     );
 
     expect(result.text).toBe("Recovered with text-only history");
-    expect(seenRequests).toHaveLength(3);
-    expect(seenRequests[0]?.previousInteractionId).toBe("interaction_stale");
-    expect(seenRequests[0]?.messages).toEqual([{ role: "user", content: "make slides from it" }]);
+    expect(seenRequests).toHaveLength(2);
+    expect(seenRequests[0]?.previousInteractionId).toBeUndefined();
+    expect(seenRequests[0]?.messages).toEqual(fullHistory);
     expect(seenRequests[1]?.previousInteractionId).toBeUndefined();
-    expect(seenRequests[1]?.messages).toEqual(fullHistory);
-    expect(seenRequests[2]?.previousInteractionId).toBeUndefined();
-    expect(seenRequests[2]?.messages).toEqual([
+    expect(seenRequests[1]?.messages).toEqual([
       { role: "user", content: "make a report" },
       { role: "assistant", content: [{ type: "text", text: "I will make the report." }] },
       { role: "assistant", content: [{ type: "text", text: "Saved the report." }] },

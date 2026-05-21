@@ -312,21 +312,23 @@ export function createGoogleInteractionsRuntime(
           tools: piTools,
           streamOptions: initialGoogleStreamOptions,
         });
-        const activeProviderState = messagesHaveDisabledGoogleCodeExecution(
+        const matchingProviderState = messagesHaveDisabledGoogleCodeExecution(
           params.allMessages ?? params.messages,
         )
           ? null
           : matchingGoogleProviderState(params, resolved.model.id);
-        if (isGoogleContinuationState(params.providerState) && !activeProviderState) {
+        const requestContextChanged = googleContinuationRequestContextChanged(
+          matchingProviderState,
+          initialRequestFingerprint,
+        );
+        const activeProviderState = requestContextChanged ? null : matchingProviderState;
+        if (isGoogleContinuationState(params.providerState) && !matchingProviderState) {
           params.log?.(
             "google-interactions: Not reusing stored continuation because model or history is incompatible.",
           );
-        } else if (
-          activeProviderState &&
-          googleContinuationRequestContextChanged(activeProviderState, initialRequestFingerprint)
-        ) {
+        } else if (requestContextChanged) {
           params.log?.(
-            "google-interactions: Stored continuation request context changed; attempting previous_interaction_id and will retry from transcript if rejected.",
+            "google-interactions: Not reusing stored continuation because request context changed; replaying transcript.",
           );
         }
         let previousInteractionId: string | undefined = activeProviderState?.interactionId;

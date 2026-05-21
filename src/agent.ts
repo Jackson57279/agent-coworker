@@ -259,8 +259,7 @@ function providerOwnsExecutableTools(config: AgentConfig): boolean {
 async function prepareTurnToolEnv(
   params: Pick<RunTurnParams, "config" | "toolEnv" | "log">,
 ): Promise<Record<string, string | undefined> | undefined> {
-  const env = params.toolEnv;
-  if (!env) return undefined;
+  const env = params.toolEnv ?? { ...process.env };
   if (
     managedSofficeEnvValue(env, "COWORK_SOFFICE") ||
     managedSofficeEnvValue(env, "COWORK_MANAGED_SOFFICE_SHIM")
