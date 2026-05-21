@@ -80,66 +80,14 @@ import { SessionSnapshotBuilder } from "./SessionSnapshotBuilder";
 import { SessionSnapshotProjector } from "./SessionSnapshotProjector";
 import { SkillManager } from "./SkillManager";
 import { TurnExecutionManager } from "./TurnExecutionManager";
-
-// Packaged Bun sidecar builds need these dynamic imports because the old createRequire
-// path is unavailable there, and we want to avoid eagerly loading the heavier
-// connection/prompt/agent modules at startup.
-let connectModulePromise: Promise<typeof import("../../connect")> | null = null;
-let promptModulePromise: Promise<typeof import("../../prompt")> | null = null;
-let providerCatalogModulePromise: Promise<
-  typeof import("../../providers/connectionCatalog")
-> | null = null;
-let providerStatusModulePromise: Promise<typeof import("../../providerStatus")> | null = null;
-let agentModulePromise: Promise<typeof import("../../agent")> | null = null;
-let sessionTitleServiceModulePromise: Promise<typeof import("../sessionTitleService")> | null =
-  null;
-
-const loadConnectModule = async (): Promise<typeof import("../../connect")> => {
-  connectModulePromise ??= import("../../connect");
-  return await connectModulePromise;
-};
-
-const loadPromptModule = async (): Promise<typeof import("../../prompt")> => {
-  promptModulePromise ??= import("../../prompt");
-  return await promptModulePromise;
-};
-
-const loadProviderCatalogModule = async (): Promise<
-  typeof import("../../providers/connectionCatalog")
-> => {
-  providerCatalogModulePromise ??= import("../../providers/connectionCatalog");
-  return await providerCatalogModulePromise;
-};
-
-const loadProviderStatusModule = async (): Promise<typeof import("../../providerStatus")> => {
-  providerStatusModulePromise ??= import("../../providerStatus");
-  return await providerStatusModulePromise;
-};
-
-const loadAgentModule = async (): Promise<typeof import("../../agent")> => {
-  agentModulePromise ??= import("../../agent");
-  return await agentModulePromise;
-};
-
-const loadSessionTitleServiceModule = async (): Promise<
-  typeof import("../sessionTitleService")
-> => {
-  sessionTitleServiceModulePromise ??= import("../sessionTitleService");
-  return await sessionTitleServiceModulePromise;
-};
-
-const lazyConnectProvider: typeof connectModelProvider = async (...args) =>
-  await (await loadConnectModule()).connectProvider(...args);
-const lazyLoadSystemPromptWithSkills: typeof loadSystemPromptWithSkills = async (...args) =>
-  await (await loadPromptModule()).loadSystemPromptWithSkills(...args);
-const lazyGetProviderCatalog: typeof getProviderCatalog = async (...args) =>
-  await (await loadProviderCatalogModule()).getProviderCatalog(...args);
-const lazyGetProviderStatuses: typeof getProviderStatuses = async (...args) =>
-  await (await loadProviderStatusModule()).getProviderStatuses(...args);
-const lazyRunTurn: typeof runTurn = async (...args) =>
-  await (await loadAgentModule()).runTurn(...args);
-const lazyGenerateSessionTitle: typeof generateSessionTitle = async (...args) =>
-  await (await loadSessionTitleServiceModule()).generateSessionTitle(...args);
+import {
+  lazyConnectProvider,
+  lazyGenerateSessionTitle,
+  lazyGetProviderCatalog,
+  lazyGetProviderStatuses,
+  lazyLoadSystemPromptWithSkills,
+  lazyRunTurn,
+} from "./AgentSessionLazyImports";
 
 function makeId(): string {
   return crypto.randomUUID();
