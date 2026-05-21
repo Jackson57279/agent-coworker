@@ -270,6 +270,82 @@ describe("runTurn", () => {
     expect(runtimeParams.system).toContain("`mcp__{serverName}__{toolName}`");
   });
 
+  for (const scenario of [
+    {
+      label: "Gemini Interactions",
+      config: (workspaceRoot: string, homeDir: string) =>
+        makeConfig({
+          provider: "google",
+          runtime: "google-interactions",
+          model: "gemini-3-flash-preview",
+          preferredChildModel: "gemini-3-flash-preview",
+          workingDirectory: workspaceRoot,
+          projectCoworkDir: path.join(workspaceRoot, ".cowork"),
+          userCoworkDir: path.join(homeDir, ".cowork"),
+          skillsDirs: [path.join(homeDir, ".cowork", "skills")],
+        }),
+    },
+    {
+      label: "PI",
+      config: (workspaceRoot: string, homeDir: string) =>
+        makeConfig({
+          provider: "anthropic",
+          runtime: "pi",
+          model: "claude-opus-4-6",
+          preferredChildModel: "claude-opus-4-6",
+          workingDirectory: workspaceRoot,
+          projectCoworkDir: path.join(workspaceRoot, ".cowork"),
+          userCoworkDir: path.join(homeDir, ".cowork"),
+          skillsDirs: [path.join(homeDir, ".cowork", "skills")],
+        }),
+    },
+  ]) {
+    test(`prepares managed soffice env for ${scenario.label} turns`, async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-turn-soffice-"));
+      const homeDir = path.join(workspaceRoot, "home");
+      await fs.mkdir(homeDir, { recursive: true });
+      const config = scenario.config(workspaceRoot, homeDir);
+      const runtimeRunTurn = mock(async (input: any) => ({
+        text: "ok",
+        responseMessages: [{ role: "assistant", content: "ok" }],
+        providerState: { provider: input.config.provider, model: input.config.model },
+      }));
+      const createRuntimeForTurn = mock((_config: AgentConfig) => ({
+        name: config.runtime ?? "pi",
+        runTurn: runtimeRunTurn,
+      }));
+      const createToolsForTurn = mock((_ctx: any) => ({
+        bash: { type: "builtin" },
+      }));
+      const runTurnForRuntime = createRunTurn({
+        createRuntime: createRuntimeForTurn,
+        createTools: createToolsForTurn,
+        loadMCPServers: mockLoadMCPServers,
+        loadMCPTools: mockLoadMCPTools,
+      });
+      const env = { PATH: "/usr/bin" };
+
+      await runTurnForRuntime(
+        makeParams({
+          config,
+          toolEnv: env,
+        }),
+      );
+
+      const shimDir = path.join(homeDir, ".cache", "cowork", "libreoffice", "bin");
+      const shimPath = path.join(shimDir, "soffice");
+      const toolCtx = createToolsForTurn.mock.calls[0][0] as any;
+      expect(toolCtx.toolEnv.COWORK_SOFFICE).toBe(shimPath);
+      expect(toolCtx.toolEnv.COWORK_MANAGED_SOFFICE_SHIM_DIR).toBe(shimDir);
+      expect(toolCtx.toolEnv.PATH.split(path.delimiter)[0]).toBe(shimDir);
+
+      const runtimeParams = runtimeRunTurn.mock.calls[0][0] as any;
+      expect(runtimeParams.toolEnv.COWORK_SOFFICE).toBe(shimPath);
+      expect(runtimeParams.system).toContain("## Managed LibreOffice Runtime");
+      expect(runtimeParams.system).toContain(shimPath);
+    });
+  }
+
   test("buildTurnSystemPrompt appends harness context when present", () => {
     const system = buildTurnSystemPrompt("Base system prompt", makeConfig(), [], {
       runId: "run-01",

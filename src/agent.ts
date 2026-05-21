@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import { getModel as realGetModel } from "./config";
+import {
+  ensureManagedSofficeRuntimeReady,
+  managedSofficeEnvValue,
+  renderManagedSofficeRuntimeInstructions,
+} from "./managedSofficeRuntime";
 import { getOrLoadMCPToolsCached, loadMCPServers, loadMCPTools } from "./mcp";
 import { buildRuntimeTelemetrySettings } from "./observability/runtime";
 import { buildGooglePrepareStep } from "./providers/googleReplay";
@@ -21,6 +26,7 @@ import type { AgentControl } from "./tools";
 import { createTools, filterToolsForCodexDynamicBoundary } from "./tools";
 import { buildTurnSystemPrompt } from "./turnSystemPrompt";
 import type { AgentConfig, HarnessContextState, ModelMessage, TodoItem } from "./types";
+import { resolveAuthHomeDir } from "./utils/authHome";
 
 /** Maximum time (ms) to wait for the legacy stream to drain after response promises settle. */
 let STREAM_DRAIN_TIMEOUT_MS = 30_000;
@@ -248,6 +254,38 @@ function providerOwnsExecutableTools(config: AgentConfig): boolean {
   return config.provider === "codex-cli";
 }
 
+async function prepareTurnToolEnv(
+  params: Pick<RunTurnParams, "config" | "toolEnv" | "log">,
+): Promise<Record<string, string | undefined> | undefined> {
+  const env = params.toolEnv;
+  if (!env) return undefined;
+  if (
+    managedSofficeEnvValue(env, "COWORK_SOFFICE") ||
+    managedSofficeEnvValue(env, "COWORK_MANAGED_SOFFICE_SHIM")
+  ) {
+    return env;
+  }
+
+  const setup = await ensureManagedSofficeRuntimeReady({
+    homedir: resolveAuthHomeDir(params.config),
+    env,
+    log: (line) => params.log?.(`[managed-soffice] ${line}`),
+  });
+  if (setup?.status === "available") {
+    Object.assign(env, setup.runtimeEnv);
+  }
+  return env;
+}
+
+function appendManagedSofficeInstructions(
+  system: string,
+  env: Record<string, string | undefined> | undefined,
+): string {
+  if (system.includes("## Managed LibreOffice Runtime")) return system;
+  const instructions = renderManagedSofficeRuntimeInstructions(env);
+  return instructions ? `${system}\n\n${instructions}` : system;
+}
+
 type RunTurnDeps = {
   createRuntime: typeof createRuntime;
   createTools: typeof createTools;
@@ -314,6 +352,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       abortSignal,
     } = params;
     let latestTurnMessages = messages;
+    const turnToolEnv = await prepareTurnToolEnv(params);
 
     const toolCtx = {
       config,
@@ -331,7 +370,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       shellPolicy: params.shellPolicy ?? getAgentRoleShellPolicy(params.agentRole),
       agentControl: params.agentControl,
       costTracker: params.costTracker,
-      toolEnv: params.toolEnv,
+      toolEnv: turnToolEnv,
       onSessionUsageBudgetUpdated: params.onSessionUsageBudgetUpdated,
       applyA2uiEnvelope: params.applyA2uiEnvelope,
     };
@@ -369,7 +408,10 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
     const mcpToolNames = Object.keys(tools)
       .filter((name) => name.startsWith("mcp__"))
       .sort();
-    const turnSystem = buildTurnSystemPrompt(system, config, mcpToolNames, params.harnessContext);
+    const turnSystem = appendManagedSofficeInstructions(
+      buildTurnSystemPrompt(system, config, mcpToolNames, params.harnessContext),
+      turnToolEnv,
+    );
     const turnProviderOptions = config.providerOptions;
     const googlePrepareStep =
       config.provider === "google" && Object.keys(tools).length > 0
@@ -518,7 +560,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
           shellPolicy: params.shellPolicy ?? getAgentRoleShellPolicy(params.agentRole),
           providerOptions: turnProviderOptions,
           providerState: params.providerState,
-          toolEnv: params.toolEnv,
+          toolEnv: turnToolEnv,
           abortSignal,
           includeRawChunks: params.includeRawChunks ?? true,
           telemetry,

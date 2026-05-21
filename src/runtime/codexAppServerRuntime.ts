@@ -2,7 +2,11 @@ import path from "node:path";
 
 import { type AttributeValue, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
 
-import { ensureManagedSofficeRuntimeReady } from "../managedSofficeRuntime";
+import {
+  ensureManagedSofficeRuntimeReady,
+  managedSofficeEnvValue,
+  renderManagedSofficeRuntimeInstructions,
+} from "../managedSofficeRuntime";
 import { getSupportedModel, listSupportedModels } from "../models/registry";
 import type { TelemetrySettings } from "../observability/runtime";
 import {
@@ -383,34 +387,13 @@ function codexThreadConfig(params: RuntimeRunTurnParams): Record<string, unknown
   return Object.keys(config).length > 0 ? config : undefined;
 }
 
-function envValue(env: Record<string, string | undefined> | undefined, key: string): string {
-  if (!env) return "";
-  const actualKey = Object.keys(env).find(
-    (candidate) => candidate.toLowerCase() === key.toLowerCase(),
-  );
-  return actualKey ? (env[actualKey] ?? "") : "";
-}
-
-function codexManagedSofficeInstructions(
-  env: Record<string, string | undefined> | undefined,
-): string | null {
-  const shimPath = envValue(env, "COWORK_SOFFICE") || envValue(env, "COWORK_MANAGED_SOFFICE_SHIM");
-  if (!shimPath) return null;
-  const shimDir = envValue(env, "COWORK_MANAGED_SOFFICE_SHIM_DIR") || path.dirname(shimPath);
-  return [
-    "## Managed LibreOffice Runtime",
-    "",
-    `Cowork-managed LibreOffice is available through the \`soffice\` shim at \`${shimPath}\`.`,
-    `When rendering documents, spreadsheets, or presentations, keep \`${shimDir}\` ahead of system paths, for example by prefixing shell commands with \`PATH=${shimDir}:$PATH\`.`,
-    "Do not conclude LibreOffice is unavailable from a broken Homebrew wrapper or a missing `/Applications/LibreOffice.app`; use the Cowork-managed shim.",
-  ].join("\n");
-}
-
 function codexBaseInstructions(
   system: string,
   env?: Record<string, string | undefined>,
 ): string {
-  const managedSofficeInstructions = codexManagedSofficeInstructions(env);
+  const managedSofficeInstructions = system.includes("## Managed LibreOffice Runtime")
+    ? null
+    : renderManagedSofficeRuntimeInstructions(env);
   return [
     [
       "## Codex App-Server Tool Boundary",
@@ -686,8 +669,8 @@ async function startCodexAppServer(
   };
   const appServerEnv = { ...(params.toolEnv ?? process.env) };
   if (
-    !envValue(appServerEnv, "COWORK_SOFFICE") &&
-    !envValue(appServerEnv, "COWORK_MANAGED_SOFFICE_SHIM")
+    !managedSofficeEnvValue(appServerEnv, "COWORK_SOFFICE") &&
+    !managedSofficeEnvValue(appServerEnv, "COWORK_MANAGED_SOFFICE_SHIM")
   ) {
     const managedSofficeRuntimeSetup = await ensureManagedSofficeRuntimeReady({
       homedir: resolveAuthHomeDir(params.config),
