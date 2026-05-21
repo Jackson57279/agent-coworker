@@ -26,7 +26,7 @@
         "remark-parse": "^11.0.0",
         "turndown": "^7.2.4",
         "unified": "^11.0.5",
-        "unofficial-antigravity-sdk": "^1.0.0",
+        "unofficial-antigravity-sdk": "^1.0.2",
         "xlsx": "^0.18.5",
         "zod": "4.4.3",
       },
@@ -2435,7 +2435,7 @@
 
     "universalify": ["universalify@2.0.1", "", {}, "sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw=="],
 
-    "unofficial-antigravity-sdk": ["unofficial-antigravity-sdk@1.0.0", "", { "dependencies": { "@google/genai": "^2.4.0", "@modelcontextprotocol/sdk": "^1.29.0", "chokidar": "^5.0.0", "js-yaml": "^4.1.1", "zod": "^4.4.3", "zod-to-json-schema": "^3.25.2" }, "bin": { "localharness": "bin/localharness.js" } }, "sha512-xFc8EtQrDbqFo3wpN4rHZP46UI12Tb0XPhoER70FJXdVlFdnfgcHfg0vWhZZDBFe2bFQcB8WfxuBkEJcTHipLw=="],
+    "unofficial-antigravity-sdk": ["unofficial-antigravity-sdk@1.0.2", "", { "dependencies": { "@google/genai": "^2.4.0", "@modelcontextprotocol/sdk": "^1.29.0", "chokidar": "^5.0.0", "js-yaml": "^4.1.1", "zod": "^4.4.3", "zod-to-json-schema": "^3.25.2" }, "bin": { "localharness": "dist/bin/localharness.js" } }, "sha512-FGlaU7YnjY8xWX30gcpj+XtkyDZrLHHZd2O7+o0OJLoYKqmvNdC9g1RMbZx8PMFjfOavtSS6dXIMOy5MVn19Ew=="],
 
     "unpipe": ["unpipe@1.0.0", "", {}, "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ=="],
 
