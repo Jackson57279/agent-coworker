@@ -262,6 +262,47 @@ describe("desktop server manager startup mode", () => {
     }
   });
 
+  test("buildServerEnv points packaged server at bundled Foundation Models SDK when present", async () => {
+    const previousSdkDir = process.env.COWORK_TSFMSDK_DIR;
+    const previousSidecarPath = process.env.COWORK_DESKTOP_SIDECAR_PATH;
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-tsfm-sdk-bundle-"));
+    const sidecar = path.join(dir, "cowork-server-aarch64-apple-darwin");
+    const sdkDir = path.join(dir, "tsfm-sdk");
+
+    try {
+      delete process.env.COWORK_TSFMSDK_DIR;
+      process.env.COWORK_DESKTOP_SIDECAR_PATH = sidecar;
+      await fs.writeFile(sidecar, "");
+      await fs.mkdir(path.join(sdkDir, "dist"), { recursive: true });
+      await fs.mkdir(path.join(sdkDir, "native"), { recursive: true });
+      await fs.mkdir(path.join(sdkDir, "node_modules", "koffi", "build", "koffi", "darwin_arm64"), {
+        recursive: true,
+      });
+      await fs.writeFile(path.join(sdkDir, "dist", "index.js"), "");
+      await fs.writeFile(path.join(sdkDir, "native", "libFoundationModels.dylib"), "");
+      await fs.writeFile(
+        path.join(sdkDir, "node_modules", "koffi", "build", "koffi", "darwin_arm64", "koffi.node"),
+        "",
+      );
+
+      expect(__internal.buildServerEnv().COWORK_TSFMSDK_DIR).toBeUndefined();
+
+      const env = __internal.buildServerEnv(undefined, {
+        includeBundledFoundationModelsSdk: true,
+      });
+      expect(env.COWORK_TSFMSDK_DIR).toBe(sdkDir);
+    } finally {
+      if (previousSdkDir === undefined) delete process.env.COWORK_TSFMSDK_DIR;
+      else process.env.COWORK_TSFMSDK_DIR = previousSdkDir;
+      if (previousSidecarPath === undefined) {
+        delete process.env.COWORK_DESKTOP_SIDECAR_PATH;
+      } else {
+        process.env.COWORK_DESKTOP_SIDECAR_PATH = previousSidecarPath;
+      }
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("buildServerEnv enables OpenAI native connectors only from the desktop feature flag", () => {
     const previous = process.env.COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS;
     delete process.env.COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS;

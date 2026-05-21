@@ -1,3 +1,6 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
 import type { AgentConfig } from "../types";
 
 const TITLE_MODELS_BY_PROVIDER: Partial<Record<AgentConfig["provider"], readonly string[]>> = {
@@ -16,6 +19,11 @@ const TITLE_MODELS_BY_PROVIDER: Partial<Record<AgentConfig["provider"], readonly
 
 const TITLE_MAX_TOKENS = 150;
 const TITLE_MAX_CHARS = 50;
+const APPLE_FOUNDATION_TITLE_MODEL = "SystemLanguageModel";
+const APPLE_MODEL_NOT_READY_REASON = 2;
+const APPLE_TITLE_WAIT_TIMEOUT_MS = 1_000;
+const APPLE_TITLE_WAIT_INTERVAL_MS = 100;
+const APPLE_TITLE_MAX_RESPONSE_TOKENS = 24;
 
 export const DEFAULT_SESSION_TITLE = "New session";
 
@@ -30,7 +38,55 @@ export type SessionTitleResult = {
 type SessionTitleDeps = {
   createRuntime: typeof import("../runtime").createRuntime;
   defaultModelForProvider: typeof import("../providers/catalog").defaultModelForProvider;
+  loadAppleFoundationModelsModule: (env: NodeJS.ProcessEnv) => Promise<AppleFoundationModelsModule>;
+  platform: NodeJS.Platform;
+  arch: string;
+  env: NodeJS.ProcessEnv;
 };
+
+type AppleFoundationAvailability = {
+  available: boolean;
+  reason?: number;
+};
+
+type AppleFoundationSystemLanguageModel = {
+  isAvailable: () => AppleFoundationAvailability;
+  waitUntilAvailable?: (
+    timeoutMs?: number,
+    intervalMs?: number,
+  ) => Promise<AppleFoundationAvailability>;
+  dispose: () => void;
+};
+
+type AppleFoundationLanguageModelSession = {
+  respond: (
+    prompt: string,
+    opts?: {
+      options?: {
+        sampling?: unknown;
+        maximumResponseTokens?: number;
+        temperature?: number;
+      };
+    },
+  ) => Promise<string>;
+  dispose: () => void;
+};
+
+type AppleFoundationModelsModule = {
+  SystemLanguageModel: new () => AppleFoundationSystemLanguageModel;
+  LanguageModelSession: new (opts?: {
+    model?: AppleFoundationSystemLanguageModel;
+    instructions?: string;
+  }) => AppleFoundationLanguageModelSession;
+  SamplingMode?: {
+    greedy?: () => unknown;
+  };
+};
+
+type AppleFoundationTitleAttempt =
+  | { status: "generated"; title: string }
+  | { status: "unavailable" }
+  | { status: "failed" };
 
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -149,6 +205,92 @@ function providerOptionsForTitleRun(config: AgentConfig): AgentConfig["providerO
   };
 }
 
+function isAppleSiliconMac(platform: NodeJS.Platform, arch: string): boolean {
+  return platform === "darwin" && arch === "arm64";
+}
+
+async function loadAppleFoundationModelsModule(
+  env: NodeJS.ProcessEnv,
+): Promise<AppleFoundationModelsModule> {
+  const packagedSdkDir = env.COWORK_TSFMSDK_DIR?.trim();
+  if (packagedSdkDir) {
+    const indexUrl = pathToFileURL(path.join(packagedSdkDir, "dist", "index.js")).href;
+    return (await import(indexUrl)) as AppleFoundationModelsModule;
+  }
+
+  const packageName = "tsfm-" + "sdk";
+  return (await import(packageName)) as AppleFoundationModelsModule;
+}
+
+async function resolveAppleModelAvailability(
+  model: AppleFoundationSystemLanguageModel,
+): Promise<AppleFoundationAvailability> {
+  const availability = model.isAvailable();
+  if (
+    !availability.available &&
+    availability.reason === APPLE_MODEL_NOT_READY_REASON &&
+    typeof model.waitUntilAvailable === "function"
+  ) {
+    return await model.waitUntilAvailable(
+      APPLE_TITLE_WAIT_TIMEOUT_MS,
+      APPLE_TITLE_WAIT_INTERVAL_MS,
+    );
+  }
+  return availability;
+}
+
+async function generateAppleFoundationTitle(
+  query: string,
+  deps: Pick<SessionTitleDeps, "arch" | "env" | "loadAppleFoundationModelsModule" | "platform">,
+): Promise<AppleFoundationTitleAttempt> {
+  if (!isAppleSiliconMac(deps.platform, deps.arch)) {
+    return { status: "unavailable" };
+  }
+
+  let appleModule: AppleFoundationModelsModule;
+  try {
+    appleModule = await deps.loadAppleFoundationModelsModule(deps.env);
+  } catch {
+    return { status: "unavailable" };
+  }
+
+  let model: AppleFoundationSystemLanguageModel | null = null;
+  try {
+    model = new appleModule.SystemLanguageModel();
+    const availability = await resolveAppleModelAvailability(model);
+    if (!availability.available) {
+      model.dispose();
+      return { status: "unavailable" };
+    }
+  } catch {
+    model?.dispose();
+    return { status: "unavailable" };
+  }
+
+  let session: AppleFoundationLanguageModelSession | null = null;
+  try {
+    session = new appleModule.LanguageModelSession({
+      model,
+      instructions:
+        "You generate concise session titles. Return title text only, without quotes or extra explanation.",
+    });
+    const sampling = appleModule.SamplingMode?.greedy?.();
+    const result = await session.respond(buildTitlePrompt(query), {
+      options: {
+        ...(sampling ? { sampling } : {}),
+        maximumResponseTokens: APPLE_TITLE_MAX_RESPONSE_TOKENS,
+      },
+    });
+    const title = sanitizeModelTitle(result);
+    return title ? { status: "generated", title } : { status: "failed" };
+  } catch {
+    return { status: "failed" };
+  } finally {
+    session?.dispose();
+    model.dispose();
+  }
+}
+
 export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps> = {}) {
   let lazyDepsPromise: Promise<SessionTitleDeps> | null = null;
 
@@ -157,6 +299,11 @@ export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps>
       return {
         createRuntime: overrides.createRuntime,
         defaultModelForProvider: overrides.defaultModelForProvider,
+        loadAppleFoundationModelsModule:
+          overrides.loadAppleFoundationModelsModule ?? loadAppleFoundationModelsModule,
+        platform: overrides.platform ?? process.platform,
+        arch: overrides.arch ?? process.arch,
+        env: overrides.env ?? process.env,
       };
     }
 
@@ -166,6 +313,11 @@ export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps>
           createRuntime: overrides.createRuntime ?? runtime.createRuntime,
           defaultModelForProvider:
             overrides.defaultModelForProvider ?? catalog.defaultModelForProvider,
+          loadAppleFoundationModelsModule:
+            overrides.loadAppleFoundationModelsModule ?? loadAppleFoundationModelsModule,
+          platform: overrides.platform ?? process.platform,
+          arch: overrides.arch ?? process.arch,
+          env: overrides.env ?? process.env,
         }),
       );
     }
@@ -187,6 +339,22 @@ export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps>
     }
 
     const deps = await getDeps();
+    const appleTitle = await generateAppleFoundationTitle(query, deps);
+    if (appleTitle.status === "generated") {
+      return {
+        title: appleTitle.title,
+        source: "model",
+        model: APPLE_FOUNDATION_TITLE_MODEL,
+      };
+    }
+    if (appleTitle.status === "failed") {
+      return {
+        title: heuristicTitleFromQuery(query),
+        source: "heuristic",
+        model: null,
+      };
+    }
+
     const isAntigravity = opts.config.provider === "antigravity";
     const candidates = isAntigravity
       ? ["gemini-3.1-flash-lite-preview"]
@@ -236,3 +404,10 @@ export function createSessionTitleGenerator(overrides: Partial<SessionTitleDeps>
 }
 
 export const generateSessionTitle = createSessionTitleGenerator();
+
+export const __internal = {
+  APPLE_FOUNDATION_TITLE_MODEL,
+  generateAppleFoundationTitle,
+  isAppleSiliconMac,
+  loadAppleFoundationModelsModule,
+};

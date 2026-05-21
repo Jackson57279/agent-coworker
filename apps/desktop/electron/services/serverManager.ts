@@ -14,7 +14,12 @@ import {
   getServerTerminationSignal,
   getSourceStartupAttemptCount,
 } from "./serverPlatform";
-import { findPackagedSidecarLaunchCommand, resolvePackagedCodexAppServerFilename } from "./sidecar";
+import {
+  FOUNDATION_MODELS_SDK_DIR_NAME,
+  findPackagedSidecarLaunchCommand,
+  hasPackagedFoundationModelsSdk,
+  resolvePackagedCodexAppServerFilename,
+} from "./sidecar";
 import { assertSafeId, assertWorkspaceDirectory } from "./validation";
 
 const DEFAULT_SERVER_STARTUP_TIMEOUT_MS = 45_000;
@@ -188,6 +193,16 @@ function findBundledCodexPrimaryRuntimeDir(): string | null {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+function findBundledFoundationModelsSdkDir(): string | null {
+  for (const dir of getSidecarSearchDirs()) {
+    const candidate = path.join(dir, FOUNDATION_MODELS_SDK_DIR_NAME);
+    if (hasPackagedFoundationModelsSdk(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function waitForExit(child: ServerChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve(true);
@@ -356,11 +371,18 @@ function resolveSourceStartup(
   return { repoRoot, sourceEntry };
 }
 
-function buildServerEnv(featureFlags?: { openAiNativeConnectors?: boolean }): NodeJS.ProcessEnv {
+function buildServerEnv(
+  featureFlags?: { openAiNativeConnectors?: boolean },
+  opts: { includeBundledFoundationModelsSdk?: boolean } = {},
+): NodeJS.ProcessEnv {
   const bundledCodexAppServer = process.env.COWORK_CODEX_APP_SERVER_COMMAND
     ? null
     : findBundledCodexAppServerPath();
   const bundledCodexPrimaryRuntime = findBundledCodexPrimaryRuntimeDir();
+  const bundledFoundationModelsSdk =
+    opts.includeBundledFoundationModelsSdk && !process.env.COWORK_TSFMSDK_DIR
+      ? findBundledFoundationModelsSdkDir()
+      : null;
   return {
     ...process.env,
     COWORK_BROWSER_ACCESS_TOKEN:
@@ -373,6 +395,7 @@ function buildServerEnv(featureFlags?: { openAiNativeConnectors?: boolean }): No
     ...(bundledCodexPrimaryRuntime
       ? { COWORK_BUNDLED_CODEX_PRIMARY_RUNTIME_DIR: bundledCodexPrimaryRuntime }
       : {}),
+    ...(bundledFoundationModelsSdk ? { COWORK_TSFMSDK_DIR: bundledFoundationModelsSdk } : {}),
     ...(featureFlags?.openAiNativeConnectors
       ? { COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS: "1" }
       : {}),
@@ -518,7 +541,9 @@ export class ServerManager {
     let previousError: unknown = null;
 
     for (let attempt = 1; attempt <= attemptCount; attempt += 1) {
-      const serverEnv = buildServerEnv(opts.featureFlags);
+      const serverEnv = buildServerEnv(opts.featureFlags, {
+        includeBundledFoundationModelsSdk: !useSource,
+      });
       const sourceEnvForAttempt = useSource ? buildSourceEnvForAttempt(serverEnv, attempt) : null;
       const cleanup = sourceEnvForAttempt?.cleanup ?? (() => {});
 
@@ -746,6 +771,7 @@ export const __internal = {
   buildServerEnv,
   buildSourceEnvForAttempt,
   findBundledCodexAppServerPath,
+  findBundledFoundationModelsSdkDir,
   findSidecarLaunchCommand,
   getServerTerminationSignal,
   getServerLogPath,

@@ -5,10 +5,13 @@ import path from "node:path";
 
 import {
   buildSidecarManifest,
+  FOUNDATION_MODELS_KOFFI_TRIPLET,
+  FOUNDATION_MODELS_SDK_DIR_NAME,
   resolvePackagedCodexAppServerFilename,
   resolvePackagedSidecarFilename,
   SIDECAR_BUN_ENTRYPOINT_PATH,
   SIDECAR_BUN_EXECUTABLE_NAME,
+  shouldBundleFoundationModelsSdk,
   shouldUseBundledBunRuntime,
 } from "../apps/desktop/electron/services/sidecar";
 import {
@@ -21,7 +24,7 @@ import {
   runCommand,
 } from "./releaseBuildUtils";
 
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 type DesktopResourcesCache = {
   version: number;
@@ -34,6 +37,7 @@ type DesktopResourcesCache = {
   configFingerprint: string;
   skillsFingerprint: string;
   codexPrimaryRuntimeFingerprint: string | null;
+  foundationModelsSdkFingerprint: string | null;
   docsFingerprint: string | null;
 };
 
@@ -95,6 +99,8 @@ async function loadCache(cachePath: string): Promise<DesktopResourcesCache | nul
       typeof parsed.skillsFingerprint !== "string" ||
       (parsed.codexPrimaryRuntimeFingerprint !== null &&
         typeof parsed.codexPrimaryRuntimeFingerprint !== "string") ||
+      (parsed.foundationModelsSdkFingerprint !== null &&
+        typeof parsed.foundationModelsSdkFingerprint !== "string") ||
       (parsed.docsFingerprint !== null && typeof parsed.docsFingerprint !== "string")
     ) {
       return null;
@@ -160,6 +166,116 @@ async function syncCopiedDir(opts: {
   console.log(`[resources] ${opts.label}: updated`);
 }
 
+async function ensureFoundationModelsSdkInputs(root: string): Promise<{
+  sdkRoot: string;
+  koffiRoot: string;
+  fingerprintTargets: string[];
+}> {
+  const sdkRoot = path.join(root, "node_modules", "tsfm-sdk");
+  const koffiRoot = path.join(root, "node_modules", "koffi");
+  const requiredFiles = [
+    path.join(sdkRoot, "package.json"),
+    path.join(sdkRoot, "dist", "index.js"),
+    path.join(sdkRoot, "native", "libFoundationModels.dylib"),
+    path.join(koffiRoot, "index.js"),
+    path.join(koffiRoot, "package.json"),
+    path.join(koffiRoot, "build", "koffi", FOUNDATION_MODELS_KOFFI_TRIPLET, "koffi.node"),
+  ];
+
+  for (const requiredFile of requiredFiles) {
+    if (!(await pathExists(requiredFile))) {
+      throw new Error(
+        `Apple Foundation Models title support requires optional tsfm-sdk resources for macOS arm64 packaging, but this file is missing: ${requiredFile}. Run bun install on an Apple Silicon Mac first.`,
+      );
+    }
+  }
+
+  return {
+    sdkRoot,
+    koffiRoot,
+    fingerprintTargets: [
+      path.join(sdkRoot, "package.json"),
+      path.join(sdkRoot, "dist"),
+      path.join(sdkRoot, "native", "libFoundationModels.dylib"),
+      path.join(koffiRoot, "index.js"),
+      path.join(koffiRoot, "package.json"),
+      path.join(koffiRoot, "build", "koffi", FOUNDATION_MODELS_KOFFI_TRIPLET, "koffi.node"),
+    ],
+  };
+}
+
+async function copyIfExists(src: string, dest: string): Promise<void> {
+  if (!(await pathExists(src))) {
+    return;
+  }
+  await fs.copyFile(src, dest);
+}
+
+async function syncFoundationModelsSdk(opts: {
+  root: string;
+  dest: string;
+  previousFingerprint: string | null;
+  nextFingerprint: string | null;
+  platform: NodeJS.Platform;
+  arch: string;
+}): Promise<void> {
+  if (!shouldBundleFoundationModelsSdk(opts.platform, opts.arch)) {
+    await rmrf(opts.dest);
+    console.log("[resources] Foundation Models SDK: disabled");
+    return;
+  }
+
+  const inputs = await ensureFoundationModelsSdkInputs(opts.root);
+  const currentLooksComplete =
+    (await pathExists(path.join(opts.dest, "dist", "index.js"))) &&
+    (await pathExists(path.join(opts.dest, "native", "libFoundationModels.dylib"))) &&
+    (await pathExists(
+      path.join(
+        opts.dest,
+        "node_modules",
+        "koffi",
+        "build",
+        "koffi",
+        FOUNDATION_MODELS_KOFFI_TRIPLET,
+        "koffi.node",
+      ),
+    ));
+  if (opts.previousFingerprint === opts.nextFingerprint && currentLooksComplete) {
+    console.log("[resources] Foundation Models SDK: cached");
+    return;
+  }
+
+  await rmrf(opts.dest);
+  await fs.mkdir(opts.dest, { recursive: true });
+  await copyDir(path.join(inputs.sdkRoot, "dist"), path.join(opts.dest, "dist"));
+  await fs.mkdir(path.join(opts.dest, "native"), { recursive: true });
+  await fs.copyFile(
+    path.join(inputs.sdkRoot, "native", "libFoundationModels.dylib"),
+    path.join(opts.dest, "native", "libFoundationModels.dylib"),
+  );
+  await copyIfExists(
+    path.join(inputs.sdkRoot, "package.json"),
+    path.join(opts.dest, "package.json"),
+  );
+  await copyIfExists(path.join(inputs.sdkRoot, "LICENSE.md"), path.join(opts.dest, "LICENSE.md"));
+  await copyIfExists(path.join(inputs.sdkRoot, "NOTICE"), path.join(opts.dest, "NOTICE"));
+
+  const koffiDest = path.join(opts.dest, "node_modules", "koffi");
+  await fs.mkdir(path.join(koffiDest, "build", "koffi", FOUNDATION_MODELS_KOFFI_TRIPLET), {
+    recursive: true,
+  });
+  await fs.copyFile(path.join(inputs.koffiRoot, "index.js"), path.join(koffiDest, "index.js"));
+  await fs.copyFile(
+    path.join(inputs.koffiRoot, "package.json"),
+    path.join(koffiDest, "package.json"),
+  );
+  await fs.copyFile(
+    path.join(inputs.koffiRoot, "build", "koffi", FOUNDATION_MODELS_KOFFI_TRIPLET, "koffi.node"),
+    path.join(koffiDest, "build", "koffi", FOUNDATION_MODELS_KOFFI_TRIPLET, "koffi.node"),
+  );
+  console.log("[resources] Foundation Models SDK: updated");
+}
+
 async function main() {
   const target = resolveBuildTarget(process.argv.slice(2));
   const { platform, arch } = target;
@@ -206,6 +322,12 @@ async function main() {
   const codexPrimaryRuntimeFingerprint = codexPrimaryRuntimeSource
     ? await fingerprintInputs([codexPrimaryRuntimeSource], codexPrimaryRuntimeSource)
     : null;
+  const foundationModelsSdkInputs = shouldBundleFoundationModelsSdk(platform, arch)
+    ? await ensureFoundationModelsSdkInputs(root)
+    : null;
+  const foundationModelsSdkFingerprint = foundationModelsSdkInputs
+    ? await fingerprintInputs(foundationModelsSdkInputs.fingerprintTargets, root)
+    : null;
   const docsFingerprint = includeDocs ? await fingerprintInputs([docsSrc], root) : null;
   const sidecarFingerprint = await fingerprintInputs(sidecarInputs, root);
 
@@ -217,6 +339,7 @@ async function main() {
   const codexAppServerFilename = resolvePackagedCodexAppServerFilename(platform, arch);
   const codexAppServerOutfile = path.join(desktopBinariesDir, codexAppServerFilename);
   const sidecarManifestPath = path.join(desktopBinariesDir, "cowork-server-manifest.json");
+  const foundationModelsSdkDest = path.join(desktopBinariesDir, FOUNDATION_MODELS_SDK_DIR_NAME);
   const bundledBunPath = path.join(desktopBinariesDir, SIDECAR_BUN_EXECUTABLE_NAME);
   const bundledEntrypointPath = path.join(desktopBinariesDir, SIDECAR_BUN_ENTRYPOINT_PATH);
   const useBundledBunRuntime = shouldUseBundledBunRuntime(platform, arch);
@@ -376,6 +499,15 @@ async function main() {
     console.log("[resources] codex primary runtime: disabled");
   }
 
+  await syncFoundationModelsSdk({
+    root,
+    dest: foundationModelsSdkDest,
+    previousFingerprint: cache?.foundationModelsSdkFingerprint ?? null,
+    nextFingerprint: foundationModelsSdkFingerprint,
+    platform,
+    arch,
+  });
+
   const docsDest = path.join(distDir, "docs");
   if (!includeDocs) {
     await rmrf(docsDest);
@@ -401,6 +533,7 @@ async function main() {
     configFingerprint,
     skillsFingerprint,
     codexPrimaryRuntimeFingerprint,
+    foundationModelsSdkFingerprint,
     docsFingerprint,
   });
 
