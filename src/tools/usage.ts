@@ -169,8 +169,8 @@ Use this tool to monitor spending, check costs before expensive operations, or s
           const lines: string[] = [
             "Known Model Pricing (per 1M tokens):",
             "",
-            "Provider         | Model                                      | Input    | Output   | Cached",
-            "─────────────────|────────────────────────────────────────────|──────────|──────────|────────",
+            "Provider         | Model                                      | Input    | Output   | Cached | Long context",
+            "─────────────────|────────────────────────────────────────────|──────────|──────────|────────|─────────────",
           ];
 
           for (const entry of catalog) {
@@ -178,8 +178,14 @@ Use this tool to monitor spending, check costs before expensive operations, or s
               entry.pricing.cachedInputPerMillion !== undefined
                 ? `$${entry.pricing.cachedInputPerMillion.toFixed(3)}`
                 : "n/a";
+            const longContext =
+              entry.pricing.longContextThresholdTokens !== undefined &&
+              entry.pricing.longContextInputPerMillion !== undefined &&
+              entry.pricing.longContextOutputPerMillion !== undefined
+                ? `>${entry.pricing.longContextThresholdTokens.toLocaleString()}: $${entry.pricing.longContextInputPerMillion.toFixed(3)}/$${entry.pricing.longContextOutputPerMillion.toFixed(3)}`
+                : "n/a";
             lines.push(
-              `${entry.provider.padEnd(17)}| ${entry.model.padEnd(43)}| $${entry.pricing.inputPerMillion.toFixed(3).padEnd(7)}| $${entry.pricing.outputPerMillion.toFixed(3).padEnd(7)}| ${cached}`,
+              `${entry.provider.padEnd(17)}| ${entry.model.padEnd(43)}| $${entry.pricing.inputPerMillion.toFixed(3).padEnd(7)}| $${entry.pricing.outputPerMillion.toFixed(3).padEnd(7)}| ${cached.padEnd(7)}| ${longContext}`,
             );
           }
 

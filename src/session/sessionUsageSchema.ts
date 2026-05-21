@@ -18,6 +18,10 @@ export const modelPricingSchema: z.ZodType<ModelPricing> = z
     inputPerMillion: z.number(),
     outputPerMillion: z.number(),
     cachedInputPerMillion: z.number().optional(),
+    longContextThresholdTokens: z.number().int().nonnegative().optional(),
+    longContextInputPerMillion: z.number().optional(),
+    longContextOutputPerMillion: z.number().optional(),
+    longContextCachedInputPerMillion: z.number().optional(),
   })
   .strict();
 

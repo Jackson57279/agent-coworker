@@ -29,6 +29,14 @@ export type ModelPricing = {
   outputPerMillion: number;
   /** Optional: cost per 1M cached input tokens in USD. */
   cachedInputPerMillion?: number;
+  /** Optional: input-token threshold where long-context pricing begins. */
+  longContextThresholdTokens?: number;
+  /** Optional: cost per 1M input/prompt tokens above the long-context threshold. */
+  longContextInputPerMillion?: number;
+  /** Optional: cost per 1M output/completion tokens above the long-context threshold. */
+  longContextOutputPerMillion?: number;
+  /** Optional: cost per 1M cached input tokens above the long-context threshold. */
+  longContextCachedInputPerMillion?: number;
 };
 
 export type PricingCatalogEntry = {
@@ -151,11 +159,19 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
     inputPerMillion: 5,
     outputPerMillion: 30,
     cachedInputPerMillion: 0.5,
+    longContextThresholdTokens: 272_000,
+    longContextInputPerMillion: 10,
+    longContextOutputPerMillion: 45,
+    longContextCachedInputPerMillion: 1,
   },
   "openai:gpt-5.4": {
     inputPerMillion: 2.5,
     outputPerMillion: 15,
     cachedInputPerMillion: 0.25,
+    longContextThresholdTokens: 272_000,
+    longContextInputPerMillion: 5,
+    longContextOutputPerMillion: 22.5,
+    longContextCachedInputPerMillion: 0.5,
   },
   "openai:gpt-5.4-mini": {
     inputPerMillion: 0.75,
@@ -183,11 +199,19 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
     inputPerMillion: 5,
     outputPerMillion: 30,
     cachedInputPerMillion: 0.5,
+    longContextThresholdTokens: 272_000,
+    longContextInputPerMillion: 10,
+    longContextOutputPerMillion: 45,
+    longContextCachedInputPerMillion: 1,
   },
   "codex-cli:gpt-5.4": {
     inputPerMillion: 2.5,
     outputPerMillion: 15,
     cachedInputPerMillion: 0.25,
+    longContextThresholdTokens: 272_000,
+    longContextInputPerMillion: 5,
+    longContextOutputPerMillion: 22.5,
+    longContextCachedInputPerMillion: 0.5,
   },
   "codex-cli:gpt-5.4-mini": {
     inputPerMillion: 0.75,
@@ -235,6 +259,14 @@ const pricingOverrideSchema = {
     typeof value === "number" && Number.isFinite(value) && value >= 0,
   cachedInputPerMillion: (value: unknown) =>
     value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0),
+  longContextThresholdTokens: (value: unknown) =>
+    value === undefined || (typeof value === "number" && Number.isInteger(value) && value >= 0),
+  longContextInputPerMillion: (value: unknown) =>
+    value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0),
+  longContextOutputPerMillion: (value: unknown) =>
+    value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0),
+  longContextCachedInputPerMillion: (value: unknown) =>
+    value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0),
 };
 
 let cachedPricingOverrideRaw: string | null = null;
@@ -246,7 +278,11 @@ function isModelPricing(value: unknown): value is ModelPricing {
   return (
     pricingOverrideSchema.inputPerMillion(record.inputPerMillion) &&
     pricingOverrideSchema.outputPerMillion(record.outputPerMillion) &&
-    pricingOverrideSchema.cachedInputPerMillion(record.cachedInputPerMillion)
+    pricingOverrideSchema.cachedInputPerMillion(record.cachedInputPerMillion) &&
+    pricingOverrideSchema.longContextThresholdTokens(record.longContextThresholdTokens) &&
+    pricingOverrideSchema.longContextInputPerMillion(record.longContextInputPerMillion) &&
+    pricingOverrideSchema.longContextOutputPerMillion(record.longContextOutputPerMillion) &&
+    pricingOverrideSchema.longContextCachedInputPerMillion(record.longContextCachedInputPerMillion)
   );
 }
 
@@ -318,6 +354,18 @@ function loadPricingOverridesFromEnv(env: PricingEnv = process.env): Record<stri
       ...(value.cachedInputPerMillion !== undefined
         ? { cachedInputPerMillion: value.cachedInputPerMillion }
         : {}),
+      ...(value.longContextThresholdTokens !== undefined
+        ? { longContextThresholdTokens: value.longContextThresholdTokens }
+        : {}),
+      ...(value.longContextInputPerMillion !== undefined
+        ? { longContextInputPerMillion: value.longContextInputPerMillion }
+        : {}),
+      ...(value.longContextOutputPerMillion !== undefined
+        ? { longContextOutputPerMillion: value.longContextOutputPerMillion }
+        : {}),
+      ...(value.longContextCachedInputPerMillion !== undefined
+        ? { longContextCachedInputPerMillion: value.longContextCachedInputPerMillion }
+        : {}),
     };
   }
 
@@ -374,16 +422,29 @@ export function calculateTokenCost(
   pricing: ModelPricing,
   cachedPromptTokens = 0,
 ): number {
+  const useLongContextPricing =
+    pricing.longContextThresholdTokens !== undefined &&
+    promptTokens > pricing.longContextThresholdTokens;
+  const inputPerMillion =
+    useLongContextPricing && pricing.longContextInputPerMillion !== undefined
+      ? pricing.longContextInputPerMillion
+      : pricing.inputPerMillion;
+  const outputPerMillion =
+    useLongContextPricing && pricing.longContextOutputPerMillion !== undefined
+      ? pricing.longContextOutputPerMillion
+      : pricing.outputPerMillion;
+  const cachedInputPerMillion =
+    useLongContextPricing && pricing.longContextCachedInputPerMillion !== undefined
+      ? pricing.longContextCachedInputPerMillion
+      : (pricing.cachedInputPerMillion ?? inputPerMillion);
   const normalizedCachedPromptTokens = Math.min(
     Math.max(0, cachedPromptTokens),
     Math.max(0, promptTokens),
   );
   const uncachedPromptTokens = Math.max(0, promptTokens - normalizedCachedPromptTokens);
-  const inputCost = (uncachedPromptTokens / 1_000_000) * pricing.inputPerMillion;
-  const cachedInputCost =
-    (normalizedCachedPromptTokens / 1_000_000) *
-    (pricing.cachedInputPerMillion ?? pricing.inputPerMillion);
-  const outputCost = (completionTokens / 1_000_000) * pricing.outputPerMillion;
+  const inputCost = (uncachedPromptTokens / 1_000_000) * inputPerMillion;
+  const cachedInputCost = (normalizedCachedPromptTokens / 1_000_000) * cachedInputPerMillion;
+  const outputCost = (completionTokens / 1_000_000) * outputPerMillion;
   return inputCost + cachedInputCost + outputCost;
 }
 

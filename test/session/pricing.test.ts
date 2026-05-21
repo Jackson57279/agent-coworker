@@ -44,6 +44,10 @@ describe("pricing", () => {
       expect(pricing!.inputPerMillion).toBe(5);
       expect(pricing!.outputPerMillion).toBe(30);
       expect(pricing!.cachedInputPerMillion).toBe(0.5);
+      expect(pricing!.longContextThresholdTokens).toBe(272_000);
+      expect(pricing!.longContextInputPerMillion).toBe(10);
+      expect(pricing!.longContextOutputPerMillion).toBe(45);
+      expect(pricing!.longContextCachedInputPerMillion).toBe(1);
     });
 
     it("resolves exact match for google model", () => {
@@ -190,6 +194,10 @@ describe("pricing", () => {
       expect(pricing!.inputPerMillion).toBe(5);
       expect(pricing!.outputPerMillion).toBe(30);
       expect(pricing!.cachedInputPerMillion).toBe(0.5);
+      expect(pricing!.longContextThresholdTokens).toBe(272_000);
+      expect(pricing!.longContextInputPerMillion).toBe(10);
+      expect(pricing!.longContextOutputPerMillion).toBe(45);
+      expect(pricing!.longContextCachedInputPerMillion).toBe(1);
     });
 
     it("resolves exact match for codex-cli gpt-5.4-mini pricing", () => {
@@ -277,6 +285,23 @@ describe("pricing", () => {
       // 500K output @ 14 = 7
       const cost = calculateTokenCost(1_000_000, 500_000, pricing, 400_000);
       expect(cost).toBeCloseTo(8.12, 4);
+    });
+
+    it("applies GPT-5.5 long-context pricing above the published threshold", () => {
+      const pricing = resolveModelPricing("codex-cli", "gpt-5.5")!;
+      // 300K prompt tokens with 100K cached + 100K output crosses the 272K threshold.
+      // 200K uncached input @ 10 = 2
+      // 100K cached input @ 1 = 0.1
+      // 100K output @ 45 = 4.5
+      const cost = calculateTokenCost(300_000, 100_000, pricing, 100_000);
+      expect(cost).toBeCloseTo(6.6, 4);
+    });
+
+    it("keeps GPT-5.5 short-context pricing at the published threshold", () => {
+      const pricing = resolveModelPricing("codex-cli", "gpt-5.5")!;
+      // The long-context tier starts above 272K input tokens.
+      const cost = calculateTokenCost(272_000, 100_000, pricing, 100_000);
+      expect(cost).toBeCloseTo(3.91, 4);
     });
   });
 

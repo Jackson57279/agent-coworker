@@ -88,6 +88,24 @@ describe("SessionCostTracker", () => {
     expect(tracker.getSnapshot().estimatedTotalCostUsd).toBeCloseTo(8.12, 6);
   });
 
+  test("uses GPT-5.5 long-context pricing for large app-server turns", () => {
+    const tracker = new SessionCostTracker("session-1");
+
+    tracker.recordTurn({
+      turnId: "turn-1",
+      provider: "codex-cli",
+      model: "gpt-5.5",
+      usage: {
+        promptTokens: 300_000,
+        cachedPromptTokens: 100_000,
+        completionTokens: 100_000,
+        totalTokens: 400_000,
+      },
+    });
+
+    expect(tracker.getSnapshot().estimatedTotalCostUsd).toBeCloseTo(6.6, 6);
+  });
+
   test("stores cached and reasoning token breakdowns without double-charging output", () => {
     const tracker = new SessionCostTracker("session-1");
 

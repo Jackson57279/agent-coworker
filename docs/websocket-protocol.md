@@ -1306,7 +1306,11 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
   "pricing": {
     "inputPerMillion": 1.25,
     "outputPerMillion": 10,
-    "cachedInputPerMillion": 0.125
+    "cachedInputPerMillion": 0.125,
+    "longContextThresholdTokens": 272000,
+    "longContextInputPerMillion": 2.5,
+    "longContextOutputPerMillion": 15,
+    "longContextCachedInputPerMillion": 0.25
   }
 }
 ```
@@ -1350,7 +1354,11 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
 {
   "inputPerMillion": 1.25,
   "outputPerMillion": 10,
-  "cachedInputPerMillion": 0.125
+  "cachedInputPerMillion": 0.125,
+  "longContextThresholdTokens": 272000,
+  "longContextInputPerMillion": 2.5,
+  "longContextOutputPerMillion": 15,
+  "longContextCachedInputPerMillion": 0.25
 }
 ```
 
@@ -1359,6 +1367,10 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
 | `inputPerMillion` | `number` | USD cost per 1M prompt/input tokens |
 | `outputPerMillion` | `number` | USD cost per 1M completion/output tokens |
 | `cachedInputPerMillion` | `number` | USD cost per 1M cached prompt/input tokens when discounted pricing exists |
+| `longContextThresholdTokens` | `number` | Prompt/input token count above which this pricing entry uses long-context rates |
+| `longContextInputPerMillion` | `number` | USD cost per 1M prompt/input tokens when long-context pricing applies |
+| `longContextOutputPerMillion` | `number` | USD cost per 1M completion/output tokens when long-context pricing applies |
+| `longContextCachedInputPerMillion` | `number` | USD cost per 1M cached prompt/input tokens when long-context pricing applies |
 
 ### BudgetStatus
 
