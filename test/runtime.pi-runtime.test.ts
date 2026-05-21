@@ -555,7 +555,7 @@ describe("pi runtime regressions", () => {
       cost: {
         input: 0.6,
         output: 3,
-        cacheRead: 0,
+        cacheRead: 0.12,
         cacheWrite: 0,
       },
     });

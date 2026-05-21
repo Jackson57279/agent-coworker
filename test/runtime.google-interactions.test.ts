@@ -1336,7 +1336,14 @@ describe("google native interactions request building", () => {
           interaction: {
             id: "mock-interaction",
             status: "completed",
-            usage: { total_input_tokens: 1, total_output_tokens: 2, total_tokens: 3 },
+            usage: {
+              total_input_tokens: 7,
+              total_output_tokens: 5,
+              total_cached_tokens: 3,
+              total_cache_write_tokens: 2,
+              total_thought_tokens: 4,
+              total_tokens: 17,
+            },
           },
         },
       ]);
@@ -1379,6 +1386,14 @@ describe("google native interactions request building", () => {
       ]);
       expect(result.interactionId).toBe("mock-interaction");
       expect(result.assistant.content).toEqual([{ type: "text", text: "Hello world" }]);
+      expect(result.assistant.usage).toEqual({
+        input: 7,
+        output: 5,
+        cacheRead: 3,
+        cacheWrite: 2,
+        reasoningOutputTokens: 4,
+        totalTokens: 17,
+      });
     } finally {
       globalThis.fetch = realFetch;
       googleNativeInternal.__testResetGoogleInteractionsClientCache();

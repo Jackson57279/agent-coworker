@@ -6203,7 +6203,7 @@ describe("AgentSession", () => {
         expect(usageEvt.usage.completionTokens).toBe(50);
         expect(usageEvt.usage.totalTokens).toBe(150);
         expect(usageEvt.usage.cachedPromptTokens).toBe(25);
-        expect(usageEvt.usage.estimatedCostUsd).toBe(0.1234);
+        expect(usageEvt.usage.estimatedCostUsd).toBeCloseTo(0.00018875, 10);
         expect(typeof usageEvt.turnId).toBe("string");
         expect(usageEvt.turnId.length).toBeGreaterThan(0);
       }

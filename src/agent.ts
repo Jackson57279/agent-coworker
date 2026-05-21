@@ -52,6 +52,7 @@ const usageSchema = z.object({
   completionTokens: z.number(),
   totalTokens: z.number(),
   cachedPromptTokens: z.number().optional(),
+  cacheWritePromptTokens: z.number().optional(),
   reasoningOutputTokens: z.number().optional(),
   estimatedCostUsd: z.number().optional(),
 });
@@ -337,6 +338,8 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       completionTokens: number;
       totalTokens: number;
       cachedPromptTokens?: number;
+      cacheWritePromptTokens?: number;
+      reasoningOutputTokens?: number;
       estimatedCostUsd?: number;
     };
     providerState?: ProviderContinuationState;
@@ -435,6 +438,8 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
         completionTokens: number;
         totalTokens: number;
         cachedPromptTokens?: number;
+        cacheWritePromptTokens?: number;
+        reasoningOutputTokens?: number;
         estimatedCostUsd?: number;
       };
     }> => {
@@ -541,6 +546,9 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
                   ...(typeof parsedUsage.data.cachedPromptTokens === "number"
                     ? { cachedPromptTokens: parsedUsage.data.cachedPromptTokens }
                     : {}),
+                  ...(typeof parsedUsage.data.cacheWritePromptTokens === "number"
+                    ? { cacheWritePromptTokens: parsedUsage.data.cacheWritePromptTokens }
+                    : {}),
                   ...(typeof parsedUsage.data.reasoningOutputTokens === "number"
                     ? { reasoningOutputTokens: parsedUsage.data.reasoningOutputTokens }
                     : {}),
@@ -607,6 +615,8 @@ export async function runTurnWithDeps(
     completionTokens: number;
     totalTokens: number;
     cachedPromptTokens?: number;
+    cacheWritePromptTokens?: number;
+    reasoningOutputTokens?: number;
     estimatedCostUsd?: number;
   };
   providerState?: ProviderContinuationState;

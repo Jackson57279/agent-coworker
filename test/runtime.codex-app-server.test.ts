@@ -194,14 +194,14 @@ function createMockClient(): CodexAppServerClient {
             total: {
               total_tokens: 33,
               input_tokens: 20,
-              input_tokens_details: { cached_tokens: 6 },
+              input_tokens_details: { cached_tokens: 6, cache_creation_tokens: 4 },
               output_tokens: 13,
               output_tokens_details: { reasoning_tokens: 5 },
             },
             last: {
               total_tokens: 33,
               input_tokens: 20,
-              input_tokens_details: { cached_tokens: 6 },
+              input_tokens_details: { cached_tokens: 6, cache_creation_tokens: 4 },
               output_tokens: 13,
               output_tokens_details: { reasoning_tokens: 5 },
             },
@@ -358,6 +358,7 @@ function createMockClient(): CodexAppServerClient {
                 totalTokens: 24,
                 inputTokens: 11,
                 cachedInputTokens: 1,
+                cacheWriteInputTokens: 2,
                 outputTokens: 13,
                 reasoningOutputTokens: 5,
               },
@@ -365,6 +366,7 @@ function createMockClient(): CodexAppServerClient {
                 totalTokens: 24,
                 inputTokens: 11,
                 cachedInputTokens: 1,
+                cacheWriteInputTokens: 2,
                 outputTokens: 13,
                 reasoningOutputTokens: 5,
               },
@@ -1581,6 +1583,7 @@ rl.on("line", (line) => {
       completionTokens: 13,
       totalTokens: 24,
       cachedPromptTokens: 1,
+      cacheWritePromptTokens: 2,
       reasoningOutputTokens: 5,
     });
   });
@@ -1603,6 +1606,7 @@ rl.on("line", (line) => {
       completionTokens: 13,
       totalTokens: 33,
       cachedPromptTokens: 6,
+      cacheWritePromptTokens: 4,
       reasoningOutputTokens: 5,
     });
   });

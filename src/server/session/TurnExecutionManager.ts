@@ -446,6 +446,13 @@ function mergeTurnUsage(
     ...(typeof total.cachedPromptTokens === "number" || typeof next.cachedPromptTokens === "number"
       ? { cachedPromptTokens: (total.cachedPromptTokens ?? 0) + (next.cachedPromptTokens ?? 0) }
       : {}),
+    ...(typeof total.cacheWritePromptTokens === "number" ||
+    typeof next.cacheWritePromptTokens === "number"
+      ? {
+          cacheWritePromptTokens:
+            (total.cacheWritePromptTokens ?? 0) + (next.cacheWritePromptTokens ?? 0),
+        }
+      : {}),
     ...(typeof total.reasoningOutputTokens === "number" ||
     typeof next.reasoningOutputTokens === "number"
       ? {

@@ -18,8 +18,10 @@ describe("pricing", () => {
 
       const opus47 = resolveModelPricing("anthropic", "claude-opus-4-7");
       expect(opus47).not.toBeNull();
-      expect(opus47!.inputPerMillion).toBe(15);
-      expect(opus47!.outputPerMillion).toBe(75);
+      expect(opus47!.inputPerMillion).toBe(5);
+      expect(opus47!.outputPerMillion).toBe(25);
+      expect(opus47!.cachedInputPerMillion).toBe(0.5);
+      expect(opus47!.cacheWriteInputPerMillion).toBe(6.25);
     });
 
     it("resolves exact match for openai gpt-5.2 pricing", () => {
@@ -71,24 +73,27 @@ describe("pricing", () => {
       expect(kimi).not.toBeNull();
       expect(kimi!.inputPerMillion).toBe(0.6);
       expect(kimi!.outputPerMillion).toBe(3);
+      expect(kimi!.cachedInputPerMillion).toBe(0.12);
 
       const glm = resolveModelPricing("baseten", "zai-org/GLM-5");
       expect(glm).not.toBeNull();
       expect(glm!.inputPerMillion).toBe(0.95);
       expect(glm!.outputPerMillion).toBe(3.15);
+      expect(glm!.cachedInputPerMillion).toBe(0.2);
 
       const nemotron = resolveModelPricing("baseten", "nvidia/Nemotron-120B-A12B");
       expect(nemotron).not.toBeNull();
-      expect(nemotron!.inputPerMillion).toBe(0.35);
-      expect(nemotron!.outputPerMillion).toBe(0.4);
+      expect(nemotron!.inputPerMillion).toBe(0.3);
+      expect(nemotron!.outputPerMillion).toBe(0.75);
+      expect(nemotron!.cachedInputPerMillion).toBe(0.06);
     });
 
     it("resolves exact match for gemini-3.5-flash pricing", () => {
       const pricing = resolveModelPricing("google", "gemini-3.5-flash");
       expect(pricing).not.toBeNull();
-      expect(pricing!.inputPerMillion).toBe(0.5);
-      expect(pricing!.outputPerMillion).toBe(3);
-      expect(pricing!.cachedInputPerMillion).toBe(0.05);
+      expect(pricing!.inputPerMillion).toBe(1.5);
+      expect(pricing!.outputPerMillion).toBe(9);
+      expect(pricing!.cachedInputPerMillion).toBe(0.15);
     });
 
     it("resolves exact match for fireworks router pricing", () => {
@@ -178,6 +183,7 @@ describe("pricing", () => {
       expect(minimax!.inputPerMillion).toBe(0.3);
       expect(minimax!.outputPerMillion).toBe(1.2);
       expect(minimax!.cachedInputPerMillion).toBe(0.06);
+      expect(minimax!.cacheWriteInputPerMillion).toBe(0.375);
     });
 
     it("resolves exact match for codex-cli gpt-5.4 pricing", () => {
@@ -208,6 +214,14 @@ describe("pricing", () => {
       expect(pricing!.cachedInputPerMillion).toBe(0.075);
     });
 
+    it("resolves exact match for codex-cli gpt-5.3-codex-spark pricing", () => {
+      const pricing = resolveModelPricing("codex-cli", "gpt-5.3-codex-spark");
+      expect(pricing).not.toBeNull();
+      expect(pricing!.inputPerMillion).toBe(1.75);
+      expect(pricing!.outputPerMillion).toBe(14);
+      expect(pricing!.cachedInputPerMillion).toBe(0.175);
+    });
+
     it("returns null for unknown provider/model", () => {
       expect(resolveModelPricing("anthropic", "nonexistent-model")).toBeNull();
       expect(resolveModelPricing("google", "unknown-model")).toBeNull();
@@ -216,7 +230,8 @@ describe("pricing", () => {
     it("includes cached input pricing when available", () => {
       const pricing = resolveModelPricing("anthropic", "claude-opus-4-6");
       expect(pricing).not.toBeNull();
-      expect(pricing!.cachedInputPerMillion).toBe(1.875);
+      expect(pricing!.cachedInputPerMillion).toBe(0.5);
+      expect(pricing!.cacheWriteInputPerMillion).toBe(6.25);
     });
 
     it("applies env overrides for custom pricing entries", () => {
@@ -226,6 +241,7 @@ describe("pricing", () => {
             inputPerMillion: 9,
             outputPerMillion: 27,
             cachedInputPerMillion: 0.9,
+            cacheWriteInputPerMillion: 1.1,
           },
         }),
       };
@@ -235,6 +251,7 @@ describe("pricing", () => {
         inputPerMillion: 9,
         outputPerMillion: 27,
         cachedInputPerMillion: 0.9,
+        cacheWriteInputPerMillion: 1.1,
       });
     });
 
@@ -287,6 +304,16 @@ describe("pricing", () => {
       expect(cost).toBeCloseTo(8.12, 4);
     });
 
+    it("prices cache reads and cache writes as separate prompt-token buckets", () => {
+      const pricing = resolveModelPricing("anthropic", "claude-sonnet-4-5")!;
+      // 500K uncached @ 3 = 1.5
+      // 400K cache read @ 0.3 = 0.12
+      // 100K cache write @ 3.75 = 0.375
+      // 500K output @ 15 = 7.5
+      const cost = calculateTokenCost(1_000_000, 500_000, pricing, 400_000, 100_000);
+      expect(cost).toBeCloseTo(9.495, 4);
+    });
+
     it("applies GPT-5.5 long-context pricing above the published threshold", () => {
       const pricing = resolveModelPricing("codex-cli", "gpt-5.5")!;
       // 300K prompt tokens with 100K cached + 100K output crosses the 272K threshold.
@@ -302,6 +329,16 @@ describe("pricing", () => {
       // The long-context tier starts above 272K input tokens.
       const cost = calculateTokenCost(272_000, 100_000, pricing, 100_000);
       expect(cost).toBeCloseTo(3.91, 4);
+    });
+
+    it("applies Gemini 3.1 Pro long-context pricing above 200K prompt tokens", () => {
+      const pricing = resolveModelPricing("google", "gemini-3.1-pro-preview")!;
+      // 250K prompt tokens with 50K cached + 100K output crosses the 200K threshold.
+      // 200K uncached input @ 4 = 0.8
+      // 50K cached input @ 0.4 = 0.02
+      // 100K output @ 18 = 1.8
+      const cost = calculateTokenCost(250_000, 100_000, pricing, 50_000);
+      expect(cost).toBeCloseTo(2.62, 4);
     });
   });
 
@@ -367,6 +404,7 @@ describe("pricing", () => {
       expect(providers.has("baseten")).toBe(true);
       expect(providers.has("openai")).toBe(true);
       expect(providers.has("google")).toBe(true);
+      expect(providers.has("antigravity")).toBe(true);
       expect(providers.has("opencode-zen")).toBe(true);
       expect(providers.has("codex-cli")).toBe(true);
     });

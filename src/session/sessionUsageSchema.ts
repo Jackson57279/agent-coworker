@@ -18,6 +18,7 @@ export const modelPricingSchema: z.ZodType<ModelPricing> = z
     inputPerMillion: z.number(),
     outputPerMillion: z.number(),
     cachedInputPerMillion: z.number().optional(),
+    cacheWriteInputPerMillion: z.number().optional(),
     longContextThresholdTokens: z.number().int().nonnegative().optional(),
     longContextInputPerMillion: z.number().optional(),
     longContextOutputPerMillion: z.number().optional(),
@@ -31,6 +32,7 @@ export const turnUsageSchema: z.ZodType<TurnUsage> = z
     completionTokens: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative(),
     cachedPromptTokens: z.number().int().nonnegative().optional(),
+    cacheWritePromptTokens: z.number().int().nonnegative().optional(),
     reasoningOutputTokens: z.number().int().nonnegative().optional(),
     estimatedCostUsd: z.number().optional(),
   })
@@ -58,6 +60,7 @@ export const modelUsageSummarySchema: z.ZodType<ModelUsageSummary> = z
     totalCompletionTokens: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative(),
     totalCachedPromptTokens: z.number().int().nonnegative().optional(),
+    totalCacheWritePromptTokens: z.number().int().nonnegative().optional(),
     totalReasoningOutputTokens: z.number().int().nonnegative().optional(),
     estimatedCostUsd: z.number().nullable(),
   })
@@ -82,6 +85,7 @@ export const sessionUsageSnapshotSchema: z.ZodType<SessionUsageSnapshot> = z
     totalCompletionTokens: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative(),
     totalCachedPromptTokens: z.number().int().nonnegative().optional(),
+    totalCacheWritePromptTokens: z.number().int().nonnegative().optional(),
     totalReasoningOutputTokens: z.number().int().nonnegative().optional(),
     estimatedTotalCostUsd: z.number().nullable(),
     costTrackingAvailable: z.boolean(),

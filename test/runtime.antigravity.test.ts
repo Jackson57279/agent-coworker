@@ -143,6 +143,9 @@ describe("antigravity runtime", () => {
           promptTokenCount: 10,
           candidatesTokenCount: 20,
           totalTokenCount: 30,
+          cachedContentTokenCount: 3,
+          cacheWriteTokenCount: 2,
+          thoughtsTokenCount: 4,
         },
       };
     });
@@ -170,6 +173,9 @@ describe("antigravity runtime", () => {
       promptTokens: 10,
       completionTokens: 20,
       totalTokens: 30,
+      cachedPromptTokens: 3,
+      cacheWritePromptTokens: 2,
+      reasoningOutputTokens: 4,
     });
 
     expect(emittedParts).toContainEqual({ type: "start" });
@@ -188,6 +194,9 @@ describe("antigravity runtime", () => {
         promptTokens: 10,
         completionTokens: 20,
         totalTokens: 30,
+        cachedPromptTokens: 3,
+        cacheWritePromptTokens: 2,
+        reasoningOutputTokens: 4,
       },
     });
   });

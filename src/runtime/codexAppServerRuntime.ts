@@ -109,6 +109,8 @@ export function markModelCallSpanSuccess(
       span.setAttribute("llm.usage.input_tokens", usage.promptTokens);
     if (usage.cachedPromptTokens !== undefined)
       span.setAttribute("llm.usage.cached_input_tokens", usage.cachedPromptTokens);
+    if (usage.cacheWritePromptTokens !== undefined)
+      span.setAttribute("llm.usage.cache_write_input_tokens", usage.cacheWritePromptTokens);
     if (usage.completionTokens !== undefined)
       span.setAttribute("llm.usage.output_tokens", usage.completionTokens);
     if (usage.reasoningOutputTokens !== undefined)
@@ -639,10 +641,26 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
   const cachedPromptTokens =
     asNumber(last?.cachedInputTokens) ??
     asNumber(last?.cached_input_tokens) ??
+    asNumber(last?.cacheReadInputTokens) ??
+    asNumber(last?.cache_read_input_tokens) ??
     asNumber(last?.inputCachedTokens) ??
     asNumber(last?.input_cached_tokens) ??
     asNumber(inputDetails?.cachedTokens) ??
     asNumber(inputDetails?.cached_tokens) ??
+    asNumber(inputDetails?.cacheReadTokens) ??
+    asNumber(inputDetails?.cache_read_tokens) ??
+    undefined;
+  const cacheWritePromptTokens =
+    asNumber(last?.cacheWriteInputTokens) ??
+    asNumber(last?.cache_write_input_tokens) ??
+    asNumber(last?.cacheCreationInputTokens) ??
+    asNumber(last?.cache_creation_input_tokens) ??
+    asNumber(last?.inputCacheWriteTokens) ??
+    asNumber(last?.input_cache_write_tokens) ??
+    asNumber(inputDetails?.cacheWriteTokens) ??
+    asNumber(inputDetails?.cache_write_tokens) ??
+    asNumber(inputDetails?.cacheCreationTokens) ??
+    asNumber(inputDetails?.cache_creation_tokens) ??
     undefined;
   const explicitCompletionTokens =
     asNumber(last?.outputTokens) ?? asNumber(last?.output_tokens) ?? undefined;
@@ -665,6 +683,7 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
     completionTokens,
     totalTokens,
     ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+    ...(cacheWritePromptTokens !== undefined ? { cacheWritePromptTokens } : {}),
     ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
   };
 }

@@ -136,6 +136,7 @@ describe("usage tool", () => {
     expect(result).toContain("Known Model Pricing");
     expect(result).toContain("gpt-5.2");
     expect(result).toContain("Long context");
+    expect(result).toContain("Cache write");
     expect(result).toContain(">272,000: $10.000/$45.000");
     expect(result).toContain("claude-opus-4-6");
     expect(result).toContain("claude-opus-4-7");

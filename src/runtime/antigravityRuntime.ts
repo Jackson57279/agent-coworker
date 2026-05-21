@@ -13,7 +13,7 @@ import { getSavedProviderApiKey } from "../config";
 import type { ModelMessage } from "../types";
 import { toPiJsonSchema } from "./piRuntimeOptions";
 import { maybeSpillToolOutputToWorkspace } from "./toolOutputOverflow";
-import type { LlmRuntime, RuntimeRunTurnParams, RuntimeRunTurnResult } from "./types";
+import type { LlmRuntime, RuntimeRunTurnParams, RuntimeRunTurnResult, RuntimeUsage } from "./types";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -36,6 +36,56 @@ function isThought(chunk: unknown): chunk is Thought {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function usageNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = asFiniteNumber(record[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function normalizeAntigravityUsage(usage: unknown): RuntimeUsage | undefined {
+  const record = asRecord(usage);
+  if (!record) return undefined;
+
+  const cachedPromptTokens = usageNumber(record, [
+    "cachedContentTokenCount",
+    "cached_content_token_count",
+    "cachedPromptTokens",
+    "cacheReadTokenCount",
+    "cache_read_token_count",
+  ]);
+  const cacheWritePromptTokens = usageNumber(record, [
+    "cacheWriteTokenCount",
+    "cache_write_token_count",
+    "cacheCreationTokenCount",
+    "cache_creation_token_count",
+  ]);
+  const reasoningOutputTokens = usageNumber(record, [
+    "thoughtsTokenCount",
+    "thoughts_token_count",
+    "thinkingTokenCount",
+    "thinking_token_count",
+    "reasoningOutputTokens",
+    "reasoning_output_tokens",
+  ]);
+
+  return {
+    promptTokens:
+      usageNumber(record, ["promptTokenCount", "prompt_token_count", "inputTokens"]) ?? 0,
+    completionTokens:
+      usageNumber(record, ["candidatesTokenCount", "candidates_token_count", "outputTokens"]) ?? 0,
+    totalTokens: usageNumber(record, ["totalTokenCount", "total_token_count", "totalTokens"]) ?? 0,
+    ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+    ...(cacheWritePromptTokens !== undefined ? { cacheWritePromptTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
+  };
 }
 
 function sanitizedTextFromContent(content: unknown): string {
@@ -478,14 +528,7 @@ export function createAntigravityRuntime(): LlmRuntime {
           });
         }
 
-        const usage = chatResponse.usageMetadata;
-        const finalUsage = usage
-          ? {
-              promptTokens: usage.promptTokenCount ?? usage.prompt_token_count ?? 0,
-              completionTokens: usage.candidatesTokenCount ?? usage.candidates_token_count ?? 0,
-              totalTokens: usage.totalTokenCount ?? usage.total_token_count ?? 0,
-            }
-          : undefined;
+        const finalUsage = normalizeAntigravityUsage(chatResponse.usageMetadata);
 
         await emitPart({
           type: "finish",

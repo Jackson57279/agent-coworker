@@ -309,8 +309,8 @@ function getBasetenPiModel(modelId: string): PiModel | null {
           cost: {
             input: modelSpec.pricing.input,
             output: modelSpec.pricing.output,
-            cacheRead: 0,
-            cacheWrite: 0,
+            cacheRead: modelSpec.pricing.cacheRead ?? 0,
+            cacheWrite: modelSpec.pricing.cacheWrite ?? 0,
           },
         }
       : {}),
@@ -380,8 +380,8 @@ function getFireworksPiModel(modelId: string): PiModel | null {
     cost: {
       input: modelSpec.pricing.input,
       output: modelSpec.pricing.output,
-      cacheRead: 0,
-      cacheWrite: 0,
+      cacheRead: modelSpec.pricing.cacheRead ?? 0,
+      cacheWrite: modelSpec.pricing.cacheWrite ?? 0,
     },
     contextWindow: modelSpec.contextWindow,
     maxTokens: modelSpec.maxTokens,

@@ -73,6 +73,15 @@ const SUPPORTED_GOOGLE_INTERACTIONS_MODELS: Record<string, GoogleInteractionsMod
     maxTokens: 65_536,
     cost: { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite: 0 },
   },
+  "gemini-3.5-flash": {
+    id: "gemini-3.5-flash",
+    name: "Gemini 3.5 Flash",
+    reasoning: true,
+    input: GOOGLE_MULTIMODAL_INPUT,
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+    cost: { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0 },
+  },
 };
 
 function resolveGoogleInteractionsModelInfo(modelId: string): GoogleInteractionsModelInfo {

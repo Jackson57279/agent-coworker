@@ -196,6 +196,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function asFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function usageNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = asFiniteNumber(record[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 function safeJsonStringify(value: unknown): string {
   try {
     return JSON.stringify(value);
@@ -1875,12 +1887,66 @@ export const runGoogleNativeInteractionStep: RunGoogleNativeInteractionStep = as
 
     // Map usage
     if (usageData) {
+      const cacheRead = usageNumber(usageData, [
+        "total_cached_tokens",
+        "totalCachedTokens",
+        "cached_tokens",
+        "cachedTokens",
+        "cached_content_token_count",
+        "cachedContentTokenCount",
+        "cache_read_tokens",
+        "cacheReadTokens",
+      ]);
+      const cacheWrite = usageNumber(usageData, [
+        "total_cache_write_tokens",
+        "totalCacheWriteTokens",
+        "cache_write_tokens",
+        "cacheWriteTokens",
+        "cache_creation_tokens",
+        "cacheCreationTokens",
+      ]);
+      const reasoningOutputTokens = usageNumber(usageData, [
+        "total_thought_tokens",
+        "totalThoughtTokens",
+        "thought_tokens",
+        "thoughtTokens",
+        "thoughts_token_count",
+        "thoughtsTokenCount",
+        "thinking_tokens",
+        "thinkingTokens",
+        "reasoning_output_tokens",
+        "reasoningOutputTokens",
+      ]);
+
       assistant.usage = {
-        input: (usageData.total_input_tokens as number) ?? 0,
-        output: (usageData.total_output_tokens as number) ?? 0,
-        cacheRead: (usageData.total_cached_tokens as number) ?? 0,
-        cacheWrite: 0,
-        totalTokens: (usageData.total_tokens as number) ?? 0,
+        input:
+          usageNumber(usageData, [
+            "total_input_tokens",
+            "totalInputTokens",
+            "input_tokens",
+            "inputTokens",
+            "prompt_token_count",
+            "promptTokenCount",
+          ]) ?? 0,
+        output:
+          usageNumber(usageData, [
+            "total_output_tokens",
+            "totalOutputTokens",
+            "output_tokens",
+            "outputTokens",
+            "candidates_token_count",
+            "candidatesTokenCount",
+          ]) ?? 0,
+        cacheRead: cacheRead ?? 0,
+        cacheWrite: cacheWrite ?? 0,
+        ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
+        totalTokens:
+          usageNumber(usageData, [
+            "total_tokens",
+            "totalTokens",
+            "total_token_count",
+            "totalTokenCount",
+          ]) ?? 0,
       };
     }
 

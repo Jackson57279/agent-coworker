@@ -15,6 +15,8 @@ type FireworksModelSpec = {
   pricing: {
     input: number;
     output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
   };
 };
 
@@ -36,6 +38,7 @@ const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
     pricing: {
       input: 0.3,
       output: 1.2,
+      cacheRead: 0.03,
     },
   },
   "accounts/fireworks/models/glm-5": {
@@ -49,6 +52,7 @@ const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
     pricing: {
       input: 1,
       output: 3.2,
+      cacheRead: 0.2,
     },
   },
   "accounts/fireworks/models/kimi-k2p5": {
@@ -62,6 +66,7 @@ const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
     pricing: {
       input: 0.6,
       output: 3,
+      cacheRead: 0.1,
     },
   },
   "accounts/fireworks/routers/kimi-k2p5-turbo": {
@@ -75,6 +80,7 @@ const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
     pricing: {
       input: 0.6,
       output: 3,
+      cacheRead: 0.1,
     },
   },
 };

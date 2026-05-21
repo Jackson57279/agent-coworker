@@ -343,6 +343,7 @@ function isTurnUsagePayload(payload: unknown): payload is {
     completionTokens: number;
     totalTokens: number;
     cachedPromptTokens?: number;
+    cacheWritePromptTokens?: number;
     reasoningOutputTokens?: number;
     estimatedCostUsd?: number;
   };
@@ -359,6 +360,12 @@ function isTurnUsagePayload(payload: unknown): payload is {
   if (
     payload.usage.cachedPromptTokens !== undefined &&
     typeof payload.usage.cachedPromptTokens !== "number"
+  ) {
+    return false;
+  }
+  if (
+    payload.usage.cacheWritePromptTokens !== undefined &&
+    typeof payload.usage.cacheWritePromptTokens !== "number"
   ) {
     return false;
   }
