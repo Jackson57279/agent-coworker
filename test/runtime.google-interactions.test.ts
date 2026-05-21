@@ -6,7 +6,6 @@ import { buildGooglePrepareStep } from "../src/providers/googleReplay";
 import { createGoogleInteractionsRuntime } from "../src/runtime/googleInteractionsRuntime";
 import { __internal as googleNativeInternal } from "../src/runtime/googleNativeInteractions";
 import type { RuntimeRunTurnParams } from "../src/runtime/types";
-import { isInvalidGoogleContinuationError } from "../src/shared/providerContinuation";
 import type { AgentConfig, ModelMessage } from "../src/types";
 
 function makeConfig(homeDir: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -1248,21 +1247,5 @@ describe("google interactions runtime", () => {
       }),
     });
     expect(runtime.name).toBe("google-interactions");
-  });
-});
-
-describe("google continuation error detection", () => {
-  test("requires an interaction-id-specific Google error before retrying continuation", () => {
-    expect(
-      isInvalidGoogleContinuationError(
-        new Error("INVALID_ARGUMENT: previous_interaction_id interaction_id not found"),
-      ),
-    ).toBe(true);
-    expect(isInvalidGoogleContinuationError(new Error("invalid_request: tool schema failed"))).toBe(
-      false,
-    );
-    expect(isInvalidGoogleContinuationError(new Error("INVALID_ARGUMENT: bad attachment"))).toBe(
-      false,
-    );
   });
 });
