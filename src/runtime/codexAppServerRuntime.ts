@@ -656,6 +656,7 @@ async function startCodexAppServer(
   const client = await getPooledCodexAppServerClient({
     cwd: params.config.workingDirectory,
     codexHome: path.join(resolveAuthHomeDir(params.config), ".cowork", "auth", "codex-cli"),
+    env: params.toolEnv,
     log: params.log,
     invalidJsonLogPrefix: "[codex-app-server] ignored invalid JSONL",
   });

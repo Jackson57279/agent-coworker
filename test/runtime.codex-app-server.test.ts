@@ -554,6 +554,37 @@ afterEach(async () => {
 });
 
 describe("codex app-server runtime", () => {
+  test.serial("passes the prepared tool env into pooled app-server clients", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-env-"));
+    let receivedOpts:
+      | Parameters<
+          NonNullable<Parameters<typeof codexAppServerClientInternal.setClientFactoryForTests>[0]>
+        >[0]
+      | null = null;
+    codexAppServerClientInternal.setClientFactoryForTests(async (opts) => {
+      receivedOpts = opts;
+      return createMockClient();
+    });
+
+    const runtime = createRuntime(makeConfig(dir));
+    await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+      toolEnv: {
+        PATH: "/tmp/cowork-managed-bin",
+        COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+      },
+    });
+
+    expect(receivedOpts?.env).toMatchObject({
+      PATH: "/tmp/cowork-managed-bin",
+      COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+    });
+  });
+
   test.serial("initializes app-server with the Cowork package version", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-app-server-init-"));
     const script = await writeMockAppServer(dir);

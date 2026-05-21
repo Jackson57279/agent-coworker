@@ -8,6 +8,7 @@ import { createWorkspaceMemoryActions } from "./store.actions/memory";
 import { createOnboardingActions } from "./store.actions/onboarding";
 import { createProviderActions } from "./store.actions/provider";
 import { createResearchActions } from "./store.actions/research";
+import { createRuntimeDiagnosticsActions } from "./store.actions/runtimeDiagnostics";
 import { createSkillActions } from "./store.actions/skills";
 import { createThreadActions } from "./store.actions/thread";
 import { createWorkspaceActions } from "./store.actions/workspace";
@@ -27,6 +28,7 @@ export function createAppActions(set: StoreSet, get: StoreGet): AppStoreActions 
     ...createOpenAiNativeConnectorActions(set, get),
     ...createWorkspaceMemoryActions(set, get),
     ...createProviderActions(set, get),
+    ...createRuntimeDiagnosticsActions(set, get),
     ...createExplorerActions(set, get),
     ...createOnboardingActions(set, get),
     ...createA2uiDockActions(set, get),

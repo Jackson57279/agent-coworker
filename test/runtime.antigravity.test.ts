@@ -31,11 +31,16 @@ mock.module("unofficial-antigravity-sdk", () => {
   }
 
   let chatMockImpl: (prompt: string) => Promise<any>;
+  let startMockImpl: ((agent: MockAgent) => Promise<void> | void) | undefined;
   let lastCreatedInstance: any = null;
 
   class MockAgent {
     static __setChatMockImpl(impl: typeof chatMockImpl) {
       chatMockImpl = impl;
+    }
+
+    static __setStartMockImpl(impl: typeof startMockImpl) {
+      startMockImpl = impl;
     }
 
     static getLastInstance() {
@@ -54,6 +59,7 @@ mock.module("unofficial-antigravity-sdk", () => {
     isConnected = false;
 
     async start() {
+      await startMockImpl?.(this);
       this.isConnected = true;
     }
 
@@ -457,5 +463,45 @@ describe("antigravity runtime", () => {
     const capturedAgent = (Agent as any).getLastInstance();
     expect(capturedAgent).toBeDefined();
     expect(capturedAgent.config.workspaces).toEqual([visibleHomeDir]);
+  });
+
+  test("antigravity local harness startup sees the prepared tool env", async () => {
+    const runtime = createAntigravityRuntime();
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-env-"));
+    const previousSoffice = process.env.COWORK_SOFFICE;
+    let capturedSoffice: string | undefined;
+
+    (Agent as any).__setChatMockImpl(async () => ({
+      getChunks: async function* () {
+        yield new Text(0, "Mocked response");
+      },
+      usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+    }));
+    (Agent as any).__setStartMockImpl(() => {
+      capturedSoffice = process.env.COWORK_SOFFICE;
+    });
+
+    try {
+      process.env.GEMINI_API_KEY = "test-key";
+      process.env.COWORK_SOFFICE = "outside";
+
+      await runtime.runTurn(
+        makeParams(makeConfig(homeDir), {
+          toolEnv: {
+            COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+          },
+        }),
+      );
+
+      expect(capturedSoffice).toBe("/tmp/cowork-managed-bin/soffice");
+      expect(process.env.COWORK_SOFFICE).toBe("outside");
+    } finally {
+      (Agent as any).__setStartMockImpl(undefined);
+      if (previousSoffice === undefined) {
+        delete process.env.COWORK_SOFFICE;
+      } else {
+        process.env.COWORK_SOFFICE = previousSoffice;
+      }
+    }
   });
 });

@@ -65,6 +65,7 @@ export type CodexAppServerRequestHandler = (
 export type CodexAppServerClientOptions = {
   cwd?: string;
   codexHome?: string;
+  env?: Record<string, string | undefined>;
   log?: (line: string) => void;
   invalidJsonLogPrefix?: string;
   onServerRequest?: CodexAppServerRequestHandler;
@@ -105,9 +106,10 @@ export async function startCodexAppServerClient(
   const command = await resolveCodexAppServerCommand();
   const codexHome = opts.codexHome ?? resolveCodexHome();
   await fs.mkdir(codexHome, { recursive: true, mode: 0o700 });
+  const baseEnv = opts.env ?? process.env;
   const child = spawnCodexAppServer(command, {
     cwd: opts.cwd,
-    env: { ...process.env, CODEX_HOME: codexHome },
+    env: { ...baseEnv, CODEX_HOME: codexHome },
   });
   const pending = new Map<number | string, PendingRequest>();
   const listeners = new Set<(notification: CodexAppServerJsonRpcNotification) => void>();
@@ -383,15 +385,47 @@ export async function withCodexAppServerClient<T>(
 
 const pooledClients = new Map<string, Promise<CodexAppServerClient>>();
 
-function pooledClientKey(cwd: string | undefined, codexHome: string): string {
-  return `${cwd ? `cwd:${cwd}` : "cwd:"}|codexHome:${codexHome}`;
+const POOLED_ENV_KEYS = [
+  "PATH",
+  "NODE_PATH",
+  "COWORK_CODEX_RUNTIME_NODE",
+  "COWORK_CODEX_RUNTIME_PYTHON",
+  "COWORK_SOFFICE",
+  "COWORK_MANAGED_SOFFICE_ROOT",
+  "COWORK_MANAGED_SOFFICE_SHIM_DIR",
+  "COWORK_MANAGED_SOFFICE_SHIM",
+] as const;
+
+function envValue(env: Record<string, string | undefined> | undefined, key: string): string {
+  if (!env) return "";
+  const actualKey = Object.keys(env).find(
+    (candidate) => candidate.toLowerCase() === key.toLowerCase(),
+  );
+  return actualKey ? (env[actualKey] ?? "") : "";
+}
+
+function pooledEnvFingerprint(env: Record<string, string | undefined> | undefined): string {
+  return POOLED_ENV_KEYS.map((key) => `${key}=${JSON.stringify(envValue(env, key))}`).join("|");
+}
+
+function pooledClientKey(
+  cwd: string | undefined,
+  codexHome: string,
+  env?: Record<string, string | undefined>,
+): string {
+  return `${cwd ? `cwd:${cwd}` : "cwd:"}|codexHome:${codexHome}|env:${pooledEnvFingerprint(env)}`;
+}
+
+function pooledClientMatches(key: string, cwd: string | undefined, codexHome: string): boolean {
+  const prefix = `${cwd ? `cwd:${cwd}` : "cwd:"}|codexHome:${codexHome}|`;
+  return key.startsWith(prefix);
 }
 
 export async function getPooledCodexAppServerClient(
   opts: CodexAppServerClientOptions = {},
 ): Promise<CodexAppServerClient> {
   const codexHome = opts.codexHome ?? resolveCodexHome();
-  const key = pooledClientKey(opts.cwd, codexHome);
+  const key = pooledClientKey(opts.cwd, codexHome, opts.env);
   const existing = pooledClients.get(key);
   if (existing) {
     try {
@@ -407,6 +441,7 @@ export async function getPooledCodexAppServerClient(
     const client = await startCodexAppServerClient({
       cwd: opts.cwd,
       codexHome,
+      env: opts.env,
       log: opts.log,
       invalidJsonLogPrefix: opts.invalidJsonLogPrefix,
     });
@@ -447,9 +482,9 @@ export async function closePooledCodexAppServerClientsForHome(
   codexHome = resolveCodexHome(),
 ): Promise<void> {
   const clients: Promise<CodexAppServerClient>[] = [];
-  const keySuffix = `|codexHome:${codexHome}`;
+  const keyNeedle = `|codexHome:${codexHome}|`;
   for (const [key, clientPromise] of pooledClients) {
-    if (!key.endsWith(keySuffix)) continue;
+    if (!key.includes(keyNeedle)) continue;
     pooledClients.delete(key);
     clients.push(clientPromise);
   }
@@ -469,16 +504,23 @@ export async function closePooledCodexAppServerClient(
   cwd: string | undefined,
   codexHome?: string,
 ): Promise<void> {
-  const key = pooledClientKey(cwd, codexHome ?? resolveCodexHome());
-  const clientPromise = pooledClients.get(key);
-  if (!clientPromise) return;
-  pooledClients.delete(key);
-  try {
-    const client = await clientPromise;
-    await client.close();
-  } catch {
-    // ignore cleanup failures
+  const resolvedCodexHome = codexHome ?? resolveCodexHome();
+  const clients: Promise<CodexAppServerClient>[] = [];
+  for (const [key, clientPromise] of pooledClients) {
+    if (!pooledClientMatches(key, cwd, resolvedCodexHome)) continue;
+    pooledClients.delete(key);
+    clients.push(clientPromise);
   }
+  await Promise.all(
+    clients.map(async (clientPromise) => {
+      try {
+        const client = await clientPromise;
+        await client.close();
+      } catch {
+        // ignore cleanup failures
+      }
+    }),
+  );
 }
 
 export const __internal = {
@@ -488,4 +530,5 @@ export const __internal = {
   ): void {
     clientFactoryForTests = factory;
   },
+  pooledEnvFingerprint,
 } as const;

@@ -116,6 +116,33 @@ export function resolveHarnessWorkspaceDir(workingDirectory: string): string {
   return fallback;
 }
 
+async function withProcessEnv<T>(
+  env: Record<string, string | undefined> | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!env) return await run();
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(env)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 export function createAntigravityRuntime(): LlmRuntime {
   return {
     name: "antigravity",
@@ -325,16 +352,23 @@ export function createAntigravityRuntime(): LlmRuntime {
         });
       }
 
-      await agent.start();
+      await withProcessEnv(params.toolEnv, async () => {
+        await agent.start();
+      });
 
       const log = params.log;
       if (log) {
-        const childProcess = (agent as unknown as { _strategy?: { connection?: { process?: { stderr?: NodeJS.ReadableStream } } } })._strategy?.connection?.process;
+        const childProcess = (
+          agent as unknown as {
+            _strategy?: { connection?: { process?: { stderr?: NodeJS.ReadableStream } } };
+          }
+        )._strategy?.connection?.process;
         const stderr = childProcess?.stderr;
         if (stderr && typeof stderr.on === "function") {
           let buf = "";
           stderr.on("data", (chunk: unknown) => {
-            buf += typeof chunk === "string" ? chunk : Buffer.from(chunk as Uint8Array).toString("utf8");
+            buf +=
+              typeof chunk === "string" ? chunk : Buffer.from(chunk as Uint8Array).toString("utf8");
             let nl = buf.indexOf("\n");
             while (nl >= 0) {
               const line = buf.slice(0, nl).trim();

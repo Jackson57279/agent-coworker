@@ -518,6 +518,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
           shellPolicy: params.shellPolicy ?? getAgentRoleShellPolicy(params.agentRole),
           providerOptions: turnProviderOptions,
           providerState: params.providerState,
+          toolEnv: params.toolEnv,
           abortSignal,
           includeRawChunks: params.includeRawChunks ?? true,
           telemetry,

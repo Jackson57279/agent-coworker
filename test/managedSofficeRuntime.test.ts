@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { ensureManagedSofficeRuntimeReady } from "../src/managedSofficeRuntime";
+import {
+  __internal,
+  checkManagedSofficeRuntime,
+  ensureManagedSofficeRuntimeReady,
+} from "../src/managedSofficeRuntime";
 
 describe("managed soffice runtime", () => {
   test("creates a PATH-first soffice shim without touching skill files", async () => {
@@ -18,7 +22,9 @@ describe("managed soffice runtime", () => {
       });
 
       expect(result?.status).toBe("available");
-      expect(result?.shimPath).toBe(path.join(home, ".cache", "cowork", "libreoffice", "bin", "soffice"));
+      expect(result?.shimPath).toBe(
+        path.join(home, ".cache", "cowork", "libreoffice", "bin", "soffice"),
+      );
       expect(result?.helperPath).toBe(
         path.join(home, ".cache", "cowork", "libreoffice", "libexec", "managed-soffice.mjs"),
       );
@@ -93,5 +99,62 @@ describe("managed soffice runtime", () => {
     } finally {
       await fs.rm(home, { recursive: true, force: true });
     }
+  });
+
+  test("diagnostic verifies availability and a real conversion through the shim", async () => {
+    if (process.platform === "win32") return;
+
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-soffice-diagnostic-"));
+    const fakeBin = path.join(home, "fake-bin");
+    const fakeSoffice = path.join(fakeBin, "soffice");
+    await fs.mkdir(fakeBin, { recursive: true });
+    await fs.writeFile(
+      fakeSoffice,
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "LibreOffice 26.2.3.2 fake"
+  echo "LibreOffice 26.2.3.2 fake" >&2
+  exit 0
+fi
+outdir=""
+last=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--outdir" ]; then
+    shift
+    outdir="$1"
+  fi
+  last="$1"
+  shift
+done
+base="\${last##*/}"
+base="\${base%.html}"
+printf "%s\\n" "%PDF-1.4 fake" > "$outdir/$base.pdf"
+exit 0
+`,
+      { encoding: "utf-8", mode: 0o755 },
+    );
+    await fs.chmod(fakeSoffice, 0o755);
+
+    try {
+      const status = await checkManagedSofficeRuntime({
+        homedir: home,
+        env: { PATH: fakeBin },
+        nodePath: process.execPath,
+        smoke: true,
+      });
+
+      expect(status.status).toBe("available");
+      expect(status.shimPath).toContain(
+        path.join(".cache", "cowork", "libreoffice", "bin", "soffice"),
+      );
+      expect(status.smoke?.ok).toBe(true);
+      expect(status.smoke?.sizeBytes).toBeGreaterThan(0);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test("parses LibreOffice version output", () => {
+    expect(__internal.parseSofficeVersion("LibreOffice 26.2.3.2 fake")).toBe("26.2.3.2");
   });
 });

@@ -9,7 +9,6 @@ const originalHome = process.env.HOME;
 const originalCommand = process.env.COWORK_CODEX_APP_SERVER_COMMAND;
 const originalArgs = process.env.COWORK_CODEX_APP_SERVER_ARGS;
 const originalCodexHome = process.env.CODEX_HOME;
-const testNodeCommand = process.env.COWORK_TEST_NODE_COMMAND ?? "node";
 
 async function makeTmpHome(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-client-test-"));
@@ -60,7 +59,11 @@ describe("codex app-server client", () => {
     await fs.writeFile(
       script,
       `const fs = require("node:fs");
-fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({ CODEX_HOME: process.env.CODEX_HOME }));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({
+  CODEX_HOME: process.env.CODEX_HOME,
+  PATH: process.env.PATH,
+  COWORK_SOFFICE: process.env.COWORK_SOFFICE
+}));
 process.on("SIGTERM", () => process.exit(0));
 setInterval(() => {}, 1000);
 `,
@@ -69,10 +72,16 @@ setInterval(() => {}, 1000);
 
     process.env.HOME = home;
     process.env.CODEX_HOME = path.join(home, ".codex-should-not-be-used");
-    process.env.COWORK_CODEX_APP_SERVER_COMMAND = testNodeCommand;
+    process.env.COWORK_CODEX_APP_SERVER_COMMAND = process.execPath;
     process.env.COWORK_CODEX_APP_SERVER_ARGS = script;
 
-    const client = await startCodexAppServerClient();
+    const client = await startCodexAppServerClient({
+      env: {
+        PATH: "/tmp/cowork-managed-bin",
+        COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+        CODEX_HOME: path.join(home, ".codex-should-not-be-used-by-opts"),
+      },
+    });
     await waitForFile(envFile);
     await client.close();
 
@@ -80,6 +89,8 @@ setInterval(() => {}, 1000);
     expect(__internal.resolveCodexHome()).toBe(expectedCodexHome);
     expect(JSON.parse(await fs.readFile(envFile, "utf8"))).toEqual({
       CODEX_HOME: expectedCodexHome,
+      PATH: "/tmp/cowork-managed-bin",
+      COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
     });
     expect((await fs.stat(expectedCodexHome)).isDirectory()).toBe(true);
   });

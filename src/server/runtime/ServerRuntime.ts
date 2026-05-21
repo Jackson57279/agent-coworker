@@ -3,7 +3,10 @@ import path from "node:path";
 import type { runTurn as runTurnFn } from "../../agent";
 import { ensureCodexPrimaryRuntimeReady } from "../../codexPrimaryRuntime";
 import { loadConfig } from "../../config";
-import { ensureManagedSofficeRuntimeReady } from "../../managedSofficeRuntime";
+import {
+  checkManagedSofficeRuntime,
+  ensureManagedSofficeRuntimeReady,
+} from "../../managedSofficeRuntime";
 import type { connectProvider as connectModelProvider, getAiCoworkerPaths } from "../../connect";
 import { getAiCoworkerPaths as getAiCoworkerPathsDefault } from "../../connect";
 import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
@@ -331,6 +334,14 @@ export async function createAgentServerRuntime(
       capture: registry.sessionEventCapture.capture,
       captureMutationOutcome: registry.sessionEventCapture.captureMutationOutcome,
       captureMutationEvents: registry.sessionEventCapture.captureMutationEvents,
+    },
+    runtime: {
+      checkLibreOffice: async (checkOpts) =>
+        await checkManagedSofficeRuntime({
+          homedir: opts.homedir,
+          env,
+          smoke: checkOpts.smoke === true,
+        }),
     },
     jsonrpc: {
       send: (ws, payload) => sendQueue.send(ws, payload),

@@ -55,6 +55,7 @@ export interface RuntimeRunTurnParams {
   shellPolicy?: "full" | "no_project_write";
   providerOptions?: Record<string, any>;
   providerState?: ProviderContinuationState | null;
+  toolEnv?: Record<string, string | undefined>;
   abortSignal?: AbortSignal;
   includeRawChunks?: boolean;
   clientMessageId?: string;

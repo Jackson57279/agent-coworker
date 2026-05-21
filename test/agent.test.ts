@@ -239,6 +239,10 @@ describe("runTurn", () => {
           enableMcp: true,
         }),
         enableMcp: true,
+        toolEnv: {
+          PATH: "/tmp/cowork-managed-bin",
+          COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+        },
         system:
           "Base system prompt\nMCP tool names are namespaced as `mcp__{serverName}__{toolName}`.",
       }),
@@ -258,6 +262,10 @@ describe("runTurn", () => {
     expect(runtimeParams.tools).not.toHaveProperty("bash");
     expect(runtimeParams.tools).not.toHaveProperty("read");
     expect(runtimeParams.tools).not.toHaveProperty("webFetch");
+    expect(runtimeParams.toolEnv).toMatchObject({
+      PATH: "/tmp/cowork-managed-bin",
+      COWORK_SOFFICE: "/tmp/cowork-managed-bin/soffice",
+    });
     expect(runtimeParams.system).toContain("## Active MCP Tools");
     expect(runtimeParams.system).toContain("`mcp__{serverName}__{toolName}`");
   });

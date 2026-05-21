@@ -457,6 +457,9 @@ export type AppStoreState = {
   refreshProviderStatus: (opts?: { refreshBedrockDiscovery?: boolean }) => Promise<void>;
   checkCodexAppServerStatus: (opts?: { checkLatest?: boolean }) => Promise<void>;
   updateCodexAppServer: () => Promise<void>;
+  checkLibreOfficeRuntime: (opts?: {
+    smoke?: boolean;
+  }) => Promise<import("../lib/wsProtocol").LibreOfficeRuntimeDiagnostic | null>;
   setLmStudioEnabled: (enabled: boolean) => Promise<void>;
   setLmStudioModelVisible: (modelId: string, visible: boolean) => Promise<void>;
 

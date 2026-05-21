@@ -8,7 +8,7 @@ Cowork supports one live WebSocket protocol on `/ws`: JSON-RPC-lite. The canonic
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.32`
+- Current protocol version: `7.33`
 - WebSocket protocol mode: `jsonrpc`
 
 ## Mobile direct HTTP/3 transport
@@ -173,11 +173,15 @@ Currently implemented `cowork/*` methods include:
   - `cowork/provider/catalog/read`
   - `cowork/provider/authMethods/read`
   - `cowork/provider/status/refresh`
+  - `cowork/provider/codexAppServer/status`
+  - `cowork/provider/codexAppServer/update`
   - `cowork/provider/auth/authorize`
   - `cowork/provider/auth/logout`
   - `cowork/provider/auth/callback`
   - `cowork/provider/auth/setApiKey`
   - `cowork/provider/auth/copyApiKey`
+- runtime diagnostics
+  - `cowork/runtime/libreoffice/check`
 - MCP controls
   - `cowork/mcp/servers/read`
   - `cowork/mcp/server/upsert`
@@ -469,6 +473,11 @@ The remainder of this document describes the JSON-RPC method and notification pa
 - [Session event payload shapes](#session-event-payload-shapes)
 
 ## Protocol v7 Notes
+
+Changes in `7.33`:
+
+- Added `cowork/runtime/libreoffice/check`, which returns `{ status }` for the Cowork-managed LibreOffice `soffice` shim and can run an optional PDF conversion smoke test with `smoke: true`.
+- Runtime subprocesses now receive the harness-prepared tool environment so managed executables such as `soffice` resolve consistently across Antigravity, Codex app-server, and local tool execution.
 
 Changes in `7.32`:
 

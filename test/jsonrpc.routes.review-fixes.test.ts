@@ -5,6 +5,7 @@ import { createAgentRouteHandlers } from "../src/server/jsonrpc/routes/agents";
 import { createMcpRouteHandlers } from "../src/server/jsonrpc/routes/mcp";
 import { createMemoryRouteHandlers } from "../src/server/jsonrpc/routes/memory";
 import { createProviderRouteHandlers } from "../src/server/jsonrpc/routes/provider";
+import { createRuntimeRouteHandlers } from "../src/server/jsonrpc/routes/runtime";
 import { createSessionRouteHandlers } from "../src/server/jsonrpc/routes/session";
 import { createSkillsRouteHandlers } from "../src/server/jsonrpc/routes/skills";
 import type {
@@ -204,6 +205,10 @@ function createRouteHarness(
         await action();
         return emitted.find((event) => predicate(event)) ?? null;
       },
+    },
+    runtime: {
+      checkLibreOffice: async (checkOpts: { smoke?: boolean }) =>
+        await session.checkLibreOfficeRuntime?.(checkOpts),
     },
     jsonrpc: {
       send: () => {},
@@ -699,6 +704,36 @@ describe("JSON-RPC extracted route review fixes", () => {
     expect((response.result as any).event).toMatchObject({
       type: "mcp_server_validation",
       name: "beta",
+    });
+  });
+
+  test("runtime LibreOffice check returns diagnostic status", async () => {
+    const harness = createRouteHarness({
+      checkLibreOfficeRuntime: async (checkOpts: { smoke?: boolean }) => ({
+        status: "available",
+        checkedAt: "2026-05-21T00:00:00.000Z",
+        message: checkOpts.smoke ? "Smoke passed." : "Version passed.",
+        version: "26.2.3.2",
+        shimPath: "/tmp/soffice",
+        resolvedPath: "/tmp/LibreOffice.app/Contents/MacOS/soffice",
+        smoke: {
+          ok: true,
+          durationMs: 125,
+          outputPath: "/tmp/check.pdf",
+          sizeBytes: 2048,
+        },
+      }),
+    });
+    const handlers = createRuntimeRouteHandlers(harness.context);
+    const response = await harness.invoke(handlers, "cowork/runtime/libreoffice/check", {
+      cwd: "C:/workspace",
+      smoke: true,
+    });
+
+    expect((response.result as any).status).toMatchObject({
+      status: "available",
+      version: "26.2.3.2",
+      smoke: { ok: true, sizeBytes: 2048 },
     });
   });
 
