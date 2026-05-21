@@ -628,6 +628,34 @@ describe("bash tool", () => {
     expect(result.stdout.trim()).toBe("hi");
   });
 
+  test("pins managed soffice shim inside POSIX shell commands", async () => {
+    const seen: Array<{ file: string; args: string[] }> = [];
+    const result = await bashInternal.runShellCommandWithExec({
+      command: "soffice --version",
+      cwd: "/tmp",
+      platform: "darwin",
+      env: {
+        PATH: "/opt/homebrew/bin:/usr/bin:/bin",
+        COWORK_MANAGED_SOFFICE_SHIM_DIR: "/Users/test/.cache/cowork/libreoffice/bin",
+        COWORK_SOFFICE: "/Users/test/.cache/cowork/libreoffice/bin/soffice",
+      },
+      execRunner: async (file: string, args: string[]) => {
+        seen.push({ file, args });
+        return { stdout: "LibreOffice 26.2.3.2\n", stderr: "", exitCode: 0 };
+      },
+    });
+
+    const commandArg = seen[0]?.args.at(-1);
+    expect(commandArg).toContain(
+      `export PATH='/Users/test/.cache/cowork/libreoffice/bin':$PATH`,
+    );
+    expect(commandArg).toContain(
+      `export COWORK_SOFFICE='/Users/test/.cache/cowork/libreoffice/bin/soffice'`,
+    );
+    expect(commandArg?.endsWith("soffice --version")).toBe(true);
+    expect(result.stdout.trim()).toBe("LibreOffice 26.2.3.2");
+  });
+
   test("executes simple command and returns stdout", async () => {
     const dir = await tmpDir();
     const t: any = createBashTool(makeCtx(dir));

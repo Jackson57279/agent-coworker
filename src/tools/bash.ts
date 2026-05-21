@@ -43,6 +43,27 @@ type ExecRunner = (
 const abortByNameSchema = z.object({ name: z.literal("AbortError") }).passthrough();
 const errorCodeSchema = z.object({ code: z.union([z.string(), z.number()]) }).passthrough();
 
+function posixShellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function powerShellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function dedupePathDirs(pathDirs: string[], platform: NodeJS.Platform): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    const key = platform === "win32" ? dir.toLowerCase() : dir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+  return out;
+}
+
 function execFileAsync(
   file: string,
   args: string[],
@@ -192,28 +213,56 @@ async function runShellCommandWithExec(opts: {
   const env = opts.env || process.env;
   const runtimePython = env.COWORK_CODEX_RUNTIME_PYTHON;
   const runtimeNode = env.COWORK_CODEX_RUNTIME_NODE;
+  const managedSofficeShim = env.COWORK_SOFFICE || env.COWORK_MANAGED_SOFFICE_SHIM;
+  const managedSofficeShimDir =
+    env.COWORK_MANAGED_SOFFICE_SHIM_DIR ||
+    (managedSofficeShim ? path.dirname(managedSofficeShim) : undefined);
 
-  if (runtimePython || runtimeNode) {
-    const pathDirs: string[] = [];
-    if (runtimeNode) {
-      pathDirs.push(path.dirname(runtimeNode));
+  const pathDirs: string[] = [];
+  if (managedSofficeShimDir) {
+    pathDirs.push(managedSofficeShimDir);
+  }
+  if (runtimeNode) {
+    pathDirs.push(path.dirname(runtimeNode));
+  }
+  if (runtimePython) {
+    const pythonDir = path.dirname(runtimePython);
+    pathDirs.push(pythonDir);
+    if (opts.platform === "win32") {
+      pathDirs.push(path.join(pythonDir, "Scripts"));
     }
-    if (runtimePython) {
-      const pythonDir = path.dirname(runtimePython);
-      pathDirs.push(pythonDir);
-      if (opts.platform === "win32") {
-        pathDirs.push(path.join(pythonDir, "Scripts"));
-      }
-    }
+  }
 
-    if (pathDirs.length > 0) {
-      if (opts.platform === "win32") {
-        const pathPrefix = pathDirs.join(";");
-        command = `$env:PATH = "${pathPrefix};" + $env:PATH; ${command}`;
-      } else {
-        const pathPrefix = pathDirs.join(":");
-        command = `export PATH="${pathPrefix}:$PATH" && ${command}`;
+  const uniquePathDirs = dedupePathDirs(pathDirs, opts.platform);
+  const envExports: Record<string, string> = {};
+  if (managedSofficeShim) {
+    envExports.COWORK_SOFFICE = managedSofficeShim;
+  }
+  if (managedSofficeShimDir) {
+    envExports.COWORK_MANAGED_SOFFICE_SHIM_DIR = managedSofficeShimDir;
+  }
+
+  if (uniquePathDirs.length > 0 || Object.keys(envExports).length > 0) {
+    if (opts.platform === "win32") {
+      const statements: string[] = [];
+      if (uniquePathDirs.length > 0) {
+        statements.push(
+          `$env:PATH = ${powerShellSingleQuote(uniquePathDirs.join(";"))} + ';' + $env:PATH`,
+        );
       }
+      for (const [key, value] of Object.entries(envExports)) {
+        statements.push(`$env:${key} = ${powerShellSingleQuote(value)}`);
+      }
+      command = `${statements.join("; ")}; ${command}`;
+    } else {
+      const statements: string[] = [];
+      if (uniquePathDirs.length > 0) {
+        statements.push(`export PATH=${posixShellQuote(uniquePathDirs.join(":"))}:$PATH`);
+      }
+      for (const [key, value] of Object.entries(envExports)) {
+        statements.push(`export ${key}=${posixShellQuote(value)}`);
+      }
+      command = `${statements.join(" && ")} && ${command}`;
     }
   }
 
