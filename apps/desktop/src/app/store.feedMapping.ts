@@ -343,6 +343,7 @@ function isTurnUsagePayload(payload: unknown): payload is {
     completionTokens: number;
     totalTokens: number;
     cachedPromptTokens?: number;
+    reasoningOutputTokens?: number;
     estimatedCostUsd?: number;
   };
 } {
@@ -358,6 +359,12 @@ function isTurnUsagePayload(payload: unknown): payload is {
   if (
     payload.usage.cachedPromptTokens !== undefined &&
     typeof payload.usage.cachedPromptTokens !== "number"
+  ) {
+    return false;
+  }
+  if (
+    payload.usage.reasoningOutputTokens !== undefined &&
+    typeof payload.usage.reasoningOutputTokens !== "number"
   ) {
     return false;
   }

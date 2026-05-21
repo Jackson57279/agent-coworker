@@ -419,6 +419,9 @@ export function projectResponsesStreamEvent(
         cacheRead: cachedTokens,
         cacheWrite: 0,
         totalTokens: response.usage.total_tokens || 0,
+        ...(response.usage.output_tokens_details?.reasoning_tokens !== undefined
+          ? { reasoningOutputTokens: response.usage.output_tokens_details.reasoning_tokens }
+          : {}),
       };
       const projectedCost = projector.model
         ? calculateCost(projector.model, output.usage)

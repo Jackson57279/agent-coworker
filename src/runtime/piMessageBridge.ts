@@ -505,6 +505,11 @@ export function normalizePiUsage(usage: unknown): RuntimeUsage | undefined {
     asFiniteNumber(record.promptTokens) ?? (asFiniteNumber(record.input) ?? 0) + cachedPromptTokens;
   const completionTokens =
     asFiniteNumber(record.completionTokens) ?? asFiniteNumber(record.output) ?? 0;
+  const reasoningOutputTokens =
+    asFiniteNumber(record.reasoningOutputTokens) ??
+    asFiniteNumber(record.reasoning_output_tokens) ??
+    asFiniteNumber(record.reasoningTokens) ??
+    asFiniteNumber(record.reasoning_tokens);
   const totalTokens = asFiniteNumber(record.totalTokens) ?? promptTokens + completionTokens;
   const estimatedCostUsd =
     asFiniteNumber(record.estimatedCostUsd) ?? asFiniteNumber(costRecord?.total);
@@ -514,6 +519,7 @@ export function normalizePiUsage(usage: unknown): RuntimeUsage | undefined {
     completionTokens === 0 &&
     totalTokens === 0 &&
     cachedPromptTokens === 0 &&
+    (reasoningOutputTokens ?? 0) === 0 &&
     estimatedCostUsd === undefined
   ) {
     return undefined;
@@ -524,6 +530,7 @@ export function normalizePiUsage(usage: unknown): RuntimeUsage | undefined {
     completionTokens,
     totalTokens,
     ...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
     ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
   };
 }
@@ -537,6 +544,8 @@ export function mergePiUsage(
   if (!into) return normalized;
 
   const cachedPromptTokens = (into.cachedPromptTokens ?? 0) + (normalized.cachedPromptTokens ?? 0);
+  const reasoningOutputTokens =
+    (into.reasoningOutputTokens ?? 0) + (normalized.reasoningOutputTokens ?? 0);
   const estimatedCostUsd =
     into.estimatedCostUsd !== undefined || normalized.estimatedCostUsd !== undefined
       ? (into.estimatedCostUsd ?? 0) + (normalized.estimatedCostUsd ?? 0)
@@ -547,6 +556,7 @@ export function mergePiUsage(
     completionTokens: into.completionTokens + normalized.completionTokens,
     totalTokens: into.totalTokens + normalized.totalTokens,
     ...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {}),
+    ...(reasoningOutputTokens > 0 ? { reasoningOutputTokens } : {}),
     ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
   };
 }

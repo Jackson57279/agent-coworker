@@ -107,8 +107,12 @@ export function markModelCallSpanSuccess(
   if (usage) {
     if (usage.promptTokens !== undefined)
       span.setAttribute("llm.usage.input_tokens", usage.promptTokens);
+    if (usage.cachedPromptTokens !== undefined)
+      span.setAttribute("llm.usage.cached_input_tokens", usage.cachedPromptTokens);
     if (usage.completionTokens !== undefined)
       span.setAttribute("llm.usage.output_tokens", usage.completionTokens);
+    if (usage.reasoningOutputTokens !== undefined)
+      span.setAttribute("llm.usage.reasoning_output_tokens", usage.reasoningOutputTokens);
     if (usage.totalTokens !== undefined)
       span.setAttribute("llm.usage.total_tokens", usage.totalTokens);
   }
@@ -621,25 +625,47 @@ function parseUsage(value: unknown): RuntimeUsage | undefined {
   const record = asRecord(value);
   const total = asRecord(record?.total);
   const last = asRecord(record?.last) ?? total;
+  const inputDetails =
+    asRecord(last?.inputTokensDetails) ??
+    asRecord(last?.input_tokens_details) ??
+    asRecord(last?.inputDetails) ??
+    asRecord(last?.input_details);
+  const outputDetails =
+    asRecord(last?.outputTokensDetails) ??
+    asRecord(last?.output_tokens_details) ??
+    asRecord(last?.outputDetails) ??
+    asRecord(last?.output_details);
   const promptTokens = asNumber(last?.inputTokens) ?? asNumber(last?.input_tokens) ?? 0;
   const cachedPromptTokens =
-    asNumber(last?.cachedInputTokens) ?? asNumber(last?.cached_input_tokens) ?? undefined;
-  const completionTokens =
-    asNumber(last?.outputTokens) ??
-    asNumber(last?.output_tokens) ??
+    asNumber(last?.cachedInputTokens) ??
+    asNumber(last?.cached_input_tokens) ??
+    asNumber(last?.inputCachedTokens) ??
+    asNumber(last?.input_cached_tokens) ??
+    asNumber(inputDetails?.cachedTokens) ??
+    asNumber(inputDetails?.cached_tokens) ??
+    undefined;
+  const explicitCompletionTokens =
+    asNumber(last?.outputTokens) ?? asNumber(last?.output_tokens) ?? undefined;
+  const reasoningOutputTokens =
     asNumber(last?.reasoningOutputTokens) ??
     asNumber(last?.reasoning_output_tokens) ??
-    0;
+    asNumber(outputDetails?.reasoningTokens) ??
+    asNumber(outputDetails?.reasoning_tokens) ??
+    undefined;
   const totalTokens =
     asNumber(last?.totalTokens) ??
     asNumber(last?.total_tokens) ??
-    promptTokens + completionTokens + (cachedPromptTokens ?? 0);
+    promptTokens + (explicitCompletionTokens ?? reasoningOutputTokens ?? 0);
+  const completionTokens =
+    explicitCompletionTokens ??
+    (totalTokens >= promptTokens ? totalTokens - promptTokens : (reasoningOutputTokens ?? 0));
   if (promptTokens === 0 && completionTokens === 0 && totalTokens === 0) return undefined;
   return {
     promptTokens,
     completionTokens,
     totalTokens,
     ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
   };
 }
 

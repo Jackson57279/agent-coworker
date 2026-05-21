@@ -64,7 +64,7 @@ function completeTurn(extraItems = []) {
   send({ method: "item/started", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "", phase: null, memoryCitation: null } } });
   send({ method: "item/agentMessage/delta", params: { threadId: "thread_1", turnId: "turn_1", itemId: "item_1", delta: "hello from app-server" } });
   send({ method: "item/completed", params: { threadId: "thread_1", turnId: "turn_1", item: { type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null } } });
-  send({ method: "thread/tokenUsage/updated", params: { threadId: "thread_1", turnId: "turn_1", tokenUsage: { total: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, last: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }, modelContextWindow: 272000 } } });
+  send({ method: "thread/tokenUsage/updated", params: { threadId: "thread_1", turnId: "turn_1", tokenUsage: { total: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 2 }, last: { totalTokens: 7, inputTokens: 3, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 2 }, modelContextWindow: 272000 } } });
   send({ method: "turn/completed", params: { turn: { id: "turn_1", status: "completed", items: [...extraItems, { type: "agentMessage", id: "item_1", text: "hello from app-server", phase: null, memoryCitation: null }], error: null } } });
 }
 rl.on("line", (line) => {
@@ -189,28 +189,47 @@ function createMockClient(): CodexAppServerClient {
       },
     });
     if (options.emitUsage !== false) {
-      sendNotification({
-        method: "thread/tokenUsage/updated",
-        params: {
-          threadId,
-          turnId,
-          tokenUsage: {
+      const tokenUsage = process.env.COWORK_CODEX_APP_SERVER_ARGS?.includes("openai-usage-details")
+        ? {
+            total: {
+              total_tokens: 33,
+              input_tokens: 20,
+              input_tokens_details: { cached_tokens: 6 },
+              output_tokens: 13,
+              output_tokens_details: { reasoning_tokens: 5 },
+            },
+            last: {
+              total_tokens: 33,
+              input_tokens: 20,
+              input_tokens_details: { cached_tokens: 6 },
+              output_tokens: 13,
+              output_tokens_details: { reasoning_tokens: 5 },
+            },
+            modelContextWindow: 272000,
+          }
+        : {
             total: {
               totalTokens: 7,
               inputTokens: 3,
               cachedInputTokens: 0,
               outputTokens: 4,
-              reasoningOutputTokens: 0,
+              reasoningOutputTokens: 2,
             },
             last: {
               totalTokens: 7,
               inputTokens: 3,
               cachedInputTokens: 0,
               outputTokens: 4,
-              reasoningOutputTokens: 0,
+              reasoningOutputTokens: 2,
             },
             modelContextWindow: 272000,
-          },
+          };
+      sendNotification({
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId,
+          turnId,
+          tokenUsage,
         },
       });
     }
@@ -315,14 +334,14 @@ function createMockClient(): CodexAppServerClient {
                 inputTokens: 400,
                 cachedInputTokens: 0,
                 outputTokens: 599,
-                reasoningOutputTokens: 0,
+                reasoningOutputTokens: 11,
               },
               last: {
                 totalTokens: 999,
                 inputTokens: 400,
                 cachedInputTokens: 0,
                 outputTokens: 599,
-                reasoningOutputTokens: 0,
+                reasoningOutputTokens: 11,
               },
             },
           },
@@ -340,14 +359,14 @@ function createMockClient(): CodexAppServerClient {
                 inputTokens: 11,
                 cachedInputTokens: 1,
                 outputTokens: 13,
-                reasoningOutputTokens: 0,
+                reasoningOutputTokens: 5,
               },
               last: {
                 totalTokens: 24,
                 inputTokens: 11,
                 cachedInputTokens: 1,
                 outputTokens: 13,
-                reasoningOutputTokens: 0,
+                reasoningOutputTokens: 5,
               },
             },
           },
@@ -691,6 +710,7 @@ describe("codex app-server runtime", () => {
       completionTokens: 4,
       totalTokens: 7,
       cachedPromptTokens: 0,
+      reasoningOutputTokens: 2,
     });
     expect(result.providerState).toMatchObject({
       provider: "codex-cli",
@@ -1561,6 +1581,29 @@ rl.on("line", (line) => {
       completionTokens: 13,
       totalTokens: 24,
       cachedPromptTokens: 1,
+      reasoningOutputTokens: 5,
+    });
+  });
+
+  test.serial("normalizes OpenAI-style cached and reasoning usage details", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-codex-openai-usage-"));
+    process.env.COWORK_CODEX_APP_SERVER_ARGS = "openai-usage-details";
+    const runtime = createRuntime(makeConfig(dir));
+
+    const result = await runtime.runTurn({
+      config: makeConfig(dir),
+      system: "You are Codex.",
+      messages: [{ role: "user", content: "Say hi" }],
+      tools: {},
+      maxSteps: 1,
+    });
+
+    expect(result.usage).toEqual({
+      promptTokens: 20,
+      completionTokens: 13,
+      totalTokens: 33,
+      cachedPromptTokens: 6,
+      reasoningOutputTokens: 5,
     });
   });
 });

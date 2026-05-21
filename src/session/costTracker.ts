@@ -29,6 +29,7 @@ export type TurnUsage = {
   completionTokens: number;
   totalTokens: number;
   cachedPromptTokens?: number;
+  reasoningOutputTokens?: number;
   estimatedCostUsd?: number;
 };
 
@@ -50,6 +51,8 @@ export type ModelUsageSummary = {
   totalPromptTokens: number;
   totalCompletionTokens: number;
   totalTokens: number;
+  totalCachedPromptTokens?: number;
+  totalReasoningOutputTokens?: number;
   estimatedCostUsd: number | null;
 };
 
@@ -59,6 +62,8 @@ export type SessionUsageSnapshot = {
   totalPromptTokens: number;
   totalCompletionTokens: number;
   totalTokens: number;
+  totalCachedPromptTokens?: number;
+  totalReasoningOutputTokens?: number;
   estimatedTotalCostUsd: number | null;
   costTrackingAvailable: boolean;
   byModel: ModelUsageSummary[];
@@ -111,6 +116,8 @@ export class SessionCostTracker {
   private totalPromptTokens = 0;
   private totalCompletionTokens = 0;
   private totalTokens = 0;
+  private totalCachedPromptTokens = 0;
+  private totalReasoningOutputTokens = 0;
   private estimatedTotalCostUsd: number | null = null;
   private costTrackingAvailable = false;
   private hasUnknownCostTurns = false;
@@ -156,6 +163,12 @@ export class SessionCostTracker {
     tracker.totalPromptTokens = snapshot.totalPromptTokens;
     tracker.totalCompletionTokens = snapshot.totalCompletionTokens;
     tracker.totalTokens = snapshot.totalTokens;
+    tracker.totalCachedPromptTokens =
+      snapshot.totalCachedPromptTokens ??
+      snapshot.turns.reduce((total, entry) => total + (entry.usage.cachedPromptTokens ?? 0), 0);
+    tracker.totalReasoningOutputTokens =
+      snapshot.totalReasoningOutputTokens ??
+      snapshot.turns.reduce((total, entry) => total + (entry.usage.reasoningOutputTokens ?? 0), 0);
     tracker.hasUnknownCostTurns = snapshot.turns.some((entry) => entry.estimatedCostUsd === null);
     tracker.estimatedTotalCostUsd = tracker.hasUnknownCostTurns
       ? null
@@ -215,6 +228,8 @@ export class SessionCostTracker {
     this.totalPromptTokens += usage.promptTokens;
     this.totalCompletionTokens += usage.completionTokens;
     this.totalTokens += usage.totalTokens;
+    this.totalCachedPromptTokens += usage.cachedPromptTokens ?? 0;
+    this.totalReasoningOutputTokens += usage.reasoningOutputTokens ?? 0;
     this.recordSessionCost(costUsd);
     this.updateModelSummary(provider, model, usage, costUsd);
 
@@ -293,6 +308,12 @@ export class SessionCostTracker {
       totalPromptTokens: this.totalPromptTokens,
       totalCompletionTokens: this.totalCompletionTokens,
       totalTokens: this.totalTokens,
+      ...(this.totalCachedPromptTokens > 0
+        ? { totalCachedPromptTokens: this.totalCachedPromptTokens }
+        : {}),
+      ...(this.totalReasoningOutputTokens > 0
+        ? { totalReasoningOutputTokens: this.totalReasoningOutputTokens }
+        : {}),
       estimatedTotalCostUsd: this.estimatedTotalCostUsd,
       costTrackingAvailable: this.costTrackingAvailable,
       byModel: Array.from(this.modelSummaries.values()).map((s) => ({ ...s })),
@@ -322,6 +343,16 @@ export class SessionCostTracker {
     lines.push(
       `  Tokens:  ${formatTokenCount(this.totalPromptTokens)} in / ${formatTokenCount(this.totalCompletionTokens)} out / ${formatTokenCount(this.totalTokens)} total`,
     );
+    if (this.totalCachedPromptTokens > 0 || this.totalReasoningOutputTokens > 0) {
+      const breakdown: string[] = [];
+      if (this.totalCachedPromptTokens > 0) {
+        breakdown.push(`${formatTokenCount(this.totalCachedPromptTokens)} cached input`);
+      }
+      if (this.totalReasoningOutputTokens > 0) {
+        breakdown.push(`${formatTokenCount(this.totalReasoningOutputTokens)} reasoning output`);
+      }
+      lines.push(`  Detail:  ${breakdown.join(" / ")}`);
+    }
 
     if (this.estimatedTotalCostUsd !== null) {
       lines.push(`  Cost:    ${formatCost(this.estimatedTotalCostUsd)}`);
@@ -411,6 +442,16 @@ export class SessionCostTracker {
       existing.totalPromptTokens += usage.promptTokens;
       existing.totalCompletionTokens += usage.completionTokens;
       existing.totalTokens += usage.totalTokens;
+      const cachedPromptTokens = usage.cachedPromptTokens ?? 0;
+      if (existing.totalCachedPromptTokens !== undefined || cachedPromptTokens > 0) {
+        existing.totalCachedPromptTokens =
+          (existing.totalCachedPromptTokens ?? 0) + cachedPromptTokens;
+      }
+      const reasoningOutputTokens = usage.reasoningOutputTokens ?? 0;
+      if (existing.totalReasoningOutputTokens !== undefined || reasoningOutputTokens > 0) {
+        existing.totalReasoningOutputTokens =
+          (existing.totalReasoningOutputTokens ?? 0) + reasoningOutputTokens;
+      }
       if (existing.estimatedCostUsd === null || costUsd === null) {
         existing.estimatedCostUsd = null;
       } else {
@@ -424,6 +465,10 @@ export class SessionCostTracker {
         totalPromptTokens: usage.promptTokens,
         totalCompletionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
+        ...(usage.cachedPromptTokens ? { totalCachedPromptTokens: usage.cachedPromptTokens } : {}),
+        ...(usage.reasoningOutputTokens
+          ? { totalReasoningOutputTokens: usage.reasoningOutputTokens }
+          : {}),
         estimatedCostUsd: costUsd,
       });
     }

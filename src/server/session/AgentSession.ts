@@ -896,7 +896,14 @@ export class AgentSession {
   getLastTurnUsage(): TurnUsage | null {
     const turns = this.state.costTracker?.getCompactSnapshot(1).turns ?? [];
     const latest = turns[turns.length - 1];
-    return latest ? { ...latest.usage } : null;
+    return latest
+      ? {
+          ...latest.usage,
+          ...(latest.estimatedCostUsd !== null
+            ? { estimatedCostUsd: latest.estimatedCostUsd }
+            : {}),
+        }
+      : null;
   }
 
   getObservabilityStatusEvent() {

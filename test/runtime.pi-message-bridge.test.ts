@@ -273,6 +273,7 @@ describe("pi message bridge", () => {
       output: 20,
       totalTokens: 130,
       cacheRead: 30,
+      reasoningOutputTokens: 4,
       estimatedCostUsd: 0.001,
     });
     const usage2 = mergePiUsage(usage1, {
@@ -280,6 +281,7 @@ describe("pi message bridge", () => {
       completionTokens: 10,
       totalTokens: 60,
       cachedPromptTokens: 5,
+      reasoningTokens: 2,
       estimatedCostUsd: 0.002,
     });
 
@@ -288,6 +290,7 @@ describe("pi message bridge", () => {
       completionTokens: 30,
       totalTokens: 190,
       cachedPromptTokens: 35,
+      reasoningOutputTokens: 6,
       estimatedCostUsd: 0.003,
     });
   });

@@ -45,6 +45,7 @@ const turnUsageSchema: z.ZodType<TurnUsage> = z
     completionTokens: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative(),
     cachedPromptTokens: z.number().int().nonnegative().optional(),
+    reasoningOutputTokens: z.number().int().nonnegative().optional(),
     estimatedCostUsd: z.number().optional(),
   })
   .strict();

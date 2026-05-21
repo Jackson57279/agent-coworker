@@ -88,6 +88,32 @@ describe("SessionCostTracker", () => {
     expect(tracker.getSnapshot().estimatedTotalCostUsd).toBeCloseTo(8.12, 6);
   });
 
+  test("stores cached and reasoning token breakdowns without double-charging output", () => {
+    const tracker = new SessionCostTracker("session-1");
+
+    tracker.recordTurn({
+      turnId: "turn-1",
+      provider: "openai",
+      model: "gpt-5.2",
+      usage: {
+        promptTokens: 1_000_000,
+        cachedPromptTokens: 400_000,
+        completionTokens: 500_000,
+        reasoningOutputTokens: 125_000,
+        totalTokens: 1_500_000,
+      },
+    });
+
+    const snapshot = tracker.getSnapshot();
+
+    expect(snapshot.totalCachedPromptTokens).toBe(400_000);
+    expect(snapshot.totalReasoningOutputTokens).toBe(125_000);
+    expect(snapshot.byModel[0]?.totalCachedPromptTokens).toBe(400_000);
+    expect(snapshot.byModel[0]?.totalReasoningOutputTokens).toBe(125_000);
+    expect(snapshot.estimatedTotalCostUsd).toBeCloseTo(8.12, 6);
+    expect(tracker.formatSummary()).toContain("125.0k reasoning output");
+  });
+
   test("prefers runtime-provided estimated cost when present", () => {
     const tracker = new SessionCostTracker("session-1");
 

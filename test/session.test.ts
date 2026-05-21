@@ -3276,6 +3276,7 @@ describe("AgentSession", () => {
         promptTokens: 12,
         completionTokens: 6,
         totalTokens: 18,
+        estimatedCostUsd: 0.000024,
       });
 
       const tracker = (session as any).state.costTracker as SessionCostTracker;

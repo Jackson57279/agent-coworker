@@ -1227,6 +1227,8 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
   "totalTurns": 12,
   "totalPromptTokens": 5000,
   "totalCompletionTokens": 2000,
+  "totalCachedPromptTokens": 1200,
+  "totalReasoningOutputTokens": 600,
   "totalTokens": 7000,
   "estimatedTotalCostUsd": 0.45,
   "costTrackingAvailable": true,
@@ -1242,8 +1244,10 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
 |-------|------|-------------|
 | `sessionId` | `string` | Session identifier |
 | `totalTurns` | `number` | Total number of recorded turns |
-| `totalPromptTokens` | `number` | Cumulative prompt tokens |
-| `totalCompletionTokens` | `number` | Cumulative completion tokens |
+| `totalPromptTokens` | `number` | Cumulative prompt/input tokens, including cached input when reported by the provider |
+| `totalCompletionTokens` | `number` | Cumulative completion/output tokens. For reasoning models, this is the billable output bucket and can include reasoning tokens |
+| `totalCachedPromptTokens` | `number?` | Cumulative cached prompt/input tokens. Cached tokens are a subset of `totalPromptTokens`, not additional tokens |
+| `totalReasoningOutputTokens` | `number?` | Cumulative reasoning output tokens. Reasoning tokens are tracked as a subset/breakdown of output tokens unless a provider documents a separate billing bucket |
 | `totalTokens` | `number` | Cumulative total tokens |
 | `estimatedTotalCostUsd` | `number \| null` | Cumulative estimated cost in USD |
 | `costTrackingAvailable` | `boolean` | Whether cost tracking is active for this session |
@@ -1262,6 +1266,8 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
   "turns": 4,
   "totalPromptTokens": 3200,
   "totalCompletionTokens": 900,
+  "totalCachedPromptTokens": 700,
+  "totalReasoningOutputTokens": 250,
   "totalTokens": 4100,
   "estimatedCostUsd": 0.0235
 }
@@ -1272,8 +1278,10 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
 | `provider` | `ProviderName` | Provider identifier used for the turns in this bucket |
 | `model` | `string` | Model identifier used for the turns in this bucket |
 | `turns` | `number` | Number of recorded turns for this provider/model pair |
-| `totalPromptTokens` | `number` | Prompt/input tokens accumulated for this provider/model pair |
+| `totalPromptTokens` | `number` | Prompt/input tokens accumulated for this provider/model pair, including cached input when reported |
 | `totalCompletionTokens` | `number` | Completion/output tokens accumulated for this provider/model pair |
+| `totalCachedPromptTokens` | `number?` | Cached prompt/input tokens accumulated for this provider/model pair, as a subset of prompt tokens |
+| `totalReasoningOutputTokens` | `number?` | Reasoning output tokens accumulated for this provider/model pair, as a subset/breakdown of output tokens |
 | `totalTokens` | `number` | Total tokens accumulated for this provider/model pair |
 | `estimatedCostUsd` | `number \| null` | Estimated cumulative cost for this provider/model pair |
 
@@ -1291,6 +1299,7 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
     "completionTokens": 300,
     "totalTokens": 1500,
     "cachedPromptTokens": 200,
+    "reasoningOutputTokens": 80,
     "estimatedCostUsd": 0.0084
   },
   "estimatedCostUsd": 0.0084,
@@ -1321,16 +1330,18 @@ Backups are opt-in. In git workspaces, clients and agents should prefer git-nati
   "completionTokens": 300,
   "totalTokens": 1500,
   "cachedPromptTokens": 200,
+  "reasoningOutputTokens": 80,
   "estimatedCostUsd": 0.0084
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `promptTokens` | `number` | Prompt/input tokens reported for the turn |
-| `completionTokens` | `number` | Completion/output tokens reported for the turn |
+| `promptTokens` | `number` | Prompt/input tokens reported for the turn, including cached input when reported |
+| `completionTokens` | `number` | Completion/output tokens reported for the turn. For OpenAI/Codex reasoning models this includes reasoning output tokens |
 | `totalTokens` | `number` | Total tokens reported for the turn |
-| `cachedPromptTokens` | `number` | Cached prompt/input tokens when the provider exposes them |
+| `cachedPromptTokens` | `number` | Cached prompt/input tokens when the provider exposes them. Must be treated as a subset of `promptTokens`, not added to `totalTokens` again |
+| `reasoningOutputTokens` | `number` | Reasoning output tokens when the provider exposes them. Treat as a subset/breakdown of `completionTokens` unless the provider documents separate billing |
 | `estimatedCostUsd` | `number` | Runtime-provided turn estimate when available |
 
 ### ModelPricing
@@ -2548,6 +2559,7 @@ Token usage data for a completed turn. Emitted after `assistant_message` when th
     "completionTokens": 567,
     "totalTokens": 1801,
     "cachedPromptTokens": 234,
+    "reasoningOutputTokens": 120,
     "estimatedCostUsd": 0.0042
   }
 }
@@ -2559,9 +2571,10 @@ Token usage data for a completed turn. Emitted after `assistant_message` when th
 | `sessionId` | `string` | Session identifier |
 | `turnId` | `string` | Turn this usage belongs to |
 | `usage.promptTokens` | `number` | Total input tokens consumed, including cached prompt tokens when the provider reports them |
-| `usage.completionTokens` | `number` | Output tokens generated |
+| `usage.completionTokens` | `number` | Output tokens generated. For OpenAI/Codex reasoning models this includes reasoning output tokens |
 | `usage.totalTokens` | `number` | Total tokens |
-| `usage.cachedPromptTokens` | `number` | Cached input tokens reported for the turn, when available |
+| `usage.cachedPromptTokens` | `number` | Cached input tokens reported for the turn, when available. This is a subset of `usage.promptTokens` |
+| `usage.reasoningOutputTokens` | `number` | Reasoning output tokens reported for the turn, when available. This is a subset/breakdown of `usage.completionTokens` for current OpenAI/Codex usage |
 | `usage.estimatedCostUsd` | `number` | Turn cost estimate in USD when the runtime can provide one |
 
 ---
@@ -2579,6 +2592,8 @@ Accumulated session usage and budget status. Sent in response to `get_session_us
     "totalTurns": 12,
     "totalPromptTokens": 5000,
     "totalCompletionTokens": 2000,
+    "totalCachedPromptTokens": 1200,
+    "totalReasoningOutputTokens": 600,
     "totalTokens": 7000,
     "estimatedTotalCostUsd": 0.45,
     "costTrackingAvailable": true,

@@ -11,6 +11,7 @@ export type RuntimeUsage = {
   completionTokens: number;
   totalTokens: number;
   cachedPromptTokens?: number;
+  reasoningOutputTokens?: number;
   estimatedCostUsd?: number;
 };
 

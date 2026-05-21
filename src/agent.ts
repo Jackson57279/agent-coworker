@@ -52,6 +52,7 @@ const usageSchema = z.object({
   completionTokens: z.number(),
   totalTokens: z.number(),
   cachedPromptTokens: z.number().optional(),
+  reasoningOutputTokens: z.number().optional(),
   estimatedCostUsd: z.number().optional(),
 });
 const responseMessagesSchema = z.array(z.unknown());
@@ -539,6 +540,9 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
                   totalTokens: parsedUsage.data.totalTokens,
                   ...(typeof parsedUsage.data.cachedPromptTokens === "number"
                     ? { cachedPromptTokens: parsedUsage.data.cachedPromptTokens }
+                    : {}),
+                  ...(typeof parsedUsage.data.reasoningOutputTokens === "number"
+                    ? { reasoningOutputTokens: parsedUsage.data.reasoningOutputTokens }
                     : {}),
                   ...(typeof parsedUsage.data.estimatedCostUsd === "number"
                     ? { estimatedCostUsd: parsedUsage.data.estimatedCostUsd }

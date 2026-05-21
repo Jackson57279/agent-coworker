@@ -446,6 +446,13 @@ function mergeTurnUsage(
     ...(typeof total.cachedPromptTokens === "number" || typeof next.cachedPromptTokens === "number"
       ? { cachedPromptTokens: (total.cachedPromptTokens ?? 0) + (next.cachedPromptTokens ?? 0) }
       : {}),
+    ...(typeof total.reasoningOutputTokens === "number" ||
+    typeof next.reasoningOutputTokens === "number"
+      ? {
+          reasoningOutputTokens:
+            (total.reasoningOutputTokens ?? 0) + (next.reasoningOutputTokens ?? 0),
+        }
+      : {}),
     ...(typeof total.estimatedCostUsd === "number" || typeof next.estimatedCostUsd === "number"
       ? { estimatedCostUsd: (total.estimatedCostUsd ?? 0) + (next.estimatedCostUsd ?? 0) }
       : {}),
@@ -730,21 +737,28 @@ export class TurnExecutionManager {
       }
 
       persistedAggregatedUsage = true;
-      this.context.emit({
-        type: "turn_usage",
-        sessionId: this.context.id,
-        turnId,
-        usage: aggregatedUsage,
-      });
-
+      let recordedUsage = aggregatedUsage;
       const tracker = this.context.state.costTracker;
       if (tracker) {
-        tracker.recordTurn({
+        const entry = tracker.recordTurn({
           turnId,
           provider: this.context.state.config.provider,
           model: this.context.state.config.model,
           usage: aggregatedUsage,
         });
+        recordedUsage =
+          entry.estimatedCostUsd !== null
+            ? { ...aggregatedUsage, estimatedCostUsd: entry.estimatedCostUsd }
+            : aggregatedUsage;
+      }
+      this.context.emit({
+        type: "turn_usage",
+        sessionId: this.context.id,
+        turnId,
+        usage: recordedUsage,
+      });
+
+      if (tracker) {
         this.context.emit({
           type: "session_usage",
           sessionId: this.context.id,
