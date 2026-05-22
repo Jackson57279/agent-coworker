@@ -87,7 +87,17 @@ export function decodeCoworkPairingTicket(rawTicket: string): CoworkPairingTicke
   return coworkPairingTicketSchema.parse(JSON.parse(json));
 }
 
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 export function createPairingNonce(byteLength = 24): string {
   const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
-  return Buffer.from(bytes).toString("base64url");
+  return base64UrlEncode(bytes);
 }
