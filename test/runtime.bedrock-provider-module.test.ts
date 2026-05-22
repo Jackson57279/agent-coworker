@@ -10,9 +10,9 @@ const {
 
 describe("runtime/bedrockProviderModule", () => {
   test("extracts regions only from standard Bedrock runtime endpoints", () => {
-    expect(getStandardBedrockEndpointRegion("https://bedrock-runtime.us-east-1.amazonaws.com")).toBe(
-      "us-east-1",
-    );
+    expect(
+      getStandardBedrockEndpointRegion("https://bedrock-runtime.us-east-1.amazonaws.com"),
+    ).toBe("us-east-1");
     expect(
       getStandardBedrockEndpointRegion("https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com"),
     ).toBe("us-gov-west-1");

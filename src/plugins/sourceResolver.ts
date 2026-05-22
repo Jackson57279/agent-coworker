@@ -87,7 +87,7 @@ function expandHomeDir(input: string): string {
   if (!input.startsWith("~")) {
     return input;
   }
-  const remainder = input.slice(1).replace(/^[\/\\]+/, "");
+  const remainder = input.slice(1).replace(/^[/\\]+/, "");
   return path.join(os.homedir(), remainder);
 }
 

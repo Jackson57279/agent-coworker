@@ -467,12 +467,8 @@ describe("resolveTrayIconPath", () => {
       },
     });
 
-    expect(globalShortcutState.registeredAccelerators).toEqual([
-      "CommandOrControl+Shift+Space",
-    ]);
-    expect(globalShortcutState.unregisteredAccelerators).toEqual([
-      "CommandOrControl+Shift+Space",
-    ]);
+    expect(globalShortcutState.registeredAccelerators).toEqual(["CommandOrControl+Shift+Space"]);
+    expect(globalShortcutState.unregisteredAccelerators).toEqual(["CommandOrControl+Shift+Space"]);
   });
 
   test("retries quick chat shortcut registration after Electron rejects an accelerator", () => {
@@ -542,9 +538,7 @@ describe("resolveTrayIconPath", () => {
       "CommandOrControl+Shift+Space",
       "CommandOrControl+Shift+K",
     ]);
-    expect(globalShortcutState.unregisteredAccelerators).toEqual([
-      "CommandOrControl+Shift+Space",
-    ]);
+    expect(globalShortcutState.unregisteredAccelerators).toEqual(["CommandOrControl+Shift+Space"]);
   });
 
   test("reports tray availability while the tray surface is active", () => {

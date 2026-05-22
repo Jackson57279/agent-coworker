@@ -6,10 +6,7 @@ import { useAppStore } from "../../app/store";
 import { isOneOffChatWorkspace, type SettingsPageId } from "../../app/types";
 import { Button } from "../../components/ui/button";
 import { isPackagedDesktopApp } from "../../lib/desktopCommands";
-import {
-  type DesktopPlatformInfo,
-  getDesktopPlatformInfo,
-} from "../../lib/desktopPlatform";
+import { type DesktopPlatformInfo, getDesktopPlatformInfo } from "../../lib/desktopPlatform";
 import { cn } from "../../lib/utils";
 import { ArchivedChatsPage } from "./pages/ArchivedChatsPage";
 import { BackupPage } from "./pages/BackupPage";

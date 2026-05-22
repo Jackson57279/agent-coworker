@@ -103,7 +103,10 @@ describe("pricing", () => {
       expect(glm!.outputPerMillion).toBe(4.4);
       expect(glm!.cachedInputPerMillion).toBe(0.26);
 
-      const deepseek = resolveModelPricing("fireworks", "accounts/fireworks/models/deepseek-v4-pro");
+      const deepseek = resolveModelPricing(
+        "fireworks",
+        "accounts/fireworks/models/deepseek-v4-pro",
+      );
       expect(deepseek).not.toBeNull();
       expect(deepseek!.inputPerMillion).toBe(1.74);
       expect(deepseek!.outputPerMillion).toBe(3.48);

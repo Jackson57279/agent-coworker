@@ -2,10 +2,7 @@ import { PanelLeftIcon, SquarePenIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Button } from "../../components/ui/button";
-import {
-  type DesktopPlatformInfo,
-  resolveCollapsedLeftRailWidth,
-} from "../../lib/desktopPlatform";
+import { type DesktopPlatformInfo, resolveCollapsedLeftRailWidth } from "../../lib/desktopPlatform";
 import { SidebarCollapseControl } from "./SidebarCollapseControl";
 
 /**
@@ -115,10 +112,7 @@ function Win32LeftRail({
     railWidth > 0 ? ({ width: railWidth, minWidth: railWidth } as CSSProperties) : undefined;
 
   return (
-    <div
-      className="app-topbar__win32-left-rail absolute inset-y-0 left-0"
-      style={railStyle}
-    >
+    <div className="app-topbar__win32-left-rail absolute inset-y-0 left-0" style={railStyle}>
       <div className="app-topbar__sidebar-strip app-topbar__win32-left-strip app-topbar__toolbar-layer app-topbar__controls absolute inset-0 flex min-w-0 items-center gap-1 px-1.5">
         <Button
           size="icon-sm"

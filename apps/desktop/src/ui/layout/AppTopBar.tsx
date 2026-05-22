@@ -29,8 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { useDesktopPlatform } from "../../lib/useDesktopPlatform";
 import { resolveCollapsedLeftRailWidth } from "../../lib/desktopPlatform";
+import { useDesktopPlatform } from "../../lib/useDesktopPlatform";
 import { cn } from "../../lib/utils";
 import { PlatformTopBarChrome } from "./PlatformTopBarChrome";
 
@@ -187,17 +187,14 @@ export function AppTopBar({
         ? 2.75 * 16
         : 12;
   const titleRightInset = usesLeftRail
-    ? platformInfo.captionButtonReserve +
-      platformInfo.topbarToolbarGap +
-      win32RightInset
+    ? platformInfo.captionButtonReserve + platformInfo.topbarToolbarGap + win32RightInset
     : defaultRightInset;
   const collapsedThreadAnchorStyle =
     sidebarCollapsed && isDarwin ? { paddingLeft: "10rem" } : undefined;
   const reservesNativeCaptionButtons = platformInfo.captionButtonReserve > 0;
   const toolbarRightStyle = reservesNativeCaptionButtons
     ? ({
-        right:
-          platformInfo.captionButtonReserve + platformInfo.topbarToolbarGap + 12,
+        right: platformInfo.captionButtonReserve + platformInfo.topbarToolbarGap + 12,
       } as CSSProperties)
     : undefined;
   const toolbarPositionClass = reservesNativeCaptionButtons ? undefined : "right-3";
@@ -269,9 +266,7 @@ export function AppTopBar({
           <div
             className={cn(
               "app-topbar__thread-anchor relative flex min-w-0 items-center",
-              sidebarCollapsed &&
-                !showCollapsedLeftRail &&
-                "app-topbar__thread-anchor--collapsed",
+              sidebarCollapsed && !showCollapsedLeftRail && "app-topbar__thread-anchor--collapsed",
               showCollapsedLeftRail && "app-topbar__thread-anchor--win32-collapsed",
             )}
             style={collapsedThreadAnchorStyle}
@@ -319,9 +314,7 @@ export function AppTopBar({
             ref={detailsRef}
             className={cn(
               "app-topbar__thread-anchor relative flex min-w-0",
-              sidebarCollapsed &&
-                !showCollapsedLeftRail &&
-                "app-topbar__thread-anchor--collapsed",
+              sidebarCollapsed && !showCollapsedLeftRail && "app-topbar__thread-anchor--collapsed",
               showCollapsedLeftRail && "app-topbar__thread-anchor--win32-collapsed",
             )}
             style={collapsedThreadAnchorStyle}

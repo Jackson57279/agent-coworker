@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import type { PlatformChromeInfo } from "../src/lib/desktopApi";
-import { applyPlatformChromeToDocument, syncPlatformChromeCssVars } from "../src/lib/platformChromeDom";
+import {
+  applyPlatformChromeToDocument,
+  syncPlatformChromeCssVars,
+} from "../src/lib/platformChromeDom";
 import { setupJsdom } from "./jsdomHarness";
 
 describe("applyPlatformChromeToDocument", () => {

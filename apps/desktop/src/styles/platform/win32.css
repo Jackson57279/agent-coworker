@@ -366,7 +366,8 @@
   -webkit-backdrop-filter: none;
 }
 
-:root[data-platform="win32"] :is([data-window-mode="quick-chat"], [data-window-mode="utility"])
+:root[data-platform="win32"]
+  :is([data-window-mode="quick-chat"], [data-window-mode="utility"])
   .desktop-popup-shell__header {
   min-height: var(--platform-titlebar-height);
   align-items: center;

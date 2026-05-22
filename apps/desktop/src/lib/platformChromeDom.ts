@@ -1,7 +1,8 @@
 import type { PlatformChromeInfo } from "./desktopApi";
 import { getDesktopPlatformInfo } from "./desktopPlatform";
 
-export function applyPlatformChromeToDocument(doc: Document, chrome: PlatformChromeInfo): void {  const root = doc.documentElement;
+export function applyPlatformChromeToDocument(doc: Document, chrome: PlatformChromeInfo): void {
+  const root = doc.documentElement;
   root.style.setProperty("--platform-titlebar-height", `${chrome.titlebarHeight}px`);
   root.style.setProperty("--platform-drag-strip-height", `${chrome.dragStripHeight}px`);
   root.style.setProperty("--platform-left-native-reserve", `${chrome.leftNativeReserve}px`);

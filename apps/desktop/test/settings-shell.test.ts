@@ -1,11 +1,8 @@
 import { describe, expect, test } from "bun:test";
-
-import { getSettingsDragZoneStyle, getSettingsGroups } from "../src/ui/settings/SettingsShell";
 import type { DesktopPlatformInfo } from "../src/lib/desktopPlatform";
+import { getSettingsDragZoneStyle, getSettingsGroups } from "../src/ui/settings/SettingsShell";
 
-function makePlatformInfo(
-  overrides: Partial<DesktopPlatformInfo> = {},
-): DesktopPlatformInfo {
+function makePlatformInfo(overrides: Partial<DesktopPlatformInfo> = {}): DesktopPlatformInfo {
   return {
     platform: "other",
     rawPlatform: "other",

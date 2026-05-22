@@ -65,7 +65,11 @@ describe("src/providers/index.ts", () => {
         model: "accounts/fireworks/models/glm-5p1",
         preferredChildModel: "accounts/fireworks/models/glm-5p1",
       });
-      const model = getModelForProvider(config, "accounts/fireworks/models/glm-5p1", "fw-key") as any;
+      const model = getModelForProvider(
+        config,
+        "accounts/fireworks/models/glm-5p1",
+        "fw-key",
+      ) as any;
       const headers = await model.config.headers();
       expect(model.modelId).toBe("accounts/fireworks/models/glm-5p1");
       expect(model.provider).toBe("fireworks.completions");
