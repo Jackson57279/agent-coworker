@@ -6,6 +6,8 @@ When you have access to subagents or agent teams, feel free to use them. Subagen
 
 All logic for the application should be done in the harness itself, consider the desktop app just a UI layer. The only things that should be specific to that are things that are relevant, like UI layout or platform-specific behavior. All logic on how the agent works on the users system, saves files, etc should be done in the harness THEN exposed and connected to the UI layers via the websocket.
 
+When you run into an issue, create tests to target the error. Then work on that error until the test passes. Make sure we have tests for all error cases to prevent regressions.
+
 ## Project Structure & Module Organization
 
 - `src/`: application code
@@ -247,3 +249,4 @@ Durable rules distilled from prior corrections. Apply before editing, not after.
 - For Electron preloads, bundle deps like `zod` into `out/preload/preload.js`; do not externalize runtime deps.
 - For Electron main-process CommonJS deps, use `createRequire` interop, not named ESM imports.
 - For dense desktop settings panels, prefer compact controls and separators over nested rounded subcards.
+- Make sure all platform-specific desktop behavior is properly handled and tested for that platform. When making changes with native elements, do not rely on platform defaults or implicit behavior — always specify explicit styles and behaviors.
