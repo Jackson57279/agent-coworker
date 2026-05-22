@@ -223,7 +223,8 @@ jobs:
 
           $requiredPaths = @(
             (Join-Path $sidecarRoot "bun.exe"),
-            (Join-Path $sidecarRoot "server\\index.js")
+            (Join-Path $sidecarRoot "server\\index.js"),
+            (Join-Path $sidecarRoot "server\\assets\\managed-soffice-helper.mjs")
           )
 
           foreach ($requiredPath in $requiredPaths) {

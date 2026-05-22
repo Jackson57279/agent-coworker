@@ -25,6 +25,10 @@ import {
 } from "./releaseBuildUtils";
 
 const CACHE_VERSION = 4;
+const MANAGED_SOFFICE_HELPER_RELATIVE_PATH = path.join(
+  "assets",
+  "managed-soffice-helper.mjs",
+);
 
 type DesktopResourcesCache = {
   version: number;
@@ -342,6 +346,10 @@ async function main() {
   const foundationModelsSdkDest = path.join(desktopBinariesDir, FOUNDATION_MODELS_SDK_DIR_NAME);
   const bundledBunPath = path.join(desktopBinariesDir, SIDECAR_BUN_EXECUTABLE_NAME);
   const bundledEntrypointPath = path.join(desktopBinariesDir, SIDECAR_BUN_ENTRYPOINT_PATH);
+  const bundledManagedSofficeHelperPath = path.join(
+    path.dirname(bundledEntrypointPath),
+    MANAGED_SOFFICE_HELPER_RELATIVE_PATH,
+  );
   const useBundledBunRuntime = shouldUseBundledBunRuntime(platform, arch);
   const sidecarNeedsBuild =
     cache?.platform !== platform ||
@@ -351,7 +359,9 @@ async function main() {
     !(await pathExists(sidecarManifestPath)) ||
     (shouldBundleCodexAppServer && !(await pathExists(codexAppServerOutfile))) ||
     (useBundledBunRuntime
-      ? !(await pathExists(bundledBunPath)) || !(await pathExists(bundledEntrypointPath))
+      ? !(await pathExists(bundledBunPath)) ||
+        !(await pathExists(bundledEntrypointPath)) ||
+        !(await pathExists(bundledManagedSofficeHelperPath))
       : !(await pathExists(sidecarOutfile)));
 
   if (sidecarNeedsBuild) {
@@ -385,6 +395,11 @@ async function main() {
 
       const { executablePath, version } = await ensureBundledBunRuntime(root, target);
       await fs.copyFile(executablePath, bundledBunPath);
+      await fs.mkdir(path.dirname(bundledManagedSofficeHelperPath), { recursive: true });
+      await fs.copyFile(
+        path.join(root, "src", "managedSofficeRuntime", MANAGED_SOFFICE_HELPER_RELATIVE_PATH),
+        bundledManagedSofficeHelperPath,
+      );
       console.log(
         `[resources] sidecar: rebuilt ${path.relative(root, bundledEntrypointPath)} with Bun runtime v${version}`,
       );
@@ -540,7 +555,7 @@ async function main() {
   console.log("[resources] skipped dist/server desktop bundle (unused at runtime)");
 }
 
-main().catch((err) => {
+await main().catch((err) => {
   console.error(err);
   process.exitCode = 1;
 });
