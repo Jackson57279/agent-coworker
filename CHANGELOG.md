@@ -4,6 +4,102 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 1.1.0 - 2026-05-22
+
+### Added
+
+- **Codex app-server runtime** — Codex CLI sessions now route through a bundled
+  and managed `codex app-server` instead of hand-rolled token parsing and local
+  credential plumbing. Desktop ships the app-server binary in sidecar resources,
+  resolves system vs Cowork-managed installs at runtime, and delegates model
+  catalog, auth, reasoning, titles, sandbox policy, and OpenAI native connector
+  discovery/enablement to the app-server MCP surface.
+- **Hybrid Codex tool boundary** — Keeps native app-server tool ownership while
+  Cowork still supplies workspace-local tools where appropriate.
+- **Antigravity provider** — New provider and runtime path for Gemini 3.5 Flash
+  and Gemini 3.1 Pro, with provider-status setup and Google key fallback when
+  Antigravity credentials are unavailable.
+- **Managed LibreOffice (`soffice`) shim** — Cowork-managed headless LibreOffice
+  for document, presentation, and spreadsheet workflows, with runtime env
+  propagation across Antigravity, Codex app-server, and local tool execution.
+- **Workspace canvas previews** — Presentation slide preview in the workspace
+  canvas, plus JSON-RPC `cowork/workspace/spreadsheet/preview` and a desktop
+  spreadsheet inspector for bounded CSV/XLSX rendering without client-side parsing.
+- **Universal new chat landing** — Dedicated new-chat surface with model selector,
+  one-off chat workspaces under `~/.cowork/chats/*`, sidebar section reordering,
+  and project-scoped “new chat in project” flows on the existing JSON-RPC thread
+  contract.
+- **Multimodal attachment UX** — Upload progress in chat, attachment cards in the
+  feed, and tighter Gemini media handling so binary tool results and transcripts
+  stay out of the visible stream.
+- **Direct H3 mobile pairing foundation** (#98) — Secure mobile-to-server pairing
+  over H3 with auth coverage for remote admin flows.
+- **MCP server enable toggles** — Per-server enable/disable controls in settings
+  without removing saved MCP configuration.
+- **Apple Foundation Models titles (macOS)** — On-device title generation via
+  Apple Foundation Models when available, with varied prompts to reduce duplicate
+  thread titles.
+- **Fire Pass / Kimi K2.6** — Kimi K2.6 routing through the shared Fireworks
+  inference stack (`firepass` provider).
+- **Model registry additions** — Gemini 3.5 Flash (replacing the legacy ajax
+  model), Claude Opus 4.6/4.7, and related catalog/pricing metadata updates.
+- **CLI REPL quality-of-life** — Multi-line paste/input without data loss,
+  auto-reconnect, and custom server port options.
+- **Desktop platform chrome contract** — Native top-bar/caption behavior exposed to
+  the renderer through IPC and CSS variables, with cross-platform tests for macOS,
+  Windows, and Linux window chrome.
+- **Sidebar persistence** — Remembers expanded/collapsed workspace sections in
+  localStorage and caps visible recent chats to five with a scrollable expand
+  affordance.
+
+### Changed
+
+- **Desktop UI migrated to shadcn/ui** (#100) — Replaced HeroUI with shadcn/ui as
+  the desktop component system; updated AGENTS/CLAUDE guidance, tokens, and
+  composition patterns accordingly.
+- **Mobile design tokens** — Aligned Expo mobile palette, splash/adaptive icon
+  background, and bundled IBM Plex fonts with the desktop shell.
+- **Major harness refactors** — Split large runtime/server/desktop modules
+  (`AgentSession`, `conversationProjection`, `codexPrimaryRuntime`,
+  `managedSofficeRuntime`, `threadEventReducer`, Google interactions runtime,
+  and related test suites) for clearer boundaries and faster maintenance.
+- **Desktop startup/shutdown** — Parallelizes spawned workspace server shutdown
+  during app exit.
+- **Usage/pricing estimates** — Long-context and cache-write pricing estimates
+  for supported providers; cumulative Codex app-server token accounting.
+- **Dependency updates** — TypeScript, Expo/mobile deps, and compatible major
+  runtime dependency bumps with CI/lint alignment.
+
+### Fixed
+
+- **Codex app-server reliability** — Auth expiry handling, pool reset after auth
+  changes, model catalog reconciliation, settings forwarding, reasoning/title
+  surfacing, and pinned `~/.cowork` auth home.
+- **Gemini / Google Interactions** — Interaction ID preservation, stale
+  continuation recovery, native code-execution handling, media re-read prevention,
+  and runtime env refresh on provider changes.
+- **Managed soffice** — Cross-platform LibreOffice startup, shell-command ordering,
+  and runtime checks before control-session hydration.
+- **Desktop UI** — Win32 platform chrome parity for chat and settings, canvas
+  slide preview reload resilience, JSON-RPC reconnect handling, composer overlay
+  spacing, sidebar title overflow, improved contrast/empty states, and Linux
+  window background painting.
+- **Workspace/settings correctness** — Project workspace settings no longer drop
+  when stored on project records; hidden paths filtered from workspace maps to
+  prevent Antigravity local-harness crashes.
+- **Security & audit remediation** — Broad fixes from a 20-domain audit: hardened
+  provider failure handling, tightened JSON-RPC session contracts, untrusted
+  browser origin blocking, mobile release audit follow-ups, and related desktop
+  shell lint/security cleanup.
+- **Streaming/chat correctness** — Deduplicated assistant messages when streamed
+  segments lack paragraph separators; completed tool activity stays terminal;
+  reasoning timeline order preserved; recovered internal tool failures hidden from
+  the feed.
+- **CI and test stability** — Restored lint/tests/Android build lanes, hermetic
+  Codex app-server resolver tests, isolated mobile Metro config dependencies,
+  and expanded regression coverage for Bedrock, managed soffice, quick chat
+  shortcuts, skill refresh bus, and H3 pairing auth.
+
 ## 0.1.48 - 2026-04-25
 
 ### Added
