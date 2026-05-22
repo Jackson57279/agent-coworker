@@ -172,6 +172,38 @@ describe("server JSON-RPC websocket mode", () => {
     }
   });
 
+  test("allows packaged file-origin websocket upgrades with the browser access token", async () => {
+    const tmpDir = await makeTmpProject();
+    const browserAccessToken = "packaged-renderer-browser-token";
+    const { server, url } = await startAgentServer(
+      serverOpts(tmpDir, {
+        env: {
+          COWORK_BROWSER_ACCESS_TOKEN: browserAccessToken,
+        },
+      }),
+    );
+
+    try {
+      const unauthorized = await requestRawWebSocketUpgrade(url, "file://");
+      expect(unauthorized).toStartWith("HTTP/1.1 401");
+      expect(unauthorized).toContain("Unauthorized browser access");
+
+      const authorized = await requestRawWebSocketUpgrade(
+        `${url}?coworkBrowserToken=${encodeURIComponent(browserAccessToken)}`,
+        "file://",
+      );
+      expect(authorized).toStartWith("HTTP/1.1 101");
+
+      const nullOriginAuthorized = await requestRawWebSocketUpgrade(
+        `${url}?coworkBrowserToken=${encodeURIComponent(browserAccessToken)}`,
+        "null",
+      );
+      expect(nullOriginAuthorized).toStartWith("HTTP/1.1 101");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   test("allows browser preflight but protects cowork HTTP routes with the browser token", async () => {
     const tmpDir = await makeTmpProject();
     const desktopUserDataDir = path.join(tmpDir, ".cowork", "web-desktop-test-data");

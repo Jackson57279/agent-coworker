@@ -29,9 +29,14 @@ function pickLoopbackOrigin(origin: string | null): string | null {
   return null;
 }
 
+function isFileBrowserOrigin(origin: string | null): boolean {
+  const normalized = origin?.trim().toLowerCase();
+  return normalized === "null" || Boolean(normalized?.startsWith("file://"));
+}
+
 function hasUntrustedBrowserOrigin(req: Request): boolean {
   const origin = req.headers.get("origin");
-  return Boolean(origin && !pickLoopbackOrigin(origin));
+  return Boolean(origin && !pickLoopbackOrigin(origin) && !isFileBrowserOrigin(origin));
 }
 
 function readBrowserAccessToken(url: URL, req: Request): string | null {

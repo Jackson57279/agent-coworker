@@ -41,6 +41,7 @@ import {
   truncateTitle,
 } from "../store.helpers";
 import { createOneOffWorkspaceRecord } from "../store.helpers/oneOffWorkspaceRecord";
+import { waitForNextPaintOrTimeout } from "../store.helpers/paintScheduling";
 import { hydrateTranscriptSnapshot } from "../transcriptHydration";
 import {
   createDefaultA2uiDock,
@@ -50,7 +51,6 @@ import {
   type ThreadBusyPolicy,
   type ThreadRecord,
   type TranscriptEvent,
-  type WorkspaceRecord,
 } from "../types";
 
 type HydrateThreadSelectionOptions = {
@@ -65,24 +65,6 @@ export async function hydrateThreadSelection(
   threadId: string,
   options: HydrateThreadSelectionOptions = {},
 ): Promise<void> {
-  const waitForSelectionFrame = async () => {
-    await new Promise<void>((resolve) => {
-      if (typeof window === "undefined") {
-        setTimeout(resolve, 0);
-        return;
-      }
-
-      const schedule =
-        typeof window.requestAnimationFrame === "function"
-          ? window.requestAnimationFrame.bind(window)
-          : (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0);
-
-      schedule(() => {
-        setTimeout(resolve, 0);
-      });
-    });
-  };
-
   const isSelectionCurrent = (requestId: number) =>
     get().selectedThreadId === threadId && isCurrentThreadSelectionRequest(threadId, requestId);
 
@@ -321,7 +303,7 @@ export async function hydrateThreadSelection(
     appliedCachedSnapshot = true;
   }
 
-  await waitForSelectionFrame();
+  await waitForNextPaintOrTimeout();
   if (!isSelectionCurrent(requestId)) {
     clearThreadHydrationIfCurrent(requestId);
     return;

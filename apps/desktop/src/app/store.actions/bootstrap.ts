@@ -53,6 +53,7 @@ import {
   syncDesktopStateCache,
   syncDesktopStateCacheNow,
 } from "../store.helpers";
+import { runAfterNextPaintOrTimeout } from "../store.helpers/paintScheduling";
 import {
   type CachedDesktopUiState,
   type CachedSessionSnapshot,
@@ -619,19 +620,7 @@ function normalizeCachedSessionSnapshot(
 }
 
 function runAfterInitialPaint(task: () => void): void {
-  if (typeof window === "undefined") {
-    setTimeout(task, 0);
-    return;
-  }
-
-  const schedule =
-    typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame.bind(window)
-      : (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0);
-
-  schedule(() => {
-    setTimeout(task, 0);
-  });
+  runAfterNextPaintOrTimeout(task);
 }
 
 export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDataState> | null {

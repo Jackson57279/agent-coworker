@@ -134,12 +134,29 @@ mock.module("../src/lib/agentSocket", () => ({
 const { useAppStore } = await import("../src/app/store");
 const { RUNTIME, defaultThreadRuntime } = await import("../src/app/store.helpers");
 
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+
 async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function installWindowMock(value: Record<string, unknown>) {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value,
+  });
+}
+
+function restoreWindowMock() {
+  if (originalWindowDescriptor) {
+    Object.defineProperty(globalThis, "window", originalWindowDescriptor);
+    return;
+  }
+  delete (globalThis as Record<string, unknown>).window;
 }
 
 function canonicalThreadId(sessionId: string, fallbackThreadId?: string): string {
@@ -438,6 +455,7 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
 
   afterEach(() => {
     clearJsonRpcSocketOverride();
+    restoreWindowMock();
   });
 
   test("reconnectThread resumes through the workspace JsonRpcSocket", async () => {
@@ -534,6 +552,21 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
     expect(readTranscriptCalls).toEqual([]);
     expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/read");
     expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/resume");
+  });
+
+  test("selectThread still hydrates when requestAnimationFrame is throttled", async () => {
+    installWindowMock({
+      requestAnimationFrame: mock(() => 1),
+    });
+    const { threadId } = seedStore();
+
+    await useAppStore.getState().selectThread(threadId);
+    await flushAsyncWork();
+
+    const activeThreadId = canonicalThreadId("session-1", threadId);
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/read");
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/resume");
+    expect(useAppStore.getState().threadRuntimeById[activeThreadId]?.hydrating).toBe(false);
   });
 
   test("reconnectThread does not duplicate user message when snapshot has formatted userMessage ID", async () => {

@@ -22,10 +22,10 @@ const localStorageMock = {
 
 const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
 
-function installWindowMock() {
+function installWindowMock(overrides: Record<string, unknown> = {}) {
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { localStorage: localStorageMock },
+    value: { localStorage: localStorageMock, ...overrides },
   });
 }
 
@@ -822,6 +822,31 @@ describe("desktop bootstrap cache", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useAppStore.getState().threadRuntimeById["thread-live"]?.hydrating).toBe(false);
+  });
+
+  test("init restores the selected startup thread when requestAnimationFrame is throttled", async () => {
+    installWindowMock({ requestAnimationFrame: mock(() => 1) });
+    const chatCachedState = {
+      ...cachedState,
+      ui: {
+        ...cachedState.ui,
+        view: "chat",
+        selectedWorkspaceId: "ws-live",
+        selectedThreadId: "thread-live",
+      },
+    };
+    localStorageMock.setItem(DESKTOP_STATE_CACHE_KEY, JSON.stringify(chatCachedState));
+    resetStoreToCachedSeed(chatCachedState);
+
+    await useAppStore.getState().init();
+
+    expect(useAppStore.getState().threadRuntimeById["thread-live"]?.hydrating).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 260));
     await Promise.resolve();
     await Promise.resolve();
 
