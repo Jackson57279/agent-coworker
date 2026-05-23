@@ -11,6 +11,7 @@ const ACTIVE_SESSION_KEY = "cowork.h3.activeSession.v1";
 const MOBILE_DEVICE_ID_KEY = "cowork.h3.mobileDeviceId.v1";
 const SESSION_TOKEN_KEY_PREFIX = "cowork_session_token_";
 const MOBILE_DEVICE_ID_HEADER = "x-cowork-mobile-device-id";
+const SIMULATOR_ENDPOINT_FALLBACK_HOSTS = ["127.0.0.1", "localhost", "10.0.2.2"];
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 500;
 const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000;
 
@@ -718,7 +719,36 @@ function buildEndpointUrls(payload: PairingQrPayload): string[] {
   if (payload.hosts.length === 0) {
     throw new Error("Pairing ticket does not include a host.");
   }
-  return payload.hosts.map((host) => `https://${formatUrlHost(host)}:${payload.port}`);
+  return expandPairingHosts(payload.hosts).map(
+    (host) => `https://${formatUrlHost(host)}:${payload.port}`,
+  );
+}
+
+function expandPairingHosts(hosts: string[]): string[] {
+  const seen = new Set<string>();
+  const expandedHosts: string[] = [];
+
+  for (const host of [...hosts, ...SIMULATOR_ENDPOINT_FALLBACK_HOSTS]) {
+    const trimmed = host.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const normalized = normalizeEndpointHost(trimmed);
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    expandedHosts.push(trimmed);
+  }
+
+  return expandedHosts;
+}
+
+function normalizeEndpointHost(host: string): string {
+  const trimmed = host.trim();
+  const unwrapped =
+    trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed;
+  return unwrapped.toLowerCase();
 }
 
 function formatUrlHost(host: string): string {

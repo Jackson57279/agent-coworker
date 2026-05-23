@@ -127,6 +127,8 @@ export function resolveListeningHintsFromInterfaces(
     }
   }
 
+  hints.add(host === "::" ? "::1" : "127.0.0.1");
+
   return hints.size > 0 ? [...hints] : [host === "::" ? "::1" : "127.0.0.1"];
 }
 

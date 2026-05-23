@@ -113,10 +113,18 @@ bunx expo export --platform ios
 The QR ticket contains the local endpoint, certificate pins, and one-time nonce. Mobile must be on
 the same network as the desktop for the v1 flow. See `docs/quic-pairing.md` for the route contract.
 
+Simulator builds use the same QR/pasted ticket as the trust root, then try simulator host aliases
+after the advertised desktop addresses. This lets an iOS Simulator reach the Mac through
+`127.0.0.1` / `localhost`, and lets the Android emulator try `10.0.2.2`, without exposing an
+unauthenticated LAN discovery endpoint.
+
 ## Security notes
 
 - Pairing tickets bind the full advertised endpoint material: scheme, ordered hosts, port,
   certificate pin, SPKI pin, identity public key, nonce, and expiry.
+- Simulator host aliases do not weaken the QR trust root: mobile still sends the original ticket,
+  nonce, and certificate pins, and desktop still validates the exact advertised ticket during
+  `/pair`.
 - Pairing nonces are one-time use, including concurrent `/pair` attempts.
 - Session tokens are returned once to the mobile client and persisted on desktop only as hashes.
 - `/rpc` and `/events` require both `Authorization: Bearer <sessionToken>` and the matching

@@ -96,3 +96,8 @@ No third-party data relay is involved. Phase 1 assumes both devices can reach ea
 The mobile client keeps the active session on transient stream loss, emits a reconnecting state,
 and reopens `/events` with bounded exponential backoff. Fatal authorization errors clear the active
 session instead of retrying, so revoked or mismatched devices do not loop forever.
+
+For simulator development, the mobile client tries the advertised `hosts` first, then local host
+aliases (`127.0.0.1`, `localhost`, and Android emulator `10.0.2.2`) using the same ticket and pins.
+The desktop validates the original ticket during `/pair`, so these fallbacks only help a simulator
+reach the same trusted endpoint from the Mac host.

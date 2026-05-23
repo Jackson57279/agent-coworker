@@ -110,6 +110,39 @@ describe("mobile secure transport client", () => {
     });
   });
 
+  test("falls back to simulator loopback hosts after advertised pairing endpoints fail", async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = mock(async (request: { url: string }) => {
+      requestedUrls.push(request.url);
+      if (request.url === "https://127.0.0.1:9443/pair") {
+        return Response.json({ sessionToken: "session-token" }) as unknown as Response;
+      }
+      if (request.url === "https://127.0.0.1:9443/events") {
+        return new Response("", { status: 200 });
+      }
+      throw new Error("network unreachable");
+    });
+    __internal.setPinnedHttpsFetchForTesting(fetchMock as never);
+
+    const client = new SecureTransportClient();
+    const snapshot = await client.connectFromQrPayload(buildPayload({ hosts: ["192.168.1.10"] }));
+    await waitFor(() => requestedUrls.some((url) => url.endsWith("/events")));
+
+    expect(snapshot.status).toBe("connected");
+    expect(snapshot.relayUrl).toBe("https://127.0.0.1:9443");
+    expect(requestedUrls).toEqual([
+      "https://192.168.1.10:9443/pair",
+      "https://127.0.0.1:9443/pair",
+      "https://127.0.0.1:9443/events",
+    ]);
+    expect(
+      JSON.parse((fetchMock.mock.calls[1]?.[0] as { body?: string }).body ?? "{}"),
+    ).toMatchObject({
+      ticket: "cowork-pair://ticket",
+      nonce: "pairing-nonce",
+    });
+  });
+
   test("brackets IPv6 literal hosts when building pairing endpoint URLs", async () => {
     const requestedUrls: string[] = [];
     const fetchMock = mock(async (request: { url: string }) => {
