@@ -6,6 +6,16 @@ function flushMicrotasks() {
   return new Promise<void>((resolve) => queueMicrotask(resolve));
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("mobile cowork jsonrpc client", () => {
   test("performs initialize handshake and sends initialized", async () => {
     const sent: string[] = [];
@@ -501,6 +511,126 @@ describe("mobile cowork jsonrpc client", () => {
     );
     await secondHandshake;
     expect(JSON.parse(sent[3]!).method).toBe("initialized");
+  });
+
+  test("shares concurrent initialize calls across one handshake", async () => {
+    const sent: string[] = [];
+    const client = new CoworkJsonRpcClient({
+      clientInfo: {
+        name: "cowork-mobile",
+        version: "0.1.0",
+      },
+      send(text) {
+        sent.push(text);
+      },
+    });
+
+    const firstInitialize = client.initialize();
+    const secondInitialize = client.initialize();
+    const initializePayload = JSON.parse(sent[0]!);
+
+    expect(sent).toHaveLength(1);
+    expect(initializePayload.method).toBe("initialize");
+
+    await client.handleIncoming(
+      JSON.stringify({
+        id: initializePayload.id,
+        result: {
+          protocolVersion: "0.1",
+          serverInfo: {
+            name: "cowork-server",
+            subprotocol: "cowork.jsonrpc.v1",
+          },
+          capabilities: {
+            experimentalApi: false,
+          },
+          transport: {
+            type: "websocket",
+            protocolMode: "jsonrpc",
+          },
+        },
+      }),
+    );
+
+    await expect(Promise.all([firstInitialize, secondInitialize])).resolves.toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(sent.map((payload) => JSON.parse(payload).method)).toEqual([
+      "initialize",
+      "initialized",
+    ]);
+  });
+
+  test("rejects stale initialize work after a transport reset", async () => {
+    const sent: string[] = [];
+    const firstInitializeSend = createDeferred<void>();
+    const client = new CoworkJsonRpcClient({
+      clientInfo: {
+        name: "cowork-mobile",
+        version: "0.1.0",
+      },
+      send(text) {
+        sent.push(text);
+        if (JSON.parse(text).method === "initialize" && sent.length === 1) {
+          return firstInitializeSend.promise;
+        }
+      },
+    });
+
+    const firstInitialize = client.initialize();
+    const firstInitializePayload = JSON.parse(sent[0]!);
+    await client.handleIncoming(
+      JSON.stringify({
+        id: firstInitializePayload.id,
+        result: {
+          protocolVersion: "0.1",
+          serverInfo: {
+            name: "cowork-server",
+            subprotocol: "cowork.jsonrpc.v1",
+          },
+          capabilities: {
+            experimentalApi: false,
+          },
+          transport: {
+            type: "websocket",
+            protocolMode: "jsonrpc",
+          },
+        },
+      }),
+    );
+
+    client.resetTransportSession("Socket closed");
+    firstInitializeSend.resolve();
+    await expect(firstInitialize).rejects.toThrow("Transport session reset while initializing.");
+
+    const secondInitialize = client.initialize();
+    const secondInitializePayload = JSON.parse(sent[1]!);
+    expect(secondInitializePayload.method).toBe("initialize");
+    expect(secondInitializePayload.id).not.toBe(firstInitializePayload.id);
+
+    await client.handleIncoming(
+      JSON.stringify({
+        id: secondInitializePayload.id,
+        result: {
+          protocolVersion: "0.1",
+          serverInfo: {
+            name: "cowork-server",
+            subprotocol: "cowork.jsonrpc.v1",
+          },
+          capabilities: {
+            experimentalApi: false,
+          },
+          transport: {
+            type: "websocket",
+            protocolMode: "jsonrpc",
+          },
+        },
+      }),
+    );
+
+    await expect(secondInitialize).resolves.toBeUndefined();
+    expect(JSON.parse(sent[2]!).method).toBe("initialized");
   });
 
   test("cleans up pending requests when send fails", async () => {

@@ -260,6 +260,8 @@ export class CoworkJsonRpcClient {
   private initialized = false;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly clientInfo: JsonRpcClientOptions["clientInfo"];
+  private initializePromise: Promise<void> | null = null;
+  private transportGeneration = 0;
 
   constructor(options: JsonRpcClientOptions) {
     this.requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 15_000);
@@ -270,7 +272,9 @@ export class CoworkJsonRpcClient {
   }
 
   resetTransportSession(reason = "Transport disconnected."): void {
+    this.transportGeneration += 1;
     this.initialized = false;
+    this.initializePromise = null;
     this.rejectAllPending(reason);
   }
 
@@ -278,14 +282,32 @@ export class CoworkJsonRpcClient {
     if (this.initialized) {
       return;
     }
-    await this.request("initialize", {
-      clientInfo: this.clientInfo,
-      capabilities: {
-        experimentalApi: false,
-      },
+    if (this.initializePromise) {
+      return await this.initializePromise;
+    }
+    const generation = this.transportGeneration;
+    const initializePromise = (async () => {
+      await this.request("initialize", {
+        clientInfo: this.clientInfo,
+        capabilities: {
+          experimentalApi: false,
+        },
+      });
+      if (generation !== this.transportGeneration) {
+        throw new Error("Transport session reset while initializing.");
+      }
+      await this.notify("initialized", {});
+      if (generation !== this.transportGeneration) {
+        throw new Error("Transport session reset while initializing.");
+      }
+      this.initialized = true;
+    })().finally(() => {
+      if (this.initializePromise === initializePromise) {
+        this.initializePromise = null;
+      }
     });
-    await this.notify("initialized", {});
-    this.initialized = true;
+    this.initializePromise = initializePromise;
+    return await initializePromise;
   }
 
   async requestThreadList(): Promise<CoworkThreadListResult> {

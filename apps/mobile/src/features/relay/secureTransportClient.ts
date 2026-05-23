@@ -11,6 +11,8 @@ const ACTIVE_SESSION_KEY = "cowork.h3.activeSession.v1";
 const MOBILE_DEVICE_ID_KEY = "cowork.h3.mobileDeviceId.v1";
 const SESSION_TOKEN_KEY_PREFIX = "cowork_session_token_";
 const MOBILE_DEVICE_ID_HEADER = "x-cowork-mobile-device-id";
+const DEFAULT_RECONNECT_BASE_DELAY_MS = 500;
+const DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000;
 
 function sessionTokenKey(macDeviceId: string): string {
   return `${SESSION_TOKEN_KEY_PREFIX}${macDeviceId}`;
@@ -70,6 +72,11 @@ type PinnedHttpsStream = (
     onError(message: string): void;
   },
 ) => Promise<() => void>;
+
+type SecureTransportClientOptions = {
+  reconnectBaseDelayMs?: number;
+  reconnectMaxDelayMs?: number;
+};
 
 let secureStorePromise: Promise<SecureStoreModule> | null = null;
 let secureStoreOverride: SecureStoreModule | null = null;
@@ -179,12 +186,28 @@ export type SecureTransportSnapshot = {
 export class SecureTransportClient {
   private trustedDesktops: TrustedDesktopRecord[] = [];
   private activeSession: ActiveSession | null = null;
+  private connectionStatus: RelayConnectionStatus = "idle";
   private lastError: string | null = null;
   private plaintextListeners = new Set<(text: string) => void>();
   private stateListeners = new Set<(snapshot: SecureTransportSnapshot) => void>();
   private secureErrorListeners = new Set<(message: string) => void>();
   private socketClosedListeners = new Set<(reason: string | null) => void>();
   private eventAbortController: AbortController | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private readonly reconnectBaseDelayMs: number;
+  private readonly reconnectMaxDelayMs: number;
+
+  constructor(options: SecureTransportClientOptions = {}) {
+    this.reconnectBaseDelayMs = Math.max(
+      1,
+      options.reconnectBaseDelayMs ?? DEFAULT_RECONNECT_BASE_DELAY_MS,
+    );
+    this.reconnectMaxDelayMs = Math.max(
+      this.reconnectBaseDelayMs,
+      options.reconnectMaxDelayMs ?? DEFAULT_RECONNECT_MAX_DELAY_MS,
+    );
+  }
 
   async listTrustedDesktops(): Promise<RelayTrustedDesktop[]> {
     await this.loadTrustedState();
@@ -193,7 +216,7 @@ export class SecureTransportClient {
 
   async getSnapshot(): Promise<SecureTransportSnapshot> {
     await this.loadTrustedState();
-    if (this.activeSession && !this.eventAbortController) {
+    if (this.activeSession && !this.eventAbortController && !this.reconnectTimer) {
       this.openEventStream();
     }
     return this.snapshot();
@@ -204,10 +227,13 @@ export class SecureTransportClient {
       throw new Error("Unsupported pairing payload.");
     }
     await this.loadTrustedState();
+    this.clearReconnectTimer();
     this.eventAbortController?.abort();
     this.eventAbortController = null;
     this.activeSession = null;
+    this.reconnectAttempt = 0;
     this.lastError = null;
+    this.connectionStatus = "pairing";
     this.emitState("pairing");
 
     try {
@@ -263,14 +289,16 @@ export class SecureTransportClient {
       };
       await this.persistTrustedState();
       this.openEventStream();
-      return this.emitState("connected");
+      this.reconnectAttempt = 0;
+      return this.setConnectionStatus("connected");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.activeSession = null;
+      this.clearReconnectTimer();
       this.lastError = message;
       await this.persistTrustedState();
       this.emitSecureError(message);
-      this.emitState("error");
+      this.setConnectionStatus("error");
       throw error;
     }
   }
@@ -281,6 +309,9 @@ export class SecureTransportClient {
     if (!trusted) {
       throw new Error("Trusted desktop not found.");
     }
+    this.clearReconnectTimer();
+    this.eventAbortController?.abort();
+    this.eventAbortController = null;
     this.lastError = null;
     this.activeSession = {
       macDeviceId: trusted.macDeviceId,
@@ -292,17 +323,20 @@ export class SecureTransportClient {
     };
     await this.persistTrustedState();
     this.openEventStream();
-    return this.emitState("connected");
+    this.reconnectAttempt = 0;
+    return this.setConnectionStatus("connected");
   }
 
   async disconnect(): Promise<SecureTransportSnapshot> {
     await this.loadTrustedState();
+    this.clearReconnectTimer();
     this.eventAbortController?.abort();
     this.eventAbortController = null;
     this.activeSession = null;
+    this.reconnectAttempt = 0;
     this.lastError = null;
     await this.persistTrustedState();
-    return this.emitState("idle");
+    return this.setConnectionStatus("idle");
   }
 
   async forgetTrustedDesktop(macDeviceId: string): Promise<SecureTransportSnapshot> {
@@ -312,6 +346,7 @@ export class SecureTransportClient {
     );
     if (this.activeSession?.macDeviceId === macDeviceId) {
       this.activeSession = null;
+      this.clearReconnectTimer();
       this.eventAbortController?.abort();
       this.eventAbortController = null;
     }
@@ -319,7 +354,7 @@ export class SecureTransportClient {
     const SecureStore = await loadSecureStore();
     await SecureStore.deleteItemAsync(sessionTokenKey(macDeviceId));
     await this.persistTrustedState();
-    return this.emitState("idle");
+    return this.setConnectionStatus("idle");
   }
 
   async sendPlaintext(text: string): Promise<void> {
@@ -373,9 +408,7 @@ export class SecureTransportClient {
     };
   }
 
-  private snapshot(
-    status: RelayConnectionStatus = this.activeSession ? "connected" : "idle",
-  ): SecureTransportSnapshot {
+  private snapshot(status: RelayConnectionStatus = this.connectionStatus): SecureTransportSnapshot {
     return {
       status,
       transportMode: "native",
@@ -385,6 +418,11 @@ export class SecureTransportClient {
       trustedDesktops: this.trustedDesktops.map(toPublicTrustedDesktop),
       lastError: this.lastError,
     };
+  }
+
+  private setConnectionStatus(status: RelayConnectionStatus): SecureTransportSnapshot {
+    this.connectionStatus = status;
+    return this.emitState(status);
   }
 
   private emitState(status?: RelayConnectionStatus): SecureTransportSnapshot {
@@ -431,6 +469,19 @@ export class SecureTransportClient {
       ? this.trustedDesktops.find((entry) => entry.macDeviceId === active.macDeviceId)
       : null;
     this.activeSession = active && trusted ? activeSessionFromTrustedDesktop(trusted) : null;
+    if (this.activeSession) {
+      if (this.connectionStatus === "idle" || this.connectionStatus === "error") {
+        this.connectionStatus = "connected";
+      }
+      return;
+    }
+    if (
+      this.connectionStatus === "connected" ||
+      this.connectionStatus === "connecting" ||
+      this.connectionStatus === "reconnecting"
+    ) {
+      this.connectionStatus = "idle";
+    }
   }
 
   private async persistTrustedState(): Promise<void> {
@@ -459,48 +510,110 @@ export class SecureTransportClient {
 
   private openEventStream(): void {
     if (!this.activeSession) return;
+    this.clearReconnectTimer();
     this.eventAbortController?.abort();
     const controller = new AbortController();
+    const session = this.activeSession;
     this.eventAbortController = controller;
     void readSseStream(
-      `${this.activeSession.endpointUrl}/events`,
-      this.activeSession.sessionToken,
-      this.activeSession.mobileDeviceId,
+      `${session.endpointUrl}/events`,
+      session.sessionToken,
+      session.mobileDeviceId,
       {
-        certSha256: this.activeSession.certSha256,
-        spkiSha256: this.activeSession.spkiSha256,
+        certSha256: session.certSha256,
+        spkiSha256: session.spkiSha256,
       },
       {
         signal: controller.signal,
+        onOpen: () => {
+          if (this.eventAbortController !== controller) {
+            return;
+          }
+          this.reconnectAttempt = 0;
+          this.lastError = null;
+          if (this.connectionStatus !== "connected") {
+            this.setConnectionStatus("connected");
+          }
+        },
         onMessage: (text) => {
           for (const listener of this.plaintextListeners) {
             listener(text);
           }
         },
         onError: (message) => {
-          if (this.eventAbortController !== controller) {
-            return;
-          }
-          this.eventAbortController = null;
-          this.activeSession = null;
-          this.lastError = message;
-          this.emitSecureError(message);
-          void this.persistTrustedState();
-          this.emitState("error");
+          this.handleEventStreamLoss(controller, message, { emitSecureError: true });
         },
         onClose: (reason) => {
-          if (this.eventAbortController !== controller) {
-            return;
-          }
-          this.eventAbortController = null;
-          this.activeSession = null;
-          this.lastError = reason;
-          this.emitSocketClosed(reason);
-          void this.persistTrustedState();
-          this.emitState("idle");
+          this.handleEventStreamLoss(controller, reason ?? "Event stream closed.", {
+            emitSocketClosed: true,
+          });
         },
       },
     );
+  }
+
+  private handleEventStreamLoss(
+    controller: AbortController,
+    reason: string,
+    options: { emitSecureError?: boolean; emitSocketClosed?: boolean },
+  ): void {
+    if (this.eventAbortController !== controller) {
+      return;
+    }
+    this.eventAbortController = null;
+    if (options.emitSocketClosed) {
+      this.emitSocketClosed(reason);
+    }
+    if (options.emitSecureError) {
+      this.emitSecureError(reason);
+    }
+    this.lastError = reason;
+
+    if (!this.activeSession) {
+      this.setConnectionStatus("idle");
+      return;
+    }
+
+    if (isFatalSessionError(reason)) {
+      this.clearReconnectTimer();
+      this.activeSession = null;
+      void this.persistTrustedState();
+      this.setConnectionStatus("error");
+      return;
+    }
+
+    void this.persistTrustedState();
+    this.setConnectionStatus("reconnecting");
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.activeSession || this.reconnectTimer) {
+      return;
+    }
+    const attempt = this.reconnectAttempt + 1;
+    const delayMs = computeReconnectDelayMs(
+      attempt,
+      this.reconnectBaseDelayMs,
+      this.reconnectMaxDelayMs,
+    );
+    this.reconnectAttempt = attempt;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.activeSession) {
+        return;
+      }
+      this.openEventStream();
+    }, delayMs);
+    (this.reconnectTimer as { unref?: () => void }).unref?.();
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) {
+      return;
+    }
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 }
 
@@ -560,6 +673,15 @@ function activeSessionFromTrustedDesktop(entry: TrustedDesktopRecord): ActiveSes
     spkiSha256: entry.spkiSha256,
     mobileDeviceId: entry.mobileDeviceId,
   };
+}
+
+function computeReconnectDelayMs(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+  const normalizedAttempt = Math.max(1, Math.floor(attempt));
+  return Math.min(maxDelayMs, baseDelayMs * 2 ** (normalizedAttempt - 1));
+}
+
+function isFatalSessionError(message: string): boolean {
+  return /\b(?:HTTP 401|HTTP 403|Unauthorized)\b/i.test(message);
 }
 
 function buildEndpointUrls(payload: PairingQrPayload): string[] {
@@ -717,6 +839,7 @@ async function readSseStream(
   },
   opts: {
     signal: AbortSignal;
+    onOpen(): void;
     onMessage(text: string): void;
     onError(message: string): void;
     onClose(reason: string | null): void;
@@ -724,6 +847,7 @@ async function readSseStream(
 ): Promise<void> {
   try {
     const parser = createSseParser(opts.onMessage);
+    let streamEnded = false;
     const streamCleanup = await openPinnedHttpsStream(
       {
         url,
@@ -737,17 +861,19 @@ async function readSseStream(
       },
       {
         onChunk: (chunk) => {
-          if (!opts.signal.aborted) {
+          if (!opts.signal.aborted && !streamEnded) {
             parser.push(chunk);
           }
         },
         onClose: (reason) => {
+          streamEnded = true;
           if (!opts.signal.aborted) {
             parser.flush();
             opts.onClose(reason);
           }
         },
         onError: (message) => {
+          streamEnded = true;
           if (!opts.signal.aborted) {
             opts.onError(message);
           }
@@ -759,6 +885,7 @@ async function readSseStream(
         streamCleanup();
         return;
       }
+      opts.onOpen();
       opts.signal.addEventListener("abort", streamCleanup, { once: true });
       return;
     }
@@ -779,6 +906,7 @@ async function readSseStream(
     if (!response.ok) {
       throw new Error(`Event stream failed with HTTP ${response.status}.`);
     }
+    opts.onOpen();
     const body = await response.text();
     if (opts.signal.aborted) {
       return;

@@ -309,27 +309,129 @@ describe("mobile secure transport client", () => {
     });
   });
 
-  test("clears active connection and emits close when the event stream ends", async () => {
+  test("keeps the active session and reopens the event stream when the stream ends", async () => {
+    const states: string[] = [];
     const socketClosed = mock((_reason: string | null) => {});
-    const client = new SecureTransportClient();
-    client.subscribe({ onSocketClosed: socketClosed });
+    const streamUrls: string[] = [];
+    const streamHandlers: Array<
+      Parameters<NonNullable<Parameters<typeof __internal.setPinnedHttpsStreamForTesting>[0]>>[1]
+    > = [];
+    const client = new SecureTransportClient({
+      reconnectBaseDelayMs: 1,
+      reconnectMaxDelayMs: 2,
+    });
+    client.subscribe({
+      onStateChanged: (snapshot) => states.push(snapshot.status),
+      onSocketClosed: socketClosed,
+    });
     __internal.setPinnedHttpsFetchForTesting(
       mock(
         async () => Response.json({ sessionToken: "session-token" }) as unknown as Response,
       ) as never,
     );
-    globalThis.fetch = mock(async (_input: RequestInfo | URL) => {
-      return new Response("", { status: 200 });
-    }) as unknown as typeof fetch;
+    __internal.setPinnedHttpsStreamForTesting(
+      mock(async (request, handlers) => {
+        streamUrls.push(request.url);
+        streamHandlers.push(handlers);
+        return () => {};
+      }),
+    );
 
     await client.connectFromQrPayload(buildPayload({ hosts: ["192.168.1.10"] }));
-    await waitFor(() => socketClosed.mock.calls.length === 1);
+    await waitFor(() => streamHandlers.length === 1);
 
-    expect(socketClosed).toHaveBeenCalledWith("Event stream closed.");
+    streamHandlers[0]?.onClose("network down");
+
+    expect(socketClosed).toHaveBeenCalledWith("network down");
+    expect(states).toContain("reconnecting");
+    expect(secureStoreValues.has("cowork.h3.activeSession.v1")).toBe(true);
+    await waitFor(() => streamUrls.length === 2);
+    expect(await client.getSnapshot()).toMatchObject({
+      status: "connected",
+      connectedMacDeviceId: "desktop-identity",
+      relayUrl: "https://192.168.1.10:9443",
+    });
+  });
+
+  test("cancels scheduled reconnects and ignores stale stream chunks after disconnect", async () => {
+    const plaintextMessages: string[] = [];
+    const streamUrls: string[] = [];
+    const streamHandlers: Array<
+      Parameters<NonNullable<Parameters<typeof __internal.setPinnedHttpsStreamForTesting>[0]>>[1]
+    > = [];
+    const client = new SecureTransportClient({
+      reconnectBaseDelayMs: 20,
+      reconnectMaxDelayMs: 20,
+    });
+    client.subscribe({
+      onPlaintextMessage: (text) => plaintextMessages.push(text),
+    });
+    __internal.setPinnedHttpsFetchForTesting(
+      mock(
+        async () => Response.json({ sessionToken: "session-token" }) as unknown as Response,
+      ) as never,
+    );
+    __internal.setPinnedHttpsStreamForTesting(
+      mock(async (request, handlers) => {
+        streamUrls.push(request.url);
+        streamHandlers.push(handlers);
+        return () => {};
+      }),
+    );
+
+    await client.connectFromQrPayload(buildPayload({ hosts: ["192.168.1.10"] }));
+    await waitFor(() => streamHandlers.length === 1);
+
+    streamHandlers[0]?.onClose("network down");
+    await client.disconnect();
+    streamHandlers[0]?.onChunk("data: stale\n\n");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(streamUrls).toEqual(["https://192.168.1.10:9443/events"]);
+    expect(plaintextMessages).toEqual([]);
+    expect(secureStoreValues.has("cowork.h3.activeSession.v1")).toBe(false);
     expect(await client.getSnapshot()).toMatchObject({
       status: "idle",
       connectedMacDeviceId: null,
       relayUrl: null,
+    });
+  });
+
+  test("clears the active session instead of reconnecting after authorization failures", async () => {
+    const secureErrors: string[] = [];
+    const states: string[] = [];
+    const client = new SecureTransportClient({
+      reconnectBaseDelayMs: 1,
+      reconnectMaxDelayMs: 1,
+    });
+    client.subscribe({
+      onSecureError: (message) => secureErrors.push(message),
+      onStateChanged: (snapshot) => states.push(snapshot.status),
+    });
+    __internal.setPinnedHttpsFetchForTesting(
+      mock(async (request: { url: string }) => {
+        if (request.url.endsWith("/pair")) {
+          return Response.json({ sessionToken: "session-token" }) as unknown as Response;
+        }
+        if (request.url.endsWith("/events")) {
+          return new Response("", { status: 401 });
+        }
+        return new Response("", { status: 404 });
+      }) as never,
+    );
+
+    await client.connectFromQrPayload(buildPayload({ hosts: ["192.168.1.10"] }));
+    await waitFor(() => secureErrors.length === 1);
+    await waitFor(() => !secureStoreValues.has("cowork.h3.activeSession.v1"));
+
+    expect(secureErrors[0]).toContain("HTTP 401");
+    expect(states).toContain("error");
+    expect(secureStoreValues.has("cowork.h3.activeSession.v1")).toBe(false);
+    expect(await client.getSnapshot()).toMatchObject({
+      status: "error",
+      connectedMacDeviceId: null,
+      relayUrl: null,
+      lastError: expect.stringContaining("HTTP 401"),
     });
   });
 
@@ -350,7 +452,7 @@ describe("mobile secure transport client", () => {
     expect(states).toEqual(["pairing", "error"]);
     expect(secureErrors[0]).toContain("Pairing failed against all advertised hosts");
     expect(await client.getSnapshot()).toMatchObject({
-      status: "idle",
+      status: "error",
       connectedMacDeviceId: null,
       lastError: expect.stringContaining("Pairing failed against all advertised hosts"),
     });
@@ -401,7 +503,7 @@ describe("mobile secure transport client", () => {
     expect(cleanupCalls).toBe(1);
     expect(plaintextMessages).toEqual([]);
     expect(await client.getSnapshot()).toMatchObject({
-      status: "idle",
+      status: "error",
       connectedMacDeviceId: null,
       lastError: expect.stringContaining("Pairing failed against all advertised hosts"),
     });
