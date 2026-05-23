@@ -751,6 +751,9 @@ export function createWebAdapter(): DesktopApi {
     async getMobileRelayState(): Promise<MobileRelayBridgeState> {
       return { ...IDLE_MOBILE_RELAY };
     },
+    async refreshMobileRelayTrustedPhones(): Promise<MobileRelayBridgeState> {
+      return { ...IDLE_MOBILE_RELAY };
+    },
     async rotateMobileRelaySession(): Promise<MobileRelayBridgeState> {
       return { ...IDLE_MOBILE_RELAY };
     },

@@ -1,7 +1,7 @@
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 
 import { Screen } from "@/components/ui/screen";
@@ -18,6 +18,7 @@ export default function PairingScanScreen() {
   const theme = useAppTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const [scannedPayload, setScannedPayload] = useState<string | null>(null);
+  const [manualPayload, setManualPayload] = useState("");
   const connectionState = usePairingStore((state) => state.connectionState);
   const connectWithQr = usePairingStore((state) => state.connectWithQr);
   const scanHandlerRef = useRef<ReturnType<typeof createPairingScanHandler> | null>(null);
@@ -46,6 +47,14 @@ export default function PairingScanScreen() {
 
   async function onBarcodeScanned(result: BarcodeScanningResult) {
     await scanHandlerRef.current?.handleScan(result);
+  }
+
+  async function pairManualPayload() {
+    const payload = manualPayload.trim();
+    if (!payload || pairingInFlight) {
+      return;
+    }
+    await scanHandlerRef.current?.handleScan({ data: payload });
   }
 
   return (
@@ -195,9 +204,58 @@ export default function PairingScanScreen() {
       {__DEV__ ? (
         <Animated.View entering={FadeInUp.delay(400).duration(400)}>
           <SectionCard
-            title="Last scanned payload"
-            description="Debug-only QR payload preview for direct pairing troubleshooting."
+            title="Debug pairing"
+            description="Paste a QR payload when the simulator cannot use the camera."
           >
+            <View style={{ gap: 10 }}>
+              <TextInput
+                value={manualPayload}
+                onChangeText={setManualPayload}
+                placeholder="Paste cowork-pair:// payload"
+                placeholderTextColor={theme.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                style={{
+                  minHeight: 82,
+                  borderRadius: 16,
+                  borderCurve: "continuous",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surfaceMuted,
+                  color: theme.text,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  fontSize: 12,
+                  lineHeight: 18,
+                  fontVariant: ["tabular-nums"],
+                  fontFamily: theme.fontFamilyMono,
+                }}
+              />
+              <Pressable
+                disabled={!manualPayload.trim() || pairingInFlight}
+                onPress={() => {
+                  void pairManualPayload();
+                }}
+                style={({ pressed }) => ({
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  borderRadius: 14,
+                  borderCurve: "continuous",
+                  backgroundColor: pressed ? theme.accent : theme.primary,
+                  opacity: !manualPayload.trim() || pairingInFlight ? 0.55 : 1,
+                  paddingHorizontal: 16,
+                  paddingVertical: 11,
+                })}
+              >
+                <SFSymbol name="qrcode.viewfinder" size={16} color={theme.primaryText} />
+                <Text style={{ color: theme.primaryText, fontWeight: "700", fontSize: 14 }}>
+                  Pair pasted payload
+                </Text>
+              </Pressable>
+            </View>
             <Text
               selectable
               style={{

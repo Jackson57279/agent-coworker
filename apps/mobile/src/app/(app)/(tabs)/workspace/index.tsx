@@ -70,9 +70,9 @@ export default function WorkspaceHubScreen() {
           title: "Cowork Mobile",
           headerLeft: () => undefined,
           headerRight: () => (
-            <Link href="/(app)/(tabs)/workspace" asChild>
+            <Link href="/(app)/(tabs)/workspace">
               <Link.Trigger>
-                <HeaderGlassButton icon="ellipsis" onPress={() => {}} />
+                <HeaderGlassButton icon="ellipsis" accessibilityLabel="Open workspace menu" />
               </Link.Trigger>
               <Link.Menu>
                 <Link.MenuAction

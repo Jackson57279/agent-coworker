@@ -1,20 +1,22 @@
 import { Stack } from "expo-router";
+import { Platform } from "react-native";
 
 import { useAppTheme } from "@/theme/use-app-theme";
 
 export default function PairingLayout() {
   const theme = useAppTheme();
+  const headerTransparent = Platform.OS !== "web";
 
   return (
     <Stack
       screenOptions={{
         headerLargeTitle: true,
-        headerTransparent: true,
+        headerTransparent,
         headerShadowVisible: false,
         headerLargeTitleShadowVisible: false,
         headerBlurEffect: "none",
         headerLargeStyle: {
-          backgroundColor: "transparent",
+          backgroundColor: headerTransparent ? "transparent" : theme.background,
         },
         headerTintColor: theme.text,
         headerLargeTitleStyle: {

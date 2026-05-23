@@ -39,6 +39,7 @@ function createServerManagerMock() {
           }
         : null,
     })),
+    listMobileH3TrustedDevices: mock(async () => []),
     revokeMobileH3TrustedDevice: mock(async () => {}),
     revokeMobileH3TrustedDevices: mock(async () => {}),
     updateMobileH3TrustedDevicePermissions: mock(async (_workspaceId, deviceId, permissions) => ({
@@ -334,6 +335,44 @@ describe("mobile relay bridge", () => {
     );
     expect(snapshot).toMatchObject({
       trustedPhoneDevices: [{ deviceId: "phone-1", permissions: { turns: true } }],
+      lastError: null,
+    });
+  });
+
+  test("refreshes externally paired phones from the running workspace server", async () => {
+    const serverManager = createServerManagerMock();
+    serverManager.listMobileH3TrustedDevices.mockImplementationOnce(async () => [
+      {
+        deviceId: "phone-1",
+        fingerprint: "fingerprint",
+        displayName: "Cowork Mobile",
+        lastPairedAt: "2026-05-23T12:00:00.000Z",
+        lastConnectedAt: "2026-05-23T12:01:00.000Z",
+        permissions: {
+          turns: false,
+          serverRequests: false,
+          providerAuth: false,
+          mcpAuth: false,
+          workspaceSettings: false,
+          backups: false,
+        },
+      },
+    ]);
+    const bridge = new MobileRelayBridge({ serverManager: serverManager as never });
+
+    await bridge.start({
+      workspaceId: "ws_1",
+      workspacePath: "/workspace",
+      yolo: false,
+    });
+    const snapshot = await bridge.refreshTrustedPhones();
+
+    expect(serverManager.listMobileH3TrustedDevices).toHaveBeenCalledWith("ws_1");
+    expect(snapshot).toMatchObject({
+      status: "connected",
+      trustedPhoneDeviceId: "phone-1",
+      trustedPhoneFingerprint: "fingerprint",
+      trustedPhoneDevices: [{ displayName: "Cowork Mobile" }],
       lastError: null,
     });
   });

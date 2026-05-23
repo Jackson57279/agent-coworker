@@ -110,6 +110,16 @@ export function registerMobileRelayIpc(context: DesktopIpcModuleContext): void {
     return mobileRelayBridgeStateSchema.parse(deps.mobileRelayBridge.getSnapshot());
   });
 
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.mobileRelayRefreshTrustedPhones, async () => {
+    if (!(await isRemoteAccessEnabled())) {
+      await deps.mobileRelayBridge.stop().catch(() => {
+        // best effort while toggling feature flags at runtime
+      });
+      return disabledState();
+    }
+    return mobileRelayBridgeStateSchema.parse(await deps.mobileRelayBridge.refreshTrustedPhones());
+  });
+
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.mobileRelayRotateSession, async () => {
     await assertRemoteAccessEnabled();
     return mobileRelayBridgeStateSchema.parse(await deps.mobileRelayBridge.rotateSession());

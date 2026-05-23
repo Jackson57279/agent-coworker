@@ -141,6 +141,31 @@ function stateFromMobileH3(options: StartOptions, mobileH3: MobileH3State): Mobi
   };
 }
 
+function stateWithTrustedPhoneDevices(
+  state: MobileRelayBridgeState,
+  trustedPhoneDevices: MobileRelayTrustedPhoneDevice[],
+): MobileRelayBridgeState {
+  const clonedDevices = trustedPhoneDevices.map(cloneTrustedPhoneDevice);
+  const primaryDevice = clonedDevices[0] ?? null;
+
+  return {
+    ...state,
+    status: primaryDevice
+      ? "connected"
+      : state.relayServiceStatus === "running"
+        ? "pairing"
+        : state.status,
+    relayServiceUpdatedAt:
+      state.relayServiceStatus === "running"
+        ? new Date().toISOString()
+        : state.relayServiceUpdatedAt,
+    trustedPhoneDeviceId: primaryDevice?.deviceId ?? null,
+    trustedPhoneFingerprint: primaryDevice?.fingerprint ?? null,
+    trustedPhoneDevices: clonedDevices,
+    lastError: null,
+  };
+}
+
 export class MobileRelayBridge extends EventEmitter<{ stateChanged: [MobileRelaySnapshot] }> {
   private readonly serverManager: ServerManager;
   private state: MobileRelayBridgeState = buildIdleState();
@@ -291,6 +316,25 @@ export class MobileRelayBridge extends EventEmitter<{ stateChanged: [MobileRelay
       };
     }
 
+    this.emitState();
+    return this.getSnapshot();
+  }
+
+  async refreshTrustedPhones(): Promise<MobileRelaySnapshot> {
+    const workspaceId = this.state.workspaceId;
+    if (!workspaceId || this.state.relayServiceStatus !== "running") {
+      return this.getSnapshot();
+    }
+    try {
+      const trustedPhoneDevices = await this.serverManager.listMobileH3TrustedDevices(workspaceId);
+      this.state = stateWithTrustedPhoneDevices(this.state, trustedPhoneDevices);
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        status: "error",
+        lastError: error instanceof Error ? error.message : String(error),
+      };
+    }
     this.emitState();
     return this.getSnapshot();
   }

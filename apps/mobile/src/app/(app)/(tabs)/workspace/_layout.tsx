@@ -1,21 +1,23 @@
 import { Stack } from "expo-router";
+import { Platform } from "react-native";
 
 import { useAppTheme } from "@/theme/use-app-theme";
 
 export default function WorkspaceTabLayout() {
   const theme = useAppTheme();
+  const headerTransparent = Platform.OS !== "web";
 
   return (
     <Stack
       screenOptions={{
-        headerTransparent: true,
+        headerTransparent,
         headerShadowVisible: false,
         headerLargeTitle: true,
         headerLargeTitleShadowVisible: false,
         headerBlurEffect: "none",
         headerTintColor: theme.text,
         headerLargeStyle: {
-          backgroundColor: "transparent",
+          backgroundColor: headerTransparent ? "transparent" : theme.background,
         },
         headerTitleStyle: {
           color: theme.text,

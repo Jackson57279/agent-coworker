@@ -337,6 +337,7 @@ export default function PairingIndexRoute() {
           headerRight: () => (
             <HeaderGlassButton
               icon="ellipsis.circle"
+              accessibilityLabel="Open settings"
               onPress={() => router.push("/(app)/(tabs)/settings")}
             />
           ),

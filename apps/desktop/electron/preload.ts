@@ -284,6 +284,12 @@ const desktopApi = Object.freeze<DesktopApi>({
     return state;
   },
 
+  refreshMobileRelayTrustedPhones: async () => {
+    const state = await ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.mobileRelayRefreshTrustedPhones);
+    assertMobileRelayBridgeState(state);
+    return state;
+  },
+
   rotateMobileRelaySession: async () => {
     const state = await ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.mobileRelayRotateSession);
     assertMobileRelayBridgeState(state);

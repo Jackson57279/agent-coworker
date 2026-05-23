@@ -49,7 +49,7 @@ type InternalLogBox = {
 
 export function installLogBoxExceptionStackPatch() {
   const devFlag = typeof __DEV__ === "undefined" ? false : __DEV__;
-  if (!devFlag) {
+  if (!devFlag || typeof document !== "undefined") {
     return;
   }
 

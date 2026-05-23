@@ -29,6 +29,7 @@ import {
   forgetMobileRelayTrustedPhone,
   getMobileRelayState,
   onMobileRelayStateChanged,
+  refreshMobileRelayTrustedPhones,
   rotateMobileRelaySession,
   startMobileRelay,
   stopMobileRelay,
@@ -126,6 +127,34 @@ export function RemoteAccessPage() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (state?.relayServiceStatus !== "running" || !state.workspaceId) {
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const snapshot = await refreshMobileRelayTrustedPhones();
+        if (!cancelled) {
+          setState(snapshot);
+        }
+      } catch {
+        // The state-change subscription and user actions remain authoritative if a poll races reload.
+      }
+    };
+
+    void refresh();
+    const intervalId = window.setInterval(() => {
+      void refresh();
+    }, 2_500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [state?.relayServiceStatus, state?.workspaceId]);
 
   const qrValue = useMemo(() => state?.ticketUrl ?? null, [state?.ticketUrl]);
   const trustedDevices = state?.trustedPhoneDevices ?? [];

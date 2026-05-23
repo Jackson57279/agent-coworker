@@ -146,6 +146,7 @@ export function createDesktopCommandsMock(
     startMobileRelay: async () => DEFAULT_MOBILE_RELAY_STATE,
     stopMobileRelay: async () => DEFAULT_MOBILE_RELAY_STATE,
     getMobileRelayState: async () => DEFAULT_MOBILE_RELAY_STATE,
+    refreshMobileRelayTrustedPhones: async () => DEFAULT_MOBILE_RELAY_STATE,
     rotateMobileRelaySession: async () => DEFAULT_MOBILE_RELAY_STATE,
     forgetMobileRelayTrustedPhone: async () => DEFAULT_MOBILE_RELAY_STATE,
     updateMobileRelayTrustedPhonePermissions: async () => DEFAULT_MOBILE_RELAY_STATE,

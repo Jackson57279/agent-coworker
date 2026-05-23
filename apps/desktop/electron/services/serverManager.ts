@@ -107,6 +107,10 @@ const trustedDeviceSchema = z.object({
   permissions: trustedDevicePermissionSchema,
 });
 
+const trustedDevicesResponseSchema = z.object({
+  trustedDevices: z.array(trustedDeviceSchema).optional().default([]),
+});
+
 const serverListeningSchema = z
   .object({
     type: z.literal("server_listening"),
@@ -777,6 +781,29 @@ export class ServerManager {
   ): Promise<{ url: string; mobileH3: ServerListening["mobileH3"] }> {
     await this.stopWorkspaceServer(opts.workspaceId);
     return await this.startWorkspaceServer(opts);
+  }
+
+  async listMobileH3TrustedDevices(workspaceId: string): Promise<MobileRelayTrustedPhoneDevice[]> {
+    assertSafeId(workspaceId, "workspaceId");
+    const handle = this.servers.get(workspaceId);
+    if (!handle?.mobileH3) {
+      throw new Error("Mobile H3 endpoint is not running.");
+    }
+    const response = await fetch(`${toHttpServerUrl(handle.url)}/mobile-h3/trusted`, {
+      headers: {
+        authorization: `Bearer ${handle.mobileH3.adminToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to list mobile trust records: HTTP ${response.status}.`);
+    }
+    const payload = trustedDevicesResponseSchema.parse(await response.json());
+    handle.mobileH3 = {
+      ...handle.mobileH3,
+      trustedDevice: payload.trustedDevices[0] ?? null,
+      trustedDevices: payload.trustedDevices,
+    };
+    return payload.trustedDevices;
   }
 
   async revokeMobileH3TrustedDevice(workspaceId: string, deviceId: string): Promise<void> {

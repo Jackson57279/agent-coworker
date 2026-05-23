@@ -306,6 +306,12 @@ export async function getMobileRelayState(): Promise<
   return await requireDesktopApi().getMobileRelayState();
 }
 
+export async function refreshMobileRelayTrustedPhones(): Promise<
+  import("./desktopApi").MobileRelayBridgeState
+> {
+  return await requireDesktopApi().refreshMobileRelayTrustedPhones();
+}
+
 export async function rotateMobileRelaySession(): Promise<
   import("./desktopApi").MobileRelayBridgeState
 > {

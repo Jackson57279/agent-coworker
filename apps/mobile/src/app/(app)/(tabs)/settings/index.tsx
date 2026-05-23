@@ -30,7 +30,11 @@ export default function SettingsHubScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <HeaderGlassButton icon="desktopcomputer" onPress={() => router.push("/(pairing)")} />
+            <HeaderGlassButton
+              icon="desktopcomputer"
+              accessibilityLabel="Open remote access"
+              onPress={() => router.push("/(pairing)")}
+            />
           ),
         }}
       />

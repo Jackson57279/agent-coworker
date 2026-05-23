@@ -354,6 +354,7 @@ export interface DesktopApi {
   startMobileRelay(opts: MobileRelayStartInput): Promise<MobileRelayBridgeState>;
   stopMobileRelay(): Promise<MobileRelayBridgeState>;
   getMobileRelayState(): Promise<MobileRelayBridgeState>;
+  refreshMobileRelayTrustedPhones(): Promise<MobileRelayBridgeState>;
   rotateMobileRelaySession(): Promise<MobileRelayBridgeState>;
   forgetMobileRelayTrustedPhone(
     opts?: MobileRelayForgetTrustedPhoneInput,
@@ -416,6 +417,7 @@ export const DESKTOP_IPC_CHANNELS = {
   mobileRelayStart: "desktop:mobileRelayStart",
   mobileRelayStop: "desktop:mobileRelayStop",
   mobileRelayGetState: "desktop:mobileRelayGetState",
+  mobileRelayRefreshTrustedPhones: "desktop:mobileRelayRefreshTrustedPhones",
   mobileRelayRotateSession: "desktop:mobileRelayRotateSession",
   mobileRelayForgetTrustedPhone: "desktop:mobileRelayForgetTrustedPhone",
   mobileRelayUpdateTrustedPhonePermissions: "desktop:mobileRelayUpdateTrustedPhonePermissions",

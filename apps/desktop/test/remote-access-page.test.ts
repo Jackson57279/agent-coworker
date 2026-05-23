@@ -149,6 +149,11 @@ mock.module("../src/lib/desktopCommands", () =>
         trustedPhoneDeviceId: "phone-1",
         trustedPhoneFingerprint: "abc123",
       }),
+    refreshMobileRelayTrustedPhones: async () =>
+      buildMobileRelayState({
+        trustedPhoneDeviceId: "phone-1",
+        trustedPhoneFingerprint: "abc123",
+      }),
     rotateMobileRelaySession: async () =>
       buildMobileRelayState({
         trustedPhoneDeviceId: "phone-1",
