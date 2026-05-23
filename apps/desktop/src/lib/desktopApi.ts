@@ -34,6 +34,41 @@ export type MobileRelayStartInput = {
   featureFlags?: DesktopFeatureFlagOverrides;
 };
 
+export const MOBILE_RELAY_TRUSTED_DEVICE_PERMISSION_KEYS = [
+  "turns",
+  "serverRequests",
+  "providerAuth",
+  "mcpAuth",
+  "workspaceSettings",
+  "backups",
+] as const;
+
+export type MobileRelayTrustedDevicePermissionKey =
+  (typeof MOBILE_RELAY_TRUSTED_DEVICE_PERMISSION_KEYS)[number];
+
+export type MobileRelayTrustedDevicePermissions = Record<
+  MobileRelayTrustedDevicePermissionKey,
+  boolean
+>;
+
+export type MobileRelayTrustedPhoneDevice = {
+  deviceId: string;
+  fingerprint: string;
+  displayName: string | null;
+  lastPairedAt: string | null;
+  lastConnectedAt: string | null;
+  permissions: MobileRelayTrustedDevicePermissions;
+};
+
+export type MobileRelayForgetTrustedPhoneInput = {
+  deviceId?: string;
+};
+
+export type MobileRelayUpdateTrustedPhonePermissionsInput = {
+  deviceId: string;
+  permissions: Partial<Record<MobileRelayTrustedDevicePermissionKey, boolean>>;
+};
+
 export type MobileRelayBridgeState = {
   status: "idle" | "starting" | "pairing" | "connected" | "reconnecting" | "error";
   workspaceId: string | null;
@@ -58,6 +93,7 @@ export type MobileRelayBridgeState = {
   } | null;
   trustedPhoneDeviceId: string | null;
   trustedPhoneFingerprint: string | null;
+  trustedPhoneDevices: MobileRelayTrustedPhoneDevice[];
   directUrl: string | null;
   ticketUrl: string | null;
   certSha256: string | null;
@@ -319,7 +355,12 @@ export interface DesktopApi {
   stopMobileRelay(): Promise<MobileRelayBridgeState>;
   getMobileRelayState(): Promise<MobileRelayBridgeState>;
   rotateMobileRelaySession(): Promise<MobileRelayBridgeState>;
-  forgetMobileRelayTrustedPhone(): Promise<MobileRelayBridgeState>;
+  forgetMobileRelayTrustedPhone(
+    opts?: MobileRelayForgetTrustedPhoneInput,
+  ): Promise<MobileRelayBridgeState>;
+  updateMobileRelayTrustedPhonePermissions(
+    opts: MobileRelayUpdateTrustedPhonePermissionsInput,
+  ): Promise<MobileRelayBridgeState>;
   loadState(): Promise<PersistedState>;
   saveState(state: PersistedState): Promise<void>;
   readTranscript(opts: ReadTranscriptInput): Promise<TranscriptEvent[]>;
@@ -377,6 +418,7 @@ export const DESKTOP_IPC_CHANNELS = {
   mobileRelayGetState: "desktop:mobileRelayGetState",
   mobileRelayRotateSession: "desktop:mobileRelayRotateSession",
   mobileRelayForgetTrustedPhone: "desktop:mobileRelayForgetTrustedPhone",
+  mobileRelayUpdateTrustedPhonePermissions: "desktop:mobileRelayUpdateTrustedPhonePermissions",
   loadState: "desktop:loadState",
   saveState: "desktop:saveState",
   readTranscript: "desktop:readTranscript",

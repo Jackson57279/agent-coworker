@@ -416,6 +416,7 @@ const IDLE_MOBILE_RELAY: MobileRelayBridgeState = {
   hostHints: [],
   trustedPhoneDeviceId: null,
   trustedPhoneFingerprint: null,
+  trustedPhoneDevices: [],
   lastError: null,
 };
 
@@ -754,6 +755,9 @@ export function createWebAdapter(): DesktopApi {
       return { ...IDLE_MOBILE_RELAY };
     },
     async forgetMobileRelayTrustedPhone(): Promise<MobileRelayBridgeState> {
+      return { ...IDLE_MOBILE_RELAY };
+    },
+    async updateMobileRelayTrustedPhonePermissions(): Promise<MobileRelayBridgeState> {
       return { ...IDLE_MOBILE_RELAY };
     },
 

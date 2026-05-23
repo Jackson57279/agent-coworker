@@ -108,9 +108,9 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
             status: 204,
             headers: {
               ...corsHeaders,
-              "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+              "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
               "Access-Control-Allow-Headers":
-                "Content-Type, Sec-WebSocket-Protocol, X-Cowork-Browser-Token",
+                "Authorization, Content-Type, Sec-WebSocket-Protocol, X-Cowork-Browser-Token",
               "Access-Control-Max-Age": "86400",
             },
           });
@@ -189,7 +189,9 @@ export async function startAgentServer(opts: StartAgentServerOptions): Promise<{
           const deviceId = decodeURIComponent(encodedDeviceId);
           const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
           const rawPermissions =
-            body?.permissions && typeof body.permissions === "object" && !Array.isArray(body.permissions)
+            body?.permissions &&
+            typeof body.permissions === "object" &&
+            !Array.isArray(body.permissions)
               ? (body.permissions as Record<string, unknown>)
               : {};
           const updated = await mobileServer.updateTrustedDevicePermissions(

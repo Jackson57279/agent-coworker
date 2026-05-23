@@ -1,8 +1,16 @@
-import { QrCodeIcon, RefreshCwIcon, SmartphoneIcon, Trash2Icon, WifiIcon } from "lucide-react";
+import {
+  KeyRoundIcon,
+  QrCodeIcon,
+  RefreshCwIcon,
+  SmartphoneIcon,
+  Trash2Icon,
+  WifiIcon,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAppStore } from "../../../app/store";
+import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
   Card,
@@ -11,6 +19,12 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../components/ui/card";
+import { Separator } from "../../../components/ui/separator";
+import { Switch } from "../../../components/ui/switch";
+import type {
+  MobileRelayTrustedDevicePermissionKey,
+  MobileRelayTrustedPhoneDevice,
+} from "../../../lib/desktopApi";
 import {
   forgetMobileRelayTrustedPhone,
   getMobileRelayState,
@@ -18,7 +32,20 @@ import {
   rotateMobileRelaySession,
   startMobileRelay,
   stopMobileRelay,
+  updateMobileRelayTrustedPhonePermissions,
 } from "../../../lib/desktopCommands";
+
+const TRUSTED_DEVICE_PERMISSION_CONTROLS: Array<{
+  key: MobileRelayTrustedDevicePermissionKey;
+  label: string;
+}> = [
+  { key: "turns", label: "Turns" },
+  { key: "serverRequests", label: "Approvals" },
+  { key: "providerAuth", label: "Provider auth" },
+  { key: "mcpAuth", label: "MCP auth" },
+  { key: "workspaceSettings", label: "Workspace settings" },
+  { key: "backups", label: "Backups" },
+];
 
 export function describeRelayServiceStatus(
   status: Awaited<ReturnType<typeof getMobileRelayState>>["relayServiceStatus"],
@@ -50,6 +77,17 @@ export function describeRelaySource(
     default:
       return "Unavailable";
   }
+}
+
+function describeTrustedDevice(device: MobileRelayTrustedPhoneDevice): string {
+  return device.displayName?.trim() || device.deviceId;
+}
+
+function formatDeviceTimestamp(value: string | null): string {
+  if (!value) return "—";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Date(timestamp).toLocaleString();
 }
 
 export function RemoteAccessPage() {
@@ -90,6 +128,7 @@ export function RemoteAccessPage() {
   }, []);
 
   const qrValue = useMemo(() => state?.ticketUrl ?? null, [state?.ticketUrl]);
+  const trustedDevices = state?.trustedPhoneDevices ?? [];
 
   async function runAction(action: string, runner: () => Promise<unknown>) {
     setBusyAction(action);
@@ -239,35 +278,108 @@ export function RemoteAccessPage() {
 
         <Card className="border-border/80 bg-card/85">
           <CardHeader>
-            <CardTitle>Trusted phone</CardTitle>
+            <CardTitle>Trusted devices</CardTitle>
             <CardDescription>
               Cowork Desktop keeps direct pairing trust state in `~/.cowork/mobile-pairing`, outside
               the renderer.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {state?.trustedPhoneDeviceId ? (
-              <div className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <SmartphoneIcon className="size-4" />
-                  Paired device
-                </div>
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  <div>Device ID: {state.trustedPhoneDeviceId}</div>
-                  <div>Fingerprint: {state.trustedPhoneFingerprint ?? "—"}</div>
-                </div>
+            {trustedDevices.length > 0 ? (
+              <div className="space-y-3">
+                {trustedDevices.map((device, index) => (
+                  <div
+                    key={device.deviceId}
+                    className="space-y-3 rounded-lg border border-border/60 bg-background/40 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                          <SmartphoneIcon className="size-4 shrink-0" />
+                          <span className="truncate">{describeTrustedDevice(device)}</span>
+                          {index === 0 ? (
+                            <Badge variant="outline" className="rounded-sm">
+                              Current
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="space-y-0.5 text-xs text-muted-foreground">
+                          <div className="break-all">Device ID: {device.deviceId}</div>
+                          <div className="break-all">Fingerprint: {device.fingerprint}</div>
+                          <div>Last paired: {formatDeviceTimestamp(device.lastPairedAt)}</div>
+                          <div>Last seen: {formatDeviceTimestamp(device.lastConnectedAt)}</div>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={`Forget ${describeTrustedDevice(device)}`}
+                        onClick={() =>
+                          runAction(`forget:${device.deviceId}`, async () => {
+                            await forgetMobileRelayTrustedPhone({ deviceId: device.deviceId });
+                          })
+                        }
+                        disabled={busyAction !== null}
+                      >
+                        <Trash2Icon data-icon />
+                      </Button>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                        <KeyRoundIcon className="size-3.5" />
+                        Permissions
+                      </div>
+                      <div className="grid gap-2">
+                        {TRUSTED_DEVICE_PERMISSION_CONTROLS.map((permission) => {
+                          const permissionLabelId = `mobile-permission-${device.deviceId}-${permission.key}`;
+                          return (
+                            <div
+                              key={permission.key}
+                              className="flex items-center justify-between gap-3 text-xs"
+                            >
+                              <span id={permissionLabelId} className="text-muted-foreground">
+                                {permission.label}
+                              </span>
+                              <Switch
+                                size="sm"
+                                checked={device.permissions[permission.key]}
+                                disabled={busyAction !== null}
+                                aria-labelledby={permissionLabelId}
+                                onCheckedChange={(checked) =>
+                                  runAction(
+                                    `permission:${device.deviceId}:${permission.key}`,
+                                    async () => {
+                                      await updateMobileRelayTrustedPhonePermissions({
+                                        deviceId: device.deviceId,
+                                        permissions: { [permission.key]: checked === true },
+                                      });
+                                    },
+                                  )
+                                }
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="outline"
                   onClick={() =>
-                    runAction("forget", async () => {
+                    runAction("forget-all", async () => {
                       await forgetMobileRelayTrustedPhone();
                     })
                   }
                   disabled={busyAction !== null}
                 >
                   <Trash2Icon data-icon />
-                  Forget paired device
+                  Forget all devices
                 </Button>
               </div>
             ) : (

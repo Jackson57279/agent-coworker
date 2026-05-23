@@ -47,6 +47,21 @@ function buildMobileRelayState(
     pairingPayload: typeof H3_PAIRING_PAYLOAD | null;
     trustedPhoneDeviceId: string | null;
     trustedPhoneFingerprint: string | null;
+    trustedPhoneDevices: Array<{
+      deviceId: string;
+      fingerprint: string;
+      displayName: string | null;
+      lastPairedAt: string | null;
+      lastConnectedAt: string | null;
+      permissions: {
+        turns: boolean;
+        serverRequests: boolean;
+        providerAuth: boolean;
+        mcpAuth: boolean;
+        workspaceSettings: boolean;
+        backups: boolean;
+      };
+    }>;
     directUrl: string | null;
     ticketUrl: string | null;
     certSha256: string | null;
@@ -68,6 +83,7 @@ function buildMobileRelayState(
     pairingPayload: H3_PAIRING_PAYLOAD,
     trustedPhoneDeviceId: null,
     trustedPhoneFingerprint: null,
+    trustedPhoneDevices: [],
     directUrl: "https://127.0.0.1:34443",
     ticketUrl: "cowork-pair://ticket",
     certSha256: H3_PAIRING_PAYLOAD.certSha256,
@@ -142,6 +158,7 @@ mock.module("../src/lib/desktopCommands", () =>
       buildMobileRelayState({
         pairingPayload: null,
       }),
+    updateMobileRelayTrustedPhonePermissions: async () => buildMobileRelayState(),
     onMobileRelayStateChanged: () => () => {},
   }),
 );
@@ -179,7 +196,7 @@ describe("desktop remote access page", () => {
     expect(html).toContain("Workspace bridge");
     expect(html).toContain("Relay service:");
     expect(html).toContain("Pairing QR");
-    expect(html).toContain("Trusted phone");
+    expect(html).toContain("Trusted devices");
     expect(html).not.toContain("Remodex-backed");
     expect(html).not.toContain("Remodex service:");
     expect(html).not.toContain("phodex.app");

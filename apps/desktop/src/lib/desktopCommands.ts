@@ -312,10 +312,16 @@ export async function rotateMobileRelaySession(): Promise<
   return await requireDesktopApi().rotateMobileRelaySession();
 }
 
-export async function forgetMobileRelayTrustedPhone(): Promise<
-  import("./desktopApi").MobileRelayBridgeState
-> {
-  return await requireDesktopApi().forgetMobileRelayTrustedPhone();
+export async function forgetMobileRelayTrustedPhone(
+  opts?: import("./desktopApi").MobileRelayForgetTrustedPhoneInput,
+): Promise<import("./desktopApi").MobileRelayBridgeState> {
+  return await requireDesktopApi().forgetMobileRelayTrustedPhone(opts);
+}
+
+export async function updateMobileRelayTrustedPhonePermissions(
+  opts: import("./desktopApi").MobileRelayUpdateTrustedPhonePermissionsInput,
+): Promise<import("./desktopApi").MobileRelayBridgeState> {
+  return await requireDesktopApi().updateMobileRelayTrustedPhonePermissions(opts);
 }
 
 export function onSystemAppearanceChanged(

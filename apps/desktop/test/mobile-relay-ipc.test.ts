@@ -55,6 +55,7 @@ describe("mobile relay IPC", () => {
       pairingPayload: null,
       trustedPhoneDeviceId: null,
       trustedPhoneFingerprint: null,
+      trustedPhoneDevices: [],
       directUrl: null,
       ticketUrl: null,
       certSha256: null,
@@ -120,6 +121,7 @@ describe("mobile relay IPC", () => {
       pairingPayload: null,
       trustedPhoneDeviceId: null,
       trustedPhoneFingerprint: null,
+      trustedPhoneDevices: [],
       directUrl: null,
       ticketUrl: null,
       certSha256: null,
@@ -158,6 +160,81 @@ describe("mobile relay IPC", () => {
 
     expect(initialize).toHaveBeenCalledTimes(1);
     expect(getSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test("updates trusted phone permissions through the relay bridge", async () => {
+    const updateTrustedPhonePermissions = mock(async () => ({
+      status: "connected",
+      workspaceId: "ws_1",
+      workspacePath: "/approved/workspace",
+      relaySource: "direct",
+      relaySourceMessage: "direct",
+      relayServiceStatus: "running",
+      relayServiceMessage: "running",
+      relayServiceUpdatedAt: null,
+      relayUrl: "https://127.0.0.1:34443",
+      sessionId: null,
+      pairingPayload: null,
+      trustedPhoneDeviceId: "phone-1",
+      trustedPhoneFingerprint: "fingerprint",
+      trustedPhoneDevices: [
+        {
+          deviceId: "phone-1",
+          fingerprint: "fingerprint",
+          displayName: "Phone",
+          lastPairedAt: null,
+          lastConnectedAt: null,
+          permissions: {
+            turns: true,
+            serverRequests: false,
+            providerAuth: false,
+            mcpAuth: false,
+            workspaceSettings: false,
+            backups: false,
+          },
+        },
+      ],
+      directUrl: "https://127.0.0.1:34443",
+      ticketUrl: null,
+      certSha256: null,
+      spkiSha256: null,
+      hostHints: ["127.0.0.1"],
+      lastError: null,
+    }));
+    const handlers = new Map<string, (_event: unknown, args?: unknown) => Promise<unknown>>();
+
+    registerMobileRelayIpc({
+      deps: {
+        persistence: { loadState: async () => ({ workspaces: [] }) } as never,
+        mobileRelayBridge: {
+          on() {},
+          initialize() {},
+          start: async () => ({}),
+          stop: async () => ({}),
+          getSnapshot: () => ({}),
+          rotateSession: async () => ({}),
+          forgetTrustedPhone: async () => ({}),
+          updateTrustedPhonePermissions,
+        } as never,
+      } as never,
+      workspaceRoots: {} as never,
+      handleDesktopInvoke(channel, handler) {
+        handlers.set(channel, handler as (_event: unknown, args?: unknown) => Promise<unknown>);
+      },
+      parseWithSchema(_schema, value) {
+        return value as never;
+      },
+    });
+
+    const handler = handlers.get(DESKTOP_IPC_CHANNELS.mobileRelayUpdateTrustedPhonePermissions);
+    expect(handler).toBeTruthy();
+
+    await handler?.(null, {
+      deviceId: "phone-1",
+      permissions: { turns: true },
+    });
+
+    expect(updateTrustedPhonePermissions).toHaveBeenCalledWith("phone-1", { turns: true });
   });
 
   test("returns an unavailable state when remote access is disabled", async () => {

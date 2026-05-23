@@ -19,7 +19,9 @@ import {
   type DesktopNotificationInput,
   type ListDirectoryInput,
   type MobileRelayBridgeState,
+  type MobileRelayForgetTrustedPhoneInput,
   type MobileRelayStartInput,
+  type MobileRelayUpdateTrustedPhonePermissionsInput,
   type OpenExternalUrlInput,
   type OpenPathInput,
   type PreferredFileAppInput,
@@ -53,7 +55,9 @@ import {
   desktopNotificationInputSchema,
   listDirectoryInputSchema,
   mobileRelayBridgeStateSchema,
+  mobileRelayForgetTrustedPhoneInputSchema,
   mobileRelayStartInputSchema,
+  mobileRelayUpdateTrustedPhonePermissionsInputSchema,
   openExternalUrlInputSchema,
   openPathInputSchema,
   persistedStateInputSchema,
@@ -205,6 +209,24 @@ function assertMobileRelayStartInput(opts: MobileRelayStartInput): void {
   parseWithSchema(mobileRelayStartInputSchema, opts, "mobileRelay.start options");
 }
 
+function assertMobileRelayForgetTrustedPhoneInput(opts?: MobileRelayForgetTrustedPhoneInput): void {
+  parseWithSchema(
+    mobileRelayForgetTrustedPhoneInputSchema,
+    opts,
+    "mobileRelay.forgetTrustedPhone options",
+  );
+}
+
+function assertMobileRelayUpdateTrustedPhonePermissionsInput(
+  opts: MobileRelayUpdateTrustedPhonePermissionsInput,
+): void {
+  parseWithSchema(
+    mobileRelayUpdateTrustedPhonePermissionsInputSchema,
+    opts,
+    "mobileRelay.updateTrustedPhonePermissions options",
+  );
+}
+
 function assertMobileRelayBridgeState(value: unknown): asserts value is MobileRelayBridgeState {
   parseWithSchema(mobileRelayBridgeStateSchema, value, "mobile relay state");
 }
@@ -268,8 +290,24 @@ const desktopApi = Object.freeze<DesktopApi>({
     return state;
   },
 
-  forgetMobileRelayTrustedPhone: async () => {
-    const state = await ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.mobileRelayForgetTrustedPhone);
+  forgetMobileRelayTrustedPhone: async (opts?: MobileRelayForgetTrustedPhoneInput) => {
+    assertMobileRelayForgetTrustedPhoneInput(opts);
+    const state = await ipcRenderer.invoke(
+      DESKTOP_IPC_CHANNELS.mobileRelayForgetTrustedPhone,
+      opts,
+    );
+    assertMobileRelayBridgeState(state);
+    return state;
+  },
+
+  updateMobileRelayTrustedPhonePermissions: async (
+    opts: MobileRelayUpdateTrustedPhonePermissionsInput,
+  ) => {
+    assertMobileRelayUpdateTrustedPhonePermissionsInput(opts);
+    const state = await ipcRenderer.invoke(
+      DESKTOP_IPC_CHANNELS.mobileRelayUpdateTrustedPhonePermissions,
+      opts,
+    );
     assertMobileRelayBridgeState(state);
     return state;
   },
