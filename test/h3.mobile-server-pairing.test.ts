@@ -9,12 +9,9 @@ import type {
   JsonRpcLiteRequest,
 } from "../src/server/jsonrpc/protocol";
 import type { AgentServerRuntime } from "../src/server/runtime/ServerRuntime";
-import {
-  type CoworkPairingTicket,
-  encodeCoworkPairingTicket,
-} from "../src/shared/coworkTicket";
 import { loadH3PairingStoreState } from "../src/server/transport/h3/pairing";
 import { startH3MobileServer } from "../src/server/transport/h3/server";
+import { type CoworkPairingTicket, encodeCoworkPairingTicket } from "../src/shared/coworkTicket";
 
 const tempRoots: string[] = [];
 
@@ -179,10 +176,36 @@ describe("H3 mobile server pairing", () => {
       await expect(unauthenticatedRpc.json()).resolves.toEqual({ error: "Unauthorized." });
       expect(handled).toEqual([]);
 
+      const missingDeviceHeaderRpc = await fetchH3(`${server.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${pairPayload.sessionToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "thread/list" }),
+      });
+      expect(missingDeviceHeaderRpc.status).toBe(401);
+      await expect(missingDeviceHeaderRpc.json()).resolves.toEqual({ error: "Unauthorized." });
+      expect(handled).toEqual([]);
+
+      const mismatchedDeviceHeaderRpc = await fetchH3(`${server.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${pairPayload.sessionToken}`,
+          "content-type": "application/json",
+          "x-cowork-mobile-device-id": "phone-2",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "thread/list" }),
+      });
+      expect(mismatchedDeviceHeaderRpc.status).toBe(401);
+      await expect(mismatchedDeviceHeaderRpc.json()).resolves.toEqual({ error: "Unauthorized." });
+      expect(handled).toEqual([]);
+
       const authenticatedRpc = await fetchH3(`${server.url}/rpc`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${pairPayload.sessionToken}`,
+          "x-cowork-mobile-device-id": "phone-1",
           "content-type": "application/json",
         },
         body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "thread/list" }),
@@ -199,6 +222,7 @@ describe("H3 mobile server pairing", () => {
         method: "POST",
         headers: {
           authorization: `Bearer ${pairPayload.sessionToken}`,
+          "x-cowork-mobile-device-id": "phone-1",
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -215,16 +239,18 @@ describe("H3 mobile server pairing", () => {
       });
       expect(handled).toEqual([{ id: 2, method: "thread/list" }]);
 
-      await expect(server.updateTrustedDevicePermissions("phone-1", { turns: true })).resolves
-        .toMatchObject({
-          deviceId: "phone-1",
-          permissions: { turns: true },
-        });
+      await expect(
+        server.updateTrustedDevicePermissions("phone-1", { turns: true }),
+      ).resolves.toMatchObject({
+        deviceId: "phone-1",
+        permissions: { turns: true },
+      });
 
       const allowedTurn = await fetchH3(`${server.url}/rpc`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${pairPayload.sessionToken}`,
+          "x-cowork-mobile-device-id": "phone-1",
           "content-type": "application/json",
         },
         body: JSON.stringify({

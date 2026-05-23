@@ -34,6 +34,12 @@ describe("H3 pairing store", () => {
       sessionToken,
     });
 
+    await expect(verifyH3SessionToken(storeRoot, sessionToken, "phone-1")).resolves.toMatchObject({
+      deviceId: "phone-1",
+    });
+    await expect(verifyH3SessionToken(storeRoot, sessionToken, "phone-2")).resolves.toBeNull();
+    await expect(verifyH3SessionToken(storeRoot, sessionToken, null)).resolves.toBeNull();
+
     const [verified, removed] = await Promise.all([
       verifyH3SessionToken(storeRoot, sessionToken),
       forgetH3TrustedDevice(storeRoot, "phone-1"),

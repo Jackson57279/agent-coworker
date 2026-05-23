@@ -268,14 +268,24 @@ export async function updateH3TrustedDevicePermissions(
 export async function verifyH3SessionToken(
   storeRootPath: string | undefined,
   sessionToken: string | null,
+  expectedDeviceId?: string | null,
 ): Promise<H3TrustedDeviceRecord | null> {
   if (!sessionToken) {
+    return null;
+  }
+  const normalizedExpectedDeviceId =
+    expectedDeviceId === undefined ? null : expectedDeviceId?.trim() || "";
+  if (normalizedExpectedDeviceId === "") {
     return null;
   }
   return await withPairingStoreLock(storeRootPath, async () => {
     const state = await loadH3PairingStoreState(storeRootPath);
     const tokenHash = await sha256Base64Url(sessionToken);
-    const match = state.trustedDevices.find((device) => device.sessionTokenHash === tokenHash);
+    const match = state.trustedDevices.find(
+      (device) =>
+        device.sessionTokenHash === tokenHash &&
+        (normalizedExpectedDeviceId === null || device.deviceId === normalizedExpectedDeviceId),
+    );
     if (!match) {
       return null;
     }

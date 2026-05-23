@@ -88,11 +88,12 @@ describe("mobile secure transport client", () => {
       certSha256: "a".repeat(64),
       spkiSha256: "b".repeat(43),
     });
-    expect(JSON.parse((fetchMock.mock.calls[1]?.[0] as { body?: string }).body ?? "{}"))
-      .toMatchObject({
-        ticket: "cowork-pair://ticket",
-        nonce: "pairing-nonce",
-      });
+    expect(
+      JSON.parse((fetchMock.mock.calls[1]?.[0] as { body?: string }).body ?? "{}"),
+    ).toMatchObject({
+      ticket: "cowork-pair://ticket",
+      nonce: "pairing-nonce",
+    });
     expect(fetchMock.mock.calls[2]?.[0]).toMatchObject({
       certSha256: "a".repeat(64),
       spkiSha256: "b".repeat(43),
@@ -123,7 +124,12 @@ describe("mobile secure transport client", () => {
   });
 
   test("uses pinned HTTPS for RPC messages after pairing", async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    const requests: Array<{
+      url: string;
+      method: string;
+      body?: string;
+      headers?: Record<string, string>;
+    }> = [];
     const plaintextMessages: string[] = [];
     __internal.setPinnedHttpsFetchForTesting(
       mock(async (request: { url: string; method: string; body?: string }) => {
@@ -148,10 +154,18 @@ describe("mobile secure transport client", () => {
     await client.connectFromQrPayload(buildPayload({ hosts: ["192.168.1.10"] }));
     await client.sendPlaintext('{"jsonrpc":"2.0","method":"thread/list","id":1}');
 
+    const pairedDeviceId = JSON.parse(
+      requests.find((request) => request.url.endsWith("/pair"))?.body ?? "{}",
+    ).deviceId;
     expect(requests.find((request) => request.url.endsWith("/rpc"))).toMatchObject({
       url: "https://192.168.1.10:9443/rpc",
       method: "POST",
       body: '{"jsonrpc":"2.0","method":"thread/list","id":1}',
+      headers: {
+        authorization: "Bearer session-token",
+        "x-cowork-mobile-device-id": pairedDeviceId,
+        "content-type": "application/json",
+      },
       certSha256: "a".repeat(64),
       spkiSha256: "b".repeat(43),
     });
@@ -178,6 +192,14 @@ describe("mobile secure transport client", () => {
     expect(pairedDeviceIds).toHaveLength(2);
     expect(pairedDeviceIds[0]).toBe(pairedDeviceIds[1]);
     expect(secureStoreValues.get("cowork.h3.mobileDeviceId.v1")).toBe(pairedDeviceIds[0]);
+    expect(JSON.parse(secureStoreValues.get("cowork.h3.trustedDesktops.v2") ?? "[]")).toEqual([
+      expect.objectContaining({
+        macDeviceId: "desktop-identity",
+        mobileDeviceId: pairedDeviceIds[0],
+      }),
+    ]);
+    expect(secureStoreValues.get("cowork.h3.trustedDesktops.v2")).not.toContain("session-2");
+    expect(secureStoreValues.get("cowork_session_token_desktop-identity")).toBe("session-2");
   });
 
   test("delivers SSE messages as native pinned stream chunks arrive", async () => {
@@ -476,6 +498,7 @@ describe("mobile secure transport client", () => {
         },
       ]),
     );
+    secureStoreValues.set("cowork.h3.mobileDeviceId.v1", "cowork-mobile-existing");
     secureStoreValues.set("cowork_session_token_desktop-identity", "trusted-token");
     secureStoreValues.set(
       "cowork.h3.activeSession.v1",
@@ -504,7 +527,10 @@ describe("mobile secure transport client", () => {
     });
     expect(streamRequests[0]).toMatchObject({
       url: "https://trusted.example:9443/events",
-      headers: { authorization: "Bearer trusted-token" },
+      headers: {
+        authorization: "Bearer trusted-token",
+        "x-cowork-mobile-device-id": "cowork-mobile-existing",
+      },
       certSha256: "c".repeat(64),
       spkiSha256: "d".repeat(43),
     });

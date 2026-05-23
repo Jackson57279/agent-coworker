@@ -13,15 +13,15 @@ import type {
 import type { AgentServerRuntime } from "../../runtime/ServerRuntime";
 import type { StartServerSocketData } from "../../startServer/types";
 import {
-  DEFAULT_H3_TRUSTED_DEVICE_PERMISSIONS,
   createH3PairingSession,
+  DEFAULT_H3_TRUSTED_DEVICE_PERMISSIONS,
   forgetH3TrustedDevice,
   forgetH3TrustedDevices,
+  H3_TRUSTED_DEVICE_PERMISSION_KEYS,
   type H3PairingSession,
-  type H3TrustedDeviceRecord,
   type H3TrustedDevicePermissionKey,
   type H3TrustedDevicePermissions,
-  H3_TRUSTED_DEVICE_PERMISSION_KEYS,
+  type H3TrustedDeviceRecord,
   listH3TrustedDevices,
   loadH3PairingStoreState,
   rememberH3TrustedDevice,
@@ -44,6 +44,7 @@ type H3JsonRpcConnection = H3Connection & {
 };
 
 const HTTP_RPC_RESPONSE_TIMEOUT_MS = 30_000;
+const MOBILE_DEVICE_ID_HEADER = "x-cowork-mobile-device-id";
 
 type StartH3MobileServerOptions = {
   runtime: AgentServerRuntime;
@@ -538,6 +539,7 @@ export async function startH3MobileServer(
       const trustedDevice = await verifyH3SessionToken(
         options.storeRootPath,
         parseBearerToken(req.headers.get("authorization")),
+        req.headers.get(MOBILE_DEVICE_ID_HEADER),
       );
       if (!trustedDevice) {
         return jsonResponse({ error: "Unauthorized." }, { status: 401 });

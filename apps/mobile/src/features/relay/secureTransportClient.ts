@@ -10,6 +10,7 @@ const TRUSTED_DESKTOPS_KEY = "cowork.h3.trustedDesktops.v2";
 const ACTIVE_SESSION_KEY = "cowork.h3.activeSession.v1";
 const MOBILE_DEVICE_ID_KEY = "cowork.h3.mobileDeviceId.v1";
 const SESSION_TOKEN_KEY_PREFIX = "cowork_session_token_";
+const MOBILE_DEVICE_ID_HEADER = "x-cowork-mobile-device-id";
 
 function sessionTokenKey(macDeviceId: string): string {
   return `${SESSION_TOKEN_KEY_PREFIX}${macDeviceId}`;
@@ -81,6 +82,7 @@ type TrustedDesktopRecord = RelayTrustedDesktop & {
   endpointUrl: string;
   certSha256: string;
   spkiSha256: string;
+  mobileDeviceId: string;
 };
 
 type ActiveSession = {
@@ -89,6 +91,7 @@ type ActiveSession = {
   sessionToken: string;
   certSha256: string;
   spkiSha256: string;
+  mobileDeviceId: string;
 };
 
 type StoredActiveSession = {
@@ -132,6 +135,7 @@ function parseTrustedDesktopRecord(raw: unknown): TrustedDesktopRecord | null {
     endpointUrl: readString(record, "endpointUrl"),
     certSha256: readString(record, "certSha256"),
     spkiSha256: readString(record, "spkiSha256"),
+    mobileDeviceId: readString(record, "mobileDeviceId"),
   };
   return trusted.macDeviceId && trusted.endpointUrl && trusted.certSha256 && trusted.spkiSha256
     ? trusted
@@ -243,6 +247,7 @@ export class SecureTransportClient {
         endpointUrl,
         certSha256: payload.certSha256,
         spkiSha256: payload.spkiSha256,
+        mobileDeviceId: deviceId,
       };
       this.trustedDesktops = [
         trusted,
@@ -254,6 +259,7 @@ export class SecureTransportClient {
         sessionToken: body.sessionToken,
         certSha256: trusted.certSha256,
         spkiSha256: trusted.spkiSha256,
+        mobileDeviceId: trusted.mobileDeviceId,
       };
       await this.persistTrustedState();
       this.openEventStream();
@@ -282,6 +288,7 @@ export class SecureTransportClient {
       sessionToken: trusted.sessionToken,
       certSha256: trusted.certSha256,
       spkiSha256: trusted.spkiSha256,
+      mobileDeviceId: trusted.mobileDeviceId,
     };
     await this.persistTrustedState();
     this.openEventStream();
@@ -324,6 +331,7 @@ export class SecureTransportClient {
       method: "POST",
       headers: {
         authorization: `Bearer ${this.activeSession.sessionToken}`,
+        [MOBILE_DEVICE_ID_HEADER]: this.activeSession.mobileDeviceId,
         "content-type": "application/json",
       },
       body: text,
@@ -406,6 +414,7 @@ export class SecureTransportClient {
       SecureStore.getItemAsync(ACTIVE_SESSION_KEY),
     ]);
     const records = parseTrustedDesktopRecords(trustedRaw);
+    const storedMobileDeviceId = await SecureStore.getItemAsync(MOBILE_DEVICE_ID_KEY);
     // Merge each session token back from its isolated per-device key
     const tokenResults = await Promise.all(
       records.map((entry) => SecureStore.getItemAsync(sessionTokenKey(entry.macDeviceId))),
@@ -414,8 +423,9 @@ export class SecureTransportClient {
       .map((entry, i) => ({
         ...entry,
         sessionToken: tokenResults[i] ?? entry.sessionToken,
+        mobileDeviceId: entry.mobileDeviceId || storedMobileDeviceId || "",
       }))
-      .filter((entry) => Boolean(entry.sessionToken));
+      .filter((entry) => Boolean(entry.sessionToken && entry.mobileDeviceId));
     const active = parseActiveSession(activeRaw);
     const trusted = active
       ? this.trustedDesktops.find((entry) => entry.macDeviceId === active.macDeviceId)
@@ -455,6 +465,7 @@ export class SecureTransportClient {
     void readSseStream(
       `${this.activeSession.endpointUrl}/events`,
       this.activeSession.sessionToken,
+      this.activeSession.mobileDeviceId,
       {
         certSha256: this.activeSession.certSha256,
         spkiSha256: this.activeSession.spkiSha256,
@@ -547,6 +558,7 @@ function activeSessionFromTrustedDesktop(entry: TrustedDesktopRecord): ActiveSes
     sessionToken: entry.sessionToken,
     certSha256: entry.certSha256,
     spkiSha256: entry.spkiSha256,
+    mobileDeviceId: entry.mobileDeviceId,
   };
 }
 
@@ -698,6 +710,7 @@ function randomBase64Url(byteLength: number): string {
 async function readSseStream(
   url: string,
   sessionToken: string,
+  mobileDeviceId: string,
   pins: {
     certSha256: string;
     spkiSha256: string;
@@ -715,7 +728,10 @@ async function readSseStream(
       {
         url,
         method: "GET",
-        headers: { authorization: `Bearer ${sessionToken}` },
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          [MOBILE_DEVICE_ID_HEADER]: mobileDeviceId,
+        },
         certSha256: pins.certSha256,
         spkiSha256: pins.spkiSha256,
       },
@@ -750,7 +766,10 @@ async function readSseStream(
     const response = await fetchPinnedHttps({
       url,
       method: "GET",
-      headers: { authorization: `Bearer ${sessionToken}` },
+      headers: {
+        authorization: `Bearer ${sessionToken}`,
+        [MOBILE_DEVICE_ID_HEADER]: mobileDeviceId,
+      },
       certSha256: pins.certSha256,
       spkiSha256: pins.spkiSha256,
     });
