@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -41,6 +42,66 @@ describe("managed soffice runtime", () => {
       }
       __internal.resetHelperSourceCacheForTest();
       await fs.rm(helperDir, { recursive: true, force: true });
+    }
+  });
+
+  test("can load packaged helper templates from the bundled server assets path", async () => {
+    const resourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-soffice-bundled-"));
+    const builtInDir = path.join(resourceRoot, "dist");
+    const helperPath = path.join(
+      resourceRoot,
+      "binaries",
+      "server",
+      "assets",
+      "managed-soffice-helper.mjs",
+    );
+    const previousHelperPath = process.env.COWORK_MANAGED_SOFFICE_HELPER_PATH;
+    const previousBuiltInDir = process.env.COWORK_BUILTIN_DIR;
+    const originalReadFileSync = fsSync.readFileSync;
+    const attemptedPaths: string[] = [];
+
+    try {
+      await fs.mkdir(path.dirname(helperPath), { recursive: true });
+      await fs.mkdir(builtInDir, { recursive: true });
+      process.env.COWORK_BUILTIN_DIR = builtInDir;
+      delete process.env.COWORK_MANAGED_SOFFICE_HELPER_PATH;
+      __internal.resetHelperSourceCacheForTest();
+
+      (fsSync as typeof fsSync & {
+        readFileSync: (filePath: fsSync.PathOrFileDescriptor, options?: unknown) => string | Buffer;
+      }).readFileSync = ((filePath: fsSync.PathOrFileDescriptor) => {
+        const candidate = String(filePath);
+        attemptedPaths.push(candidate);
+        if (candidate === helperPath) {
+          return "bundled helper __COWORK_HELPER_VERSION__ __COWORK_LIBREOFFICE_VERSION__";
+        }
+        throw Object.assign(new Error(`missing ${candidate}`), { code: "ENOENT" });
+      }) as typeof fsSync.readFileSync;
+
+      const candidates = __internal.helperTemplatePathCandidates();
+      expect(candidates).toContain(helperPath);
+      expect(candidates[0]).not.toBe(previousHelperPath);
+
+      const source = __internal.helperSource();
+      expect(source).toContain("bundled helper");
+      expect(source).toContain(__internal.DEFAULT_LIBREOFFICE_VERSION);
+      expect(source).not.toContain("__COWORK_HELPER_VERSION__");
+      expect(attemptedPaths).toContain(helperPath);
+    } finally {
+      (fsSync as typeof fsSync & { readFileSync: typeof originalReadFileSync }).readFileSync =
+        originalReadFileSync;
+      if (previousHelperPath === undefined) {
+        delete process.env.COWORK_MANAGED_SOFFICE_HELPER_PATH;
+      } else {
+        process.env.COWORK_MANAGED_SOFFICE_HELPER_PATH = previousHelperPath;
+      }
+      if (previousBuiltInDir === undefined) {
+        delete process.env.COWORK_BUILTIN_DIR;
+      } else {
+        process.env.COWORK_BUILTIN_DIR = previousBuiltInDir;
+      }
+      __internal.resetHelperSourceCacheForTest();
+      await fs.rm(resourceRoot, { recursive: true, force: true });
     }
   });
 
