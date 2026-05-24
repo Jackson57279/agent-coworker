@@ -140,6 +140,7 @@ function normalizeKnownSettingsPageId(value: unknown): SettingsPageId {
     value === "experiments" ||
     value === "diagnostics" ||
     value === "desktop" ||
+    value === "liquidGlass" ||
     value === "usage" ||
     value === "remoteAccess" ||
     value === "backup" ||
@@ -159,6 +160,7 @@ const normalizedSettingsPageSchema = z.preprocess(
     "experiments",
     "diagnostics",
     "desktop",
+    "liquidGlass",
     "usage",
     "remoteAccess",
     "backup",

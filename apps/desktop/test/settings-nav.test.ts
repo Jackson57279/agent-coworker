@@ -245,6 +245,11 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().settingsPage).toBe("desktop");
   });
 
+  test("setSettingsPage accepts liquid glass page", () => {
+    useAppStore.getState().setSettingsPage("liquidGlass");
+    expect(useAppStore.getState().settingsPage).toBe("liquidGlass");
+  });
+
   test("setSettingsPage accepts backup page", () => {
     useAppStore.getState().setSettingsPage("backup");
     expect(useAppStore.getState().settingsPage).toBe("backup");
