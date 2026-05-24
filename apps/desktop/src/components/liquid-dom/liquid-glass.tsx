@@ -1,4 +1,4 @@
-import { Frame, Glass, GlassContainer, Html, LiquidCanvas, Padding } from "@liquid-dom/react";
+import { Frame, Glass, GlassContainer, LiquidCanvas, Padding } from "@liquid-dom/react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive, Slot, Tabs as TabsPrimitive } from "radix-ui";
@@ -245,20 +245,17 @@ export function LiquidGlassSurface({
         <GlassContainer {...optics}>
           <Padding insets={1}>
             <Frame maxWidth={FULL_FRAME_SIZE} maxHeight={FULL_FRAME_SIZE}>
-              <Glass cornerRadius={shapeOptics.radius} cornerSmoothing={shapeOptics.smoothing}>
-                <Html sizing="fill">
-                  <div
-                    data-liquid-glass-content="true"
-                    className={cn("h-full w-full text-foreground", contentClassName)}
-                  >
-                    {children}
-                  </div>
-                </Html>
-              </Glass>
+              <Glass cornerRadius={shapeOptics.radius} cornerSmoothing={shapeOptics.smoothing} />
             </Frame>
           </Padding>
         </GlassContainer>
       </LiquidCanvas>
+      <div
+        data-liquid-glass-content="true"
+        className={cn("relative h-full w-full text-foreground", contentClassName)}
+      >
+        {children}
+      </div>
     </div>
   );
 }

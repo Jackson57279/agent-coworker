@@ -42,11 +42,13 @@ The package is organized like shadcn/ui: components are source-owned React
 wrappers that product surfaces import directly. `LiquidGlassSurface` is the
 shared rendering primitive; every higher-level component uses it so runtime
 checks, WebGPU errors, reduced motion/transparency fallbacks, squircle shape
-settings, and optical tuning stay consistent.
+settings, and optical tuning stay consistent. It renders the Liquid-DOM glass
+shape as a backdrop and keeps React children in normal DOM flow above the
+canvas, preserving layout, focus, and accessibility for controls.
 
 Available components:
 
-- `LiquidGlassSurface`: base Liquid-DOM renderer shell with tones and shapes.
+- `LiquidGlassSurface`: base Liquid-DOM backdrop shell with tones and shapes.
 - `LiquidGlassCard`: panel composition with header, title, description, action,
   content, and footer slots.
 - `LiquidGlassButton`: capsule button shell with native button semantics.
