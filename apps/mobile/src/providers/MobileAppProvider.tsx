@@ -3,7 +3,7 @@ import type { PropsWithChildren } from "react";
 import { useEffect } from "react";
 
 import { CoworkJsonRpcClient } from "../features/cowork/jsonRpcClient";
-import type { SessionSnapshotLike } from "../features/cowork/protocolTypes";
+import type { CoworkThread, SessionSnapshotLike } from "../features/cowork/protocolTypes";
 import { setActiveCoworkJsonRpcClient } from "../features/cowork/runtimeClient";
 import { createSessionBootstrapController } from "../features/cowork/sessionBootstrap";
 import { useThreadStore } from "../features/cowork/threadStore";
@@ -11,6 +11,7 @@ import {
   clearWorkspaceBoundStores,
   hydrateWorkspaceBoundStores,
 } from "../features/cowork/workspaceBootstrap";
+import { useWorkspaceStore } from "../features/cowork/workspaceStore";
 import { usePairingStore } from "../features/pairing/pairingStore";
 import { isWorkspaceConnectionReady } from "../features/relay/connectionState";
 import { defaultSecureTransportClient } from "../features/relay/secureTransportClient";
@@ -147,9 +148,35 @@ export function MobileAppProvider({ children }: PropsWithChildren) {
     setActiveCoworkJsonRpcClient(client);
 
     const hydrateRemoteThreads = async () => {
-      const list = await client.requestThreadList();
-      const threadStore = useThreadStore.getState();
-      threadStore.syncRemoteThreads(list.threads);
+      const workspaceStore = useWorkspaceStore.getState();
+      if (workspaceStore.workspaces.length === 0) {
+        try {
+          await workspaceStore.fetchWorkspaces();
+        } catch {
+          // Best-effort — fall through to the default single-workspace fetch below.
+        }
+      }
+      const cwds = Array.from(
+        new Set(
+          useWorkspaceStore
+            .getState()
+            .workspaces.map((w) => w.path)
+            .filter((p): p is string => Boolean(p)),
+        ),
+      );
+      const calls =
+        cwds.length > 0
+          ? cwds.map((cwd) => client.requestThreadList(cwd))
+          : [client.requestThreadList()];
+      const results = await Promise.allSettled(calls);
+      const merged = new Map<string, CoworkThread>();
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        for (const thread of result.value.threads) {
+          merged.set(thread.id, thread);
+        }
+      }
+      useThreadStore.getState().syncRemoteThreads(Array.from(merged.values()));
     };
 
     const hydrateWorkspaceContext = async () => {

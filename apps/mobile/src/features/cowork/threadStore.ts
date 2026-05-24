@@ -17,7 +17,7 @@ export type MobileThreadSummary = {
   id: string;
   title: string;
   preview: string;
-  updatedAtLabel: string;
+  updatedAt: string | null;
   cwd: string | null;
   projectName: string | null;
   feed: SessionFeedItem[];
@@ -127,7 +127,7 @@ function buildThreadSummary(
         : previewSource && "line" in previewSource
           ? previewSource.line
           : "No activity yet.",
-    updatedAtLabel: `${snapshot.feed.length} updates`,
+    updatedAt: snapshot.updatedAt || null,
     cwd,
     projectName: deriveProjectName(cwd),
     feed: snapshot.feed,
@@ -531,7 +531,7 @@ export const useThreadStore = create<ThreadStoreState>((set, get) => ({
               : previewSource && "line" in previewSource
                 ? previewSource.line
                 : rt.preview || "No activity yet.",
-          updatedAtLabel: `${snapshot.feed.length} updates`,
+          updatedAt: rt.updatedAt || snapshot.updatedAt || null,
           cwd: rt.cwd ?? null,
           projectName: deriveProjectName(rt.cwd ?? null),
           feed: snapshot.feed,

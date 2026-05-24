@@ -310,8 +310,8 @@ export class CoworkJsonRpcClient {
     return await initializePromise;
   }
 
-  async requestThreadList(): Promise<CoworkThreadListResult> {
-    const result = await this.request("thread/list", {});
+  async requestThreadList(cwd?: string): Promise<CoworkThreadListResult> {
+    const result = await this.request("thread/list", cwd ? { cwd } : {});
     return coworkThreadListResultSchema.parse(result);
   }
 

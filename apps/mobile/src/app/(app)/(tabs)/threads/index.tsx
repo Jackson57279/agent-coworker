@@ -1,76 +1,282 @@
 import { Link, Stack, useRouter } from "expo-router";
-import { Fragment, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Fragment, useMemo, useState } from "react";
+import {
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
+} from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import { HeaderGlassButton, HeaderGlassMenu } from "@/components/ui/header-glass-button";
 import { Screen } from "@/components/ui/screen";
-import { SectionCard } from "@/components/ui/section-card";
-import { StatusPill } from "@/components/ui/status-pill";
+import { SFSymbol } from "@/components/ui/sf-symbol";
 import { useThreadStore, type MobileThreadSummary } from "@/features/cowork/threadStore";
 import { useWorkspaceStore } from "@/features/cowork/workspaceStore";
 import { useAppTheme } from "@/theme/use-app-theme";
 
-type ThreadGroupMode = "chats" | "projects";
+if (Platform.OS === "android") {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
 const SETTINGS_ACTIONS = [
-  {
-    title: "Settings",
-    icon: "slider.horizontal.3",
-    href: "/(app)/settings",
-  },
-  {
-    title: "Workspace",
-    icon: "square.grid.2x2",
-    href: "/(app)/(tabs)/workspace",
-  },
-  {
-    title: "Skills",
-    icon: "sparkles",
-    href: "/(app)/(tabs)/skills",
-  },
-  {
-    title: "Remote access",
-    icon: "iphone.and.arrow.forward",
-    href: "/(pairing)",
-  },
+  { title: "Settings", icon: "slider.horizontal.3", href: "/(app)/settings" },
+  { title: "Workspace", icon: "square.grid.2x2", href: "/(app)/(tabs)/workspace" },
+  { title: "Skills", icon: "sparkles", href: "/(app)/(tabs)/skills" },
+  { title: "Remote access", icon: "iphone.and.arrow.forward", href: "/(pairing)" },
 ] as const;
 
-function ThreadRow({ thread }: { thread: MobileThreadSummary }) {
+const COLLAPSED_PROJECT_LIMIT = 5;
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const diff = Date.now() - date.getTime();
+  if (diff < 60_000) return "now";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo`;
+  const years = Math.floor(days / 365);
+  return `${years}y`;
+}
+
+function SectionHeader({ children }: { children: string }) {
   const theme = useAppTheme();
   return (
-    <Link href={`/(app)/thread/${thread.id}` as const} asChild>
-      <Pressable
-        style={({ pressed }) => ({
-          gap: 6,
-          borderRadius: 22,
-          borderCurve: "continuous",
-          borderWidth: 1,
-          borderColor: pressed ? theme.primary : theme.borderMuted,
-          backgroundColor: pressed ? theme.surfaceMuted : theme.surfaceElevated,
-          paddingHorizontal: 16,
-          paddingVertical: 15,
-        })}
+    <Text
+      style={{
+        color: theme.textTertiary,
+        fontSize: 12,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 6,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function ChatRow({
+  thread,
+  isLast,
+  onPress,
+}: {
+  thread: MobileThreadSummary;
+  isLast: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
+        borderBottomColor: theme.borderMuted,
+        backgroundColor: pressed ? theme.surfaceMuted : "transparent",
+      })}
+    >
+      <SFSymbol name="bubble.left.fill" size={18} color={theme.textSecondary} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          numberOfLines={1}
+          style={{ color: theme.text, fontSize: 16, fontWeight: "600" }}
+        >
+          {thread.title}
+        </Text>
+        {thread.preview && thread.preview !== "No activity yet." ? (
+          <Text
+            numberOfLines={1}
+            style={{ color: theme.textTertiary, fontSize: 13 }}
+          >
+            {thread.preview}
+          </Text>
+        ) : null}
+      </View>
+      <Text
+        style={{
+          color: theme.textTertiary,
+          fontSize: 12,
+          fontVariant: ["tabular-nums"],
+        }}
       >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
-          <View style={{ flex: 1, gap: 5 }}>
-            <Text
-              selectable
-              style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}
-            >
-              {thread.title}
-            </Text>
-            <Text
-              numberOfLines={2}
-              selectable
-              style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 20 }}
-            >
-              {thread.preview}
-            </Text>
-          </View>
-          {thread.pendingPrompt ? <StatusPill label="needs reply" tone="warning" /> : null}
-        </View>
-      </Pressable>
-    </Link>
+        {formatRelative(thread.updatedAt)}
+      </Text>
+      {thread.pendingPrompt ? (
+        <View style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: theme.primary }} />
+      ) : null}
+    </Pressable>
+  );
+}
+
+function Chevron({ expanded }: { expanded: boolean }) {
+  const rotation = useSharedValue(expanded ? 90 : 0);
+  rotation.value = withTiming(expanded ? 90 : 0, { duration: 180 });
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+  const theme = useAppTheme();
+  return (
+    <Animated.View style={[{ width: 14, alignItems: "center" }, style]}>
+      <SFSymbol name="chevron.right" size={11} color={theme.textTertiary} />
+    </Animated.View>
+  );
+}
+
+function ProjectHeader({
+  name,
+  count,
+  expanded,
+  onToggle,
+}: {
+  name: string;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      onPress={onToggle}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        backgroundColor: pressed ? theme.surfaceMuted : "transparent",
+      })}
+    >
+      <Chevron expanded={expanded} />
+      <SFSymbol
+        name={expanded ? "folder.fill" : "folder"}
+        size={17}
+        color={theme.primary}
+      />
+      <Text
+        numberOfLines={1}
+        style={{ color: theme.text, fontSize: 16, fontWeight: "600", flex: 1 }}
+      >
+        {name}
+      </Text>
+      <Text
+        style={{
+          color: theme.textTertiary,
+          fontSize: 13,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {count}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ProjectChildRow({
+  thread,
+  onPress,
+}: {
+  thread: MobileThreadSummary;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        paddingLeft: 44,
+        paddingRight: 20,
+        paddingVertical: 9,
+        backgroundColor: pressed ? theme.surfaceMuted : "transparent",
+      })}
+    >
+      <View
+        style={{
+          position: "absolute",
+          left: 33,
+          top: 0,
+          bottom: 0,
+          width: StyleSheet.hairlineWidth,
+          backgroundColor: theme.borderMuted,
+        }}
+      />
+      <Text
+        numberOfLines={1}
+        style={{ color: theme.text, fontSize: 14, fontWeight: "500", flex: 1 }}
+      >
+        {thread.title}
+      </Text>
+      <Text
+        style={{
+          color: theme.textTertiary,
+          fontSize: 12,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {formatRelative(thread.updatedAt)}
+      </Text>
+      {thread.pendingPrompt ? (
+        <View style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: theme.primary }} />
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ShowMoreRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const theme = useAppTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingLeft: 44,
+        paddingRight: 20,
+        paddingVertical: 10,
+        backgroundColor: pressed ? theme.surfaceMuted : "transparent",
+      })}
+    >
+      <View
+        style={{
+          position: "absolute",
+          left: 33,
+          top: 0,
+          bottom: 0,
+          width: StyleSheet.hairlineWidth,
+          backgroundColor: theme.borderMuted,
+        }}
+      />
+      <Text style={{ color: theme.primary, fontSize: 13, fontWeight: "600" }}>
+        Show {count} more
+      </Text>
+    </Pressable>
   );
 }
 
@@ -80,33 +286,76 @@ export default function ThreadsScreen() {
   const threads = useThreadStore((state) => state.threads);
   const activeWorkspaceName = useWorkspaceStore((state) => state.activeWorkspaceName);
   const [searchQuery, setSearchQuery] = useState("");
-  const [groupMode, setGroupMode] = useState<ThreadGroupMode>("chats");
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [showAllProjects, setShowAllProjects] = useState<Set<string>>(new Set());
 
-  const filteredThreads = threads.filter((thread) => {
+  const filteredThreads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) {
-      return true;
-    }
-    return (
-      thread.title.toLowerCase().includes(query) || thread.preview.toLowerCase().includes(query)
+    if (!query) return threads;
+    return threads.filter(
+      (thread) =>
+        thread.title.toLowerCase().includes(query) ||
+        thread.preview.toLowerCase().includes(query),
     );
-  });
+  }, [threads, searchQuery]);
 
-  const groupedByProject: Array<[string, MobileThreadSummary[]]> = (() => {
-    const groups = new Map<string, MobileThreadSummary[]>();
+  const { chats, projects } = useMemo(() => {
+    const chatList: MobileThreadSummary[] = [];
+    const projectMap = new Map<string, MobileThreadSummary[]>();
     for (const thread of filteredThreads) {
-      const key = thread.projectName ?? "No project";
-      const bucket = groups.get(key);
-      if (bucket) {
-        bucket.push(thread);
+      if (thread.projectName) {
+        const bucket = projectMap.get(thread.projectName);
+        if (bucket) {
+          bucket.push(thread);
+        } else {
+          projectMap.set(thread.projectName, [thread]);
+        }
       } else {
-        groups.set(key, [thread]);
+        chatList.push(thread);
       }
     }
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  })();
+    const byUpdated = (a: MobileThreadSummary, b: MobileThreadSummary) => {
+      const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      return bt - at;
+    };
+    chatList.sort(byUpdated);
+    for (const items of projectMap.values()) items.sort(byUpdated);
+    return {
+      chats: chatList,
+      projects: Array.from(projectMap.entries()).sort(([a], [b]) => a.localeCompare(b)),
+    };
+  }, [filteredThreads]);
 
-  const groupModeIcon = groupMode === "chats" ? "bubble.left.and.bubble.right" : "folder";
+  function toggleProject(name: string) {
+    LayoutAnimation.configureNext({
+      duration: 180,
+      create: { type: "easeInEaseOut", property: "opacity" },
+      update: { type: "easeInEaseOut" },
+      delete: { type: "easeInEaseOut", property: "opacity" },
+    });
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  function toggleShowAll(name: string) {
+    LayoutAnimation.configureNext({
+      duration: 180,
+      create: { type: "easeInEaseOut", property: "opacity" },
+      update: { type: "easeInEaseOut" },
+      delete: { type: "easeInEaseOut", property: "opacity" },
+    });
+    setShowAllProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   return (
     <Fragment>
@@ -149,71 +398,78 @@ export default function ThreadsScreen() {
               )}
             </>
           ),
-          headerRight: () => (
-            <>
-              {Platform.OS === "ios" ? (
-                <HeaderGlassMenu
-                  icon={groupModeIcon}
-                  actions={[
-                    {
-                      title: "Chats",
-                      icon: "bubble.left.and.bubble.right",
-                      onPress: () => setGroupMode("chats"),
-                    },
-                    {
-                      title: "Projects",
-                      icon: "folder",
-                      onPress: () => setGroupMode("projects"),
-                    },
-                  ]}
-                />
-              ) : (
-                <Link href="/(app)/(tabs)/threads" asChild>
-                  <Link.Trigger>
-                    <HeaderGlassButton icon={groupModeIcon} accessibilityLabel="Change grouping" />
-                  </Link.Trigger>
-                  <Link.Menu>
-                    <Link.MenuAction
-                      title="Chats"
-                      icon="bubble.left.and.bubble.right"
-                      onPress={() => setGroupMode("chats")}
-                    />
-                    <Link.MenuAction
-                      title="Projects"
-                      icon="folder"
-                      onPress={() => setGroupMode("projects")}
-                    />
-                  </Link.Menu>
-                </Link>
-              )}
-            </>
-          ),
         }}
       />
-      <Screen scroll contentStyle={{ gap: 16 }}>
-        {filteredThreads.length === 0 ? (
-          <SectionCard title={searchQuery ? "No matches" : "No threads yet"}>
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 21 }}>
-              {searchQuery
-                ? "No thread matches the current search."
-                : "Open or resume a thread on desktop and it will appear here."}
-            </Text>
-          </SectionCard>
-        ) : groupMode === "chats" ? (
-          <View style={{ gap: 10 }}>
-            {filteredThreads.map((thread) => (
-              <ThreadRow key={thread.id} thread={thread} />
+      <Screen scroll contentStyle={{ paddingHorizontal: 0, paddingTop: 0, gap: 0 }}>
+        {chats.length === 0 && projects.length === 0 ? (
+          <Text
+            style={{
+              color: theme.textSecondary,
+              fontSize: 14,
+              lineHeight: 21,
+              padding: 32,
+              textAlign: "center",
+            }}
+          >
+            {searchQuery
+              ? "No thread matches the current search."
+              : "Threads will appear here when you start a conversation."}
+          </Text>
+        ) : null}
+
+        {chats.length > 0 ? (
+          <View>
+            <SectionHeader>Chats</SectionHeader>
+            {chats.map((thread, idx) => (
+              <ChatRow
+                key={thread.id}
+                thread={thread}
+                isLast={idx === chats.length - 1}
+                onPress={() => router.push(`/(app)/thread/${thread.id}` as const)}
+              />
             ))}
           </View>
-        ) : (
-          groupedByProject.map(([projectName, projectThreads]) => (
-            <SectionCard key={projectName} title={projectName}>
-              {projectThreads.map((thread) => (
-                <ThreadRow key={thread.id} thread={thread} />
-              ))}
-            </SectionCard>
-          ))
-        )}
+        ) : null}
+
+        {projects.length > 0 ? (
+          <View style={{ paddingBottom: 24 }}>
+            <SectionHeader>Projects</SectionHeader>
+            {projects.map(([name, items]) => {
+              const expanded = expandedProjects.has(name);
+              const showAll = showAllProjects.has(name);
+              const visible = expanded
+                ? showAll
+                  ? items
+                  : items.slice(0, COLLAPSED_PROJECT_LIMIT)
+                : [];
+              const hidden = items.length - visible.length;
+              return (
+                <Fragment key={name}>
+                  <ProjectHeader
+                    name={name}
+                    count={items.length}
+                    expanded={expanded}
+                    onToggle={() => toggleProject(name)}
+                  />
+                  {expanded ? (
+                    <View>
+                      {visible.map((thread) => (
+                        <ProjectChildRow
+                          key={thread.id}
+                          thread={thread}
+                          onPress={() => router.push(`/(app)/thread/${thread.id}` as const)}
+                        />
+                      ))}
+                      {hidden > 0 ? (
+                        <ShowMoreRow count={hidden} onPress={() => toggleShowAll(name)} />
+                      ) : null}
+                    </View>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </View>
+        ) : null}
       </Screen>
     </Fragment>
   );
