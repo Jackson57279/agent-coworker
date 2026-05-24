@@ -5,6 +5,7 @@ import {
   Settings2Icon,
   SlidersHorizontalIcon,
 } from "lucide-react";
+import { useState } from "react";
 
 import {
   LiquidGlassBadge,
@@ -51,6 +52,7 @@ const componentRows = [
 
 export function LiquidGlassPage() {
   const runtimeState = useLiquidDomRuntimeState();
+  const [galleryTab, setGalleryTab] = useState("controls");
   const runtimeLabel =
     runtimeState === "available"
       ? "WebGPU renderer available"
@@ -144,7 +146,7 @@ export function LiquidGlassPage() {
         </div>
       </div>
 
-      <LiquidGlassTabs defaultValue="controls">
+      <LiquidGlassTabs value={galleryTab} onValueChange={setGalleryTab}>
         <LiquidGlassTabsList aria-label="Liquid glass examples">
           <LiquidGlassTabsTrigger value="controls">Controls</LiquidGlassTabsTrigger>
           <LiquidGlassTabsTrigger value="surfaces">Surfaces</LiquidGlassTabsTrigger>
