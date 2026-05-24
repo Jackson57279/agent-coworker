@@ -52,6 +52,7 @@
       "dependencies": {
         "@base-ui/react": "^1.5.0",
         "@hookform/resolvers": "^5.4.0",
+        "@liquid-dom/react": "^0.1.0",
         "@radix-ui/react-checkbox": "^1.3.3",
         "@radix-ui/react-collapsible": "^1.1.12",
         "@radix-ui/react-dialog": "^1.1.15",
@@ -399,6 +400,12 @@
     "@langfuse/core": ["@langfuse/core@5.3.0", "", { "peerDependencies": { "@opentelemetry/api": "^1.9.0" } }, "sha512-9JnDpSMBxsy6Mw5YTc0vERpAYJG5jJKxLtgv1mgA4yrNGWOtqV6ShkSSb/mWE7CeyKFnIFM0lRJpqblrMaRfQA=="],
 
     "@langfuse/otel": ["@langfuse/otel@5.3.0", "", { "dependencies": { "@langfuse/core": "^5.3.0" }, "peerDependencies": { "@opentelemetry/api": "^1.9.0", "@opentelemetry/core": "^2.0.1", "@opentelemetry/exporter-trace-otlp-http": ">=0.202.0 <1.0.0", "@opentelemetry/sdk-trace-base": "^2.0.1" } }, "sha512-CJUz3oCD0RMbe+1cPxnuLD/JhsUnLt02DhLP6ZXzhFoi07rHsf8T5oUyCwLRNRH4x2tl87u3aTiOcBJqSK6/fQ=="],
+
+    "@liquid-dom/core": ["@liquid-dom/core@0.1.0", "", { "dependencies": { "@liquid-dom/layout": "0.1.0" } }, "sha512-ocYx9zxR6TcsXbl2HhQTGv26sgmz9x5h51GHJ4ncBZ4qEHaOqoUbHrguNaHuan214y0C5kvPFwjzKhu3mhGc3w=="],
+
+    "@liquid-dom/layout": ["@liquid-dom/layout@0.1.0", "", {}, "sha512-WrN0dQHI5qEROP+TwslugeZ/whWE3eqshIxekhQvrcs1xNv2u/T0qgOmbvTK44b0hMDEXIZnpzKRiqX9tL1+rQ=="],
+
+    "@liquid-dom/react": ["@liquid-dom/react@0.1.0", "", { "dependencies": { "@liquid-dom/core": "0.1.0", "@liquid-dom/layout": "0.1.0" }, "peerDependencies": { "react": ">=19", "react-dom": ">=19" } }, "sha512-ywYhR6jEqKItiQtVg7h24rxDK/g/zAJyTzSmH0Y7Y/p9kN2D8IzDKIdsVvD8aRqsKjeGOF6xh9cD5j38aajFnQ=="],
 
     "@malept/cross-spawn-promise": ["@malept/cross-spawn-promise@2.0.0", "", { "dependencies": { "cross-spawn": "^7.0.1" } }, "sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg=="],
 

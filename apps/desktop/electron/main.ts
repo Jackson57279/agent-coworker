@@ -24,6 +24,7 @@ import {
 } from "./services/appearance";
 import { runDesktopSmokePromptLoadCheck } from "./services/desktopSmoke";
 import { installDesktopApplicationMenu } from "./services/menu";
+import { configureLiquidDomChromium } from "./services/liquidDomRuntime";
 import { createMenuCommandDispatcher } from "./services/menuCommandDispatcher";
 import { MobileRelayBridge } from "./services/mobileRelayBridge";
 import { isPathEqualOrInside } from "./services/pathBoundary";
@@ -91,6 +92,8 @@ if (electronRemoteDebug.enabled) {
   app.commandLine.appendSwitch("remote-debugging-port", electronRemoteDebug.port);
   app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
 }
+
+configureLiquidDomChromium(app.commandLine);
 
 function emitDesktopEvent(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {

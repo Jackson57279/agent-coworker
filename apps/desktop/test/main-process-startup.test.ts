@@ -9,10 +9,15 @@ test("desktop app names itself before userData-backed services initialize", asyn
     "const mobileRelayBridge = new MobileRelayBridge({ serverManager });",
   );
   const persistenceIndex = source.indexOf("const persistence = new PersistenceService();");
+  const liquidDomRuntimeIndex = source.indexOf("configureLiquidDomChromium(app.commandLine);");
+  const browserWindowIndex = source.indexOf("new BrowserWindow({");
 
   expect(setNameIndex).toBeGreaterThanOrEqual(0);
   expect(mobileRelayBridgeIndex).toBeGreaterThanOrEqual(0);
   expect(persistenceIndex).toBeGreaterThanOrEqual(0);
+  expect(liquidDomRuntimeIndex).toBeGreaterThanOrEqual(0);
+  expect(browserWindowIndex).toBeGreaterThanOrEqual(0);
   expect(setNameIndex).toBeLessThan(mobileRelayBridgeIndex);
   expect(setNameIndex).toBeLessThan(persistenceIndex);
+  expect(liquidDomRuntimeIndex).toBeLessThan(browserWindowIndex);
 });
