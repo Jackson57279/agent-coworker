@@ -16,7 +16,7 @@ This guide covers everything you need to start contributing to the project.
 ## Getting Started
 
 ```bash
-git clone <repo-url> && cd agent-coworker
+git clone https://github.com/mweinbach/agent-coworker && cd agent-coworker
 bun install                     # installs root + apps/desktop deps
 
 # Run in different modes:
