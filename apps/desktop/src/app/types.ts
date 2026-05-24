@@ -249,6 +249,7 @@ export type SettingsPageId =
   | "providers"
   | "openAiNativeConnectors"
   | "desktop"
+  | "liquidGlass"
   | "usage"
   | "workspaces"
   | "backup"

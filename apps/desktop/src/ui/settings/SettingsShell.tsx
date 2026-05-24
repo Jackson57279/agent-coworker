@@ -10,6 +10,7 @@ import {
   MonitorIcon,
   RefreshCcwIcon,
   SlidersHorizontalIcon,
+  SparklesIcon,
   UserRoundCogIcon,
   WifiIcon,
   WrenchIcon,
@@ -26,6 +27,7 @@ import { BackupPage } from "./pages/BackupPage";
 import { DesktopPage } from "./pages/DesktopPage";
 import { DeveloperPage } from "./pages/DeveloperPage";
 import { FeatureFlagsPage } from "./pages/FeatureFlagsPage";
+import { LiquidGlassPage } from "./pages/LiquidGlassPage";
 import { RemoteAccessPage } from "./pages/RemoteAccessPage";
 import {
   ChatsSettingsPage,
@@ -57,6 +59,10 @@ const SETTINGS_PAGE_META: Record<SettingsPageId, { title: string; description: s
   desktop: {
     title: "Desktop",
     description: "Menu bar, tray, and quick chat controls for the desktop app.",
+  },
+  liquidGlass: {
+    title: "Liquid Glass",
+    description: "Apple-style Liquid-DOM components for desktop glass surfaces.",
   },
   defaults: {
     title: "Defaults",
@@ -188,6 +194,12 @@ export function getSettingsGroups(
       label: "App",
       pages: [
         { id: "desktop", label: "Desktop", icon: MonitorIcon, render: () => <DesktopPage /> },
+        {
+          id: "liquidGlass",
+          label: "Liquid Glass",
+          icon: SparklesIcon,
+          render: () => <LiquidGlassPage />,
+        },
         { id: "updates", label: "Updates", icon: RefreshCcwIcon, render: () => <UpdatesPage /> },
       ],
     },

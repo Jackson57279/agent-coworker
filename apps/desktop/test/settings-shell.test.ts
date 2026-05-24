@@ -26,6 +26,7 @@ describe("settings shell", () => {
     expect(pageIds).toContain("experiments");
     expect(pageIds).toContain("models");
     expect(pageIds).toContain("toolAccess");
+    expect(pageIds).toContain("liquidGlass");
     expect(pageIds).not.toContain("openAiNativeConnectors");
   });
 

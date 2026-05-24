@@ -30,7 +30,7 @@ because arbitrary browsers may not expose the required GPU path. Product UI
 must gate Liquid-DOM surfaces on both the relevant desktop setting and runtime
 support before mounting `LiquidCanvas`.
 
-## Current Primitive
+## Component System
 
 Desktop Liquid-DOM primitives live under:
 
@@ -38,19 +38,51 @@ Desktop Liquid-DOM primitives live under:
 apps/desktop/src/components/liquid-dom/
 ```
 
-`LiquidGlassCard` and `LiquidGlassBackdrop` are the first reusable components.
+The package is organized like shadcn/ui: components are source-owned React
+wrappers that product surfaces import directly. `LiquidGlassSurface` is the
+shared rendering primitive; every higher-level component uses it so runtime
+checks, WebGPU errors, reduced motion/transparency fallbacks, squircle shape
+settings, and optical tuning stay consistent.
+
+Available components:
+
+- `LiquidGlassSurface`: base Liquid-DOM renderer shell with tones and shapes.
+- `LiquidGlassCard`: panel composition with header, title, description, action,
+  content, and footer slots.
+- `LiquidGlassButton`: capsule button shell with native button semantics.
+- `LiquidGlassBadge`: compact metadata/status chip.
+- `LiquidGlassToolbar`: fused control island with grouped children.
+- `LiquidGlassTabs`: Radix tabs styled as a glass segmented control.
+- `LiquidGlassField` and `LiquidGlassInput`: label, helper text, and input
+  shell composition.
+- `LiquidGlassDialog`: Radix dialog with a Liquid-DOM sheet body.
+- `LiquidGlassBackdrop`: canvas-only backdrop for existing DOM content.
+
 They preflight `navigator.gpu`, mount `LiquidCanvas` only when WebGPU is
 available, and otherwise render token-backed fallback markup or nothing,
-depending on whether the component owns visible content.
+depending on whether the component owns visible content. Fallbacks are
+intentional: standard DOM controls remain accessible and usable in jsdom, web
+preview, non-WebGPU Chromium, and reduced-transparency/reduced-motion settings.
 
 ```tsx
-import { LiquidGlassCard } from "@/components/liquid-dom";
+import {
+  LiquidGlassButton,
+  LiquidGlassCard,
+  LiquidGlassCardContent,
+  LiquidGlassCardHeader,
+  LiquidGlassCardTitle,
+} from "@/components/liquid-dom";
 
 export function ExamplePanel() {
   return (
     <LiquidGlassCard className="min-h-40" contentClassName="flex flex-col gap-3">
-      <div className="text-sm font-semibold">Glass panel</div>
-      <div className="text-sm text-muted-foreground">Normal React content renders inside.</div>
+      <LiquidGlassCardHeader>
+        <LiquidGlassCardTitle>Glass panel</LiquidGlassCardTitle>
+      </LiquidGlassCardHeader>
+      <LiquidGlassCardContent>
+        Normal React content renders inside.
+      </LiquidGlassCardContent>
+      <LiquidGlassButton type="button">Continue</LiquidGlassButton>
     </LiquidGlassCard>
   );
 }
@@ -58,19 +90,21 @@ export function ExamplePanel() {
 
 The chat composer can use `LiquidGlassBackdrop`, but only when the desktop
 Appearance setting is enabled and `navigator.gpu` is available in the renderer.
+The full component gallery is available in Settings → Liquid Glass.
 
 ## How To Add More Components
 
 1. Add new primitives under `apps/desktop/src/components/liquid-dom/`.
 2. Export them from `apps/desktop/src/components/liquid-dom/index.ts`.
-3. Keep props idiomatic React, similar to shadcn wrappers: `className`,
+3. Compose `LiquidGlassSurface` unless a component is canvas-only.
+4. Keep props idiomatic React, similar to shadcn wrappers: `className`,
    `contentClassName`, semantic sizing props, and normal `children`.
-4. Use semantic Tailwind tokens for fallback markup so disabled WebGPU still
+5. Use semantic Tailwind tokens for fallback markup so disabled WebGPU still
    looks native in Cowork.
-5. Gate product usage on the relevant user setting and preflight
+6. Gate product usage on the relevant user setting and preflight
    `navigator.gpu` before mounting `LiquidCanvas`.
-6. Use `frameloop="demand"` for mostly-static app UI.
-7. Add focused jsdom tests for fallback/rendered structure, then verify the live
+7. Use `frameloop="demand"` for mostly-static app UI.
+8. Add focused jsdom tests for fallback/rendered structure, then verify the live
    Electron app with CDP for actual WebGPU pixels.
 
 ## Caveats
