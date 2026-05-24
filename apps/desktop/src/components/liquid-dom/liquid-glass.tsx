@@ -143,14 +143,12 @@ const liquidGlassSurfaceVariants = cva(
   {
     variants: {
       tone: {
-        clear:
-          "border border-white/15 bg-background/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.20),0_10px_24px_-18px_rgba(0,0,0,0.45)]",
+        clear: "border border-border/55 bg-background/18 shadow-[var(--shadow-liquid-glass-clear)]",
         regular:
-          "border border-white/20 bg-background/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_18px_38px_-26px_rgba(0,0,0,0.52)]",
+          "border border-border/60 bg-background/28 shadow-[var(--shadow-liquid-glass-regular)]",
         prominent:
-          "border border-white/25 bg-background/38 shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_24px_52px_-30px_rgba(0,0,0,0.58)]",
-        tinted:
-          "border border-sky-100/25 bg-sky-100/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_20px_42px_-28px_rgba(8,47,73,0.50)]",
+          "border border-border/70 bg-background/38 shadow-[var(--shadow-liquid-glass-prominent)]",
+        tinted: "border border-border/60 bg-accent/10 shadow-[var(--shadow-liquid-glass-tinted)]",
       },
       shape: {
         panel: "rounded-[22px]",
@@ -469,8 +467,8 @@ const liquidGlassBadgeVariants = cva(
       variant: {
         default: "text-foreground",
         secondary: "text-muted-foreground",
-        success: "text-emerald-950 dark:text-emerald-100",
-        warning: "text-amber-950 dark:text-amber-100",
+        success: "text-success",
+        warning: "text-warning",
       },
     },
     defaultVariants: {
@@ -652,7 +650,7 @@ function LiquidGlassTabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="liquid-glass-tabs-trigger"
       className={cn(
-        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap text-foreground/64 outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background/54 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_18px_-14px_rgba(0,0,0,0.48)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap text-foreground/64 outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background/54 data-[state=active]:text-foreground data-[state=active]:shadow-[var(--shadow-liquid-glass-selected)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -712,7 +710,7 @@ function LiquidGlassDialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="liquid-glass-dialog-overlay"
       className={cn(
-        "fixed inset-0 bg-zinc-950/42 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "fixed inset-0 bg-[var(--liquid-glass-dialog-overlay)] backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className,
       )}
       {...props}

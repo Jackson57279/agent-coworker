@@ -60,7 +60,7 @@ export function LiquidGlassPage() {
 
   return (
     <div className="flex flex-col gap-5" data-liquid-glass-gallery="true">
-      <div className="relative overflow-hidden rounded-[28px] border border-border/60 bg-[radial-gradient(circle_at_20%_20%,rgba(125,211,252,0.22),transparent_32%),radial-gradient(circle_at_80%_10%,rgba(255,255,255,0.18),transparent_28%),linear-gradient(135deg,var(--surface-sidebar-pane),var(--surface-window))] p-5">
+      <div className="relative overflow-hidden rounded-[28px] border border-border/60 bg-[var(--liquid-glass-gallery-background)] p-5">
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <LiquidGlassCard tone="prominent" shape="sheet" contentClassName="gap-5 p-6">
             <LiquidGlassCardHeader>

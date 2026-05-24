@@ -31,6 +31,21 @@
   --radius-base: 0.5rem;
   --shadow-surface-base: 0 1px 3px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.4);
   --shadow-overlay-base: 0 12px 30px rgba(0, 0, 0, 0.1);
+  --shadow-liquid-glass-clear:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 10px 24px -18px rgba(0, 0, 0, 0.45);
+  --shadow-liquid-glass-regular:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 18px 38px -26px rgba(0, 0, 0, 0.52);
+  --shadow-liquid-glass-prominent:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 24px 52px -30px rgba(0, 0, 0, 0.58);
+  --shadow-liquid-glass-tinted:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 20px 42px -28px rgba(62, 74, 40, 0.5);
+  --shadow-liquid-glass-selected:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 8px 18px -14px rgba(0, 0, 0, 0.48);
+  --liquid-glass-dialog-overlay: rgba(23, 29, 19, 0.42);
+  --liquid-glass-gallery-background:
+    radial-gradient(circle at 20% 20%, rgba(139, 148, 114, 0.22), transparent 32%),
+    radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.18), transparent 28%),
+    linear-gradient(135deg, var(--surface-sidebar-pane), var(--surface-window));
 
   color-scheme: light;
 }
@@ -63,6 +78,7 @@
   --warning-foreground-base: #1a2012;
   --shadow-surface-base: 0 1px 2px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --shadow-overlay-base: 0 12px 30px rgba(0, 0, 0, 0.35);
+  --liquid-glass-dialog-overlay: rgba(6, 8, 5, 0.52);
 
   color-scheme: dark;
 }
@@ -95,6 +111,7 @@
     --warning-foreground-base: #1a2012;
     --shadow-surface-base: 0 1px 2px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     --shadow-overlay-base: 0 12px 30px rgba(0, 0, 0, 0.35);
+    --liquid-glass-dialog-overlay: rgba(6, 8, 5, 0.52);
 
     color-scheme: dark;
   }
