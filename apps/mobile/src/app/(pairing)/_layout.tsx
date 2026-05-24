@@ -5,18 +5,20 @@ import { useAppTheme } from "@/theme/use-app-theme";
 
 export default function PairingLayout() {
   const theme = useAppTheme();
-  const headerTransparent = Platform.OS !== "web";
+  const useNativeChrome = Platform.OS === "ios";
 
   return (
     <Stack
       screenOptions={{
         headerLargeTitle: true,
-        headerTransparent,
+        headerTransparent: useNativeChrome,
         headerShadowVisible: false,
         headerLargeTitleShadowVisible: false,
-        headerBlurEffect: "none",
+        headerStyle: {
+          backgroundColor: useNativeChrome ? "transparent" : theme.background,
+        },
         headerLargeStyle: {
-          backgroundColor: headerTransparent ? "transparent" : theme.background,
+          backgroundColor: useNativeChrome ? "transparent" : theme.background,
         },
         headerTintColor: theme.text,
         headerLargeTitleStyle: {
@@ -25,22 +27,28 @@ export default function PairingLayout() {
         },
         headerTitleStyle: {
           color: theme.text,
+          fontWeight: "600",
         },
         headerBackButtonDisplayMode: "minimal",
+        contentStyle: {
+          flex: 1,
+          backgroundColor: useNativeChrome ? "transparent" : theme.background,
+        },
       }}
     >
       <Stack.Screen
         name="index"
         options={{
           title: "Remote Access",
+          headerRight: () => null,
+          unstable_headerRightItems: () => [],
         }}
       />
       <Stack.Screen
         name="scan"
         options={{
-          title: "Scan Desktop",
+          title: "Scan Code",
           headerLargeTitle: false,
-          headerBackButtonDisplayMode: "minimal",
           presentation: "modal",
         }}
       />

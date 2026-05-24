@@ -115,6 +115,7 @@ export const palette = {
     textBase: "#232a18",
     mutedBase: "#556041",
     accentBase: "#6f8042",
+    accentForegroundBase: "#ffffff",
     inverseText: "#ffffff",
     dangerBase: "#bb3e3e",
     successBase: "#1ea155",
@@ -133,6 +134,7 @@ export const palette = {
     textBase: "#eef0dc",
     mutedBase: "#c7ceaf",
     accentBase: "#a8b963",
+    accentForegroundBase: "#121a10",
     inverseText: "#ffffff",
     dangerBase: "#e86060",
     successBase: "#3fbb74",
@@ -181,6 +183,7 @@ export type SemanticTokens = {
   borderStrong: string;
 
   accent: string;
+  accentForeground: string;
   accentSoft: string;
 
   success: string;
@@ -223,6 +226,7 @@ function buildSemanticTokens(p: PalettePrimitives, isDark: boolean): SemanticTok
     borderStrong: alpha(p.borderBase, 0.92),
 
     accent: p.accentBase,
+    accentForeground: p.accentForegroundBase,
     accentSoft: alpha(p.accentBase, 0.14),
 
     success: p.successBase,
